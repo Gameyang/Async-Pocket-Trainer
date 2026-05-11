@@ -9,6 +9,8 @@
 - Vitest: 전투, 포획, 웨이브, 저장 로직 단위 테스트
 - ESLint: TypeScript/JavaScript 코드 품질 검사
 - Prettier: 문서와 코드 포맷 통일
+- Headless client: DOM 없이 게임 진행, 전투, 포획, 팀 교체, 상점 행동을 실행
+- Headless QA CLI: 여러 seed를 실행해 invariant와 밸런스 지표를 JSON으로 출력
 - GitHub Actions CI: PR과 `main` push마다 `npm run verify`
 - GitHub Pages workflow: `main` 빌드 결과를 `dist/`에서 배포
 - Dependabot: npm 패키지와 Actions 버전 갱신 PR 생성
@@ -26,8 +28,29 @@ npm run verify
 ```bash
 npm run lint
 npm run test
+npm run qa:headless
 npm run build
 ```
+
+## Headless 우선 구조
+
+게임 로직은 `src/game/` 아래의 headless 코어가 소유합니다. HTML은 `HeadlessGameClient`의 snapshot을 렌더링하고 버튼 클릭을 action으로 dispatch하는 얇은 어댑터입니다.
+
+```text
+HeadlessGameClient
+  -> deterministic RNG
+  -> encounter / battle / capture / team / shop state
+  -> snapshot
+  -> HTML renderer
+```
+
+LLM 또는 CI는 브라우저를 열지 않고 아래 명령으로 게임 진행을 검증합니다.
+
+```bash
+npm run headless -- --seed qa --runs 20 --waves 15 --strategy greedy
+```
+
+출력 JSON에는 run별 최종 웨이브, 전멸 여부, 팀 전투력, 체력 비율, invariant 오류가 포함됩니다. 밸런싱 변경 PR은 이 수치를 전후 비교합니다.
 
 ## 테스트 하네스 원칙
 
@@ -36,6 +59,7 @@ npm run build
 - `localStorage`, `IndexedDB`, Google Calendar API는 얇은 어댑터로 분리합니다.
 - 외부 API 테스트는 실제 네트워크 대신 fixture와 mock을 기본값으로 사용합니다.
 - 데이터 JSON은 로드 테스트를 추가해 필수 필드 누락을 빠르게 잡습니다.
+- 화면 테스트는 마지막 단계로 두고, 기본 기능 검증은 headless action과 snapshot으로 수행합니다.
 
 ## GitHub 개발 흐름
 

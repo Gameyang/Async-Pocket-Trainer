@@ -1,4 +1,6 @@
 README.md
+src/game/data/pokemonBattleData.json
+src/game/data/pokemonBattleRuntimeData.json
 dist/
 coverage/
 node_modules/

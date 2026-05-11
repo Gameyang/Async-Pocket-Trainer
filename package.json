@@ -15,15 +15,19 @@
     "lint": "eslint .",
     "format": "prettier --check .",
     "format:write": "prettier --write .",
+    "headless": "tsx src/tools/headless-run.ts",
+    "qa:headless": "tsx src/tools/headless-run.ts --runs 12 --waves 15 --strategy greedy",
     "test": "vitest run",
     "test:watch": "vitest",
-    "verify": "npm run lint && npm run test && npm run build"
+    "verify": "npm run lint && npm run test && npm run qa:headless && npm run build"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@types/node": "^25.6.2",
     "eslint": "^10.3.0",
     "globals": "^17.6.0",
     "prettier": "^3.8.3",
+    "tsx": "^4.21.0",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.59.2",
     "vite": "^8.0.12",

@@ -21,6 +21,7 @@ npm run verify
 
 - `npm run lint`
 - `npm run test`
+- `npm run qa:headless`
 - `npm run build`
 
 ## 브랜치와 PR
@@ -35,3 +36,4 @@ npm run verify
 - 전투, 포획, 웨이브, 저장소처럼 결과가 중요한 로직은 단위 테스트를 먼저 추가합니다.
 - 랜덤이 들어가는 로직은 seed를 주입할 수 있게 만들어 재현 가능한 테스트를 유지합니다.
 - 브라우저 저장소와 Google Calendar 연동은 순수 직렬화 로직과 외부 API 호출을 분리합니다.
+- 게임 기능 QA는 HTML 조작보다 `HeadlessGameClient` action과 snapshot 검증을 우선합니다.
