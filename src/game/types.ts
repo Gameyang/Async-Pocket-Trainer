@@ -104,8 +104,13 @@ export interface GameEvent {
 export interface GameBalance {
   checkpointInterval: number;
   maxTeamSize: number;
+  trainerTeamSizeCheckpointSpan: number;
+  wildBaseStatBudgetBase: number;
+  wildBaseStatBudgetPerWave: number;
+  wildRarityBudgetWaveDivisor: number;
   wildStatGrowthPerWave: number;
   trainerStatGrowthPerWave: number;
+  battleDamageScale: number;
   rewardBase: number;
   rewardPerWave: number;
   trainerRewardBonus: number;

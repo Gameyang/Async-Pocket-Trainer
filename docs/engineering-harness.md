@@ -52,9 +52,12 @@ LLM 또는 CI는 브라우저를 열지 않고 아래 명령으로 게임 진행
 
 ```bash
 npm run headless -- --seed qa --runs 20 --waves 15 --strategy greedy
+npm run qa:headless:30
+npm run qa:headless:50
+npm run qa:headless:100
 ```
 
-출력 JSON에는 run별 최종 웨이브, 전멸 여부, 팀 전투력, 체력 비율, invariant 오류가 포함됩니다. 밸런싱 변경 PR은 이 수치를 전후 비교합니다.
+출력 JSON에는 run별 최종 웨이브, 전멸 여부, 팀 전투력, 체력 비율, invariant 오류가 포함됩니다. `waveBalance`에는 wave별 사망 원인, 포획 성공률, 팀 파워 분포, 휴식/구매 횟수가 포함됩니다. 밸런싱 변경 PR은 이 수치를 전후 비교합니다.
 
 ## Graphics API 계약
 

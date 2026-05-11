@@ -6,6 +6,17 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      headless_profile:
+        description: Optional long-running headless QA profile
+        required: true
+        type: choice
+        default: none
+        options:
+          - none
+          - wave30
+          - wave50
+          - wave100
 
 permissions:
   contents: read
@@ -34,3 +45,15 @@ jobs:
 
       - name: Run quality gate
         run: npm run verify
+
+      - name: Run 30-wave headless profile
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.headless_profile == 'wave30' }}
+        run: npm run qa:headless:30
+
+      - name: Run 50-wave headless profile
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.headless_profile == 'wave50' }}
+        run: npm run qa:headless:50
+
+      - name: Run 100-wave headless profile
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.headless_profile == 'wave100' }}
+        run: npm run qa:headless:100

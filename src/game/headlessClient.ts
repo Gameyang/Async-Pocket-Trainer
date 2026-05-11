@@ -22,8 +22,16 @@ export interface HeadlessClientOptions {
   balance?: Partial<GameBalance>;
 }
 
+export interface HeadlessClientSnapshot {
+  version: 1;
+  frameId: number;
+  nextEventId: number;
+  balance: GameBalance;
+  state: GameState;
+}
+
 export class HeadlessGameClient {
-  private readonly balance: GameBalance;
+  private balance: GameBalance;
   private readonly rng: SeededRng;
   private state: GameState;
   private nextEventId = 1;
@@ -50,8 +58,40 @@ export class HeadlessGameClient {
     };
   }
 
+  static fromSnapshot(snapshot: HeadlessClientSnapshot): HeadlessGameClient {
+    const client = new HeadlessGameClient({
+      seed: snapshot.state.seed,
+      trainerName: snapshot.state.trainerName,
+      balance: snapshot.balance,
+    });
+    client.loadSnapshot(snapshot);
+    return client;
+  }
+
   getSnapshot(): GameState {
     return cloneState(this.state);
+  }
+
+  saveSnapshot(): HeadlessClientSnapshot {
+    return cloneClientSnapshot({
+      version: 1,
+      frameId: this.frameId,
+      nextEventId: this.nextEventId,
+      balance: { ...this.balance },
+      state: this.state,
+    });
+  }
+
+  loadSnapshot(snapshot: HeadlessClientSnapshot): GameState {
+    assertValidClientSnapshot(snapshot);
+
+    this.balance = { ...snapshot.balance };
+    this.state = cloneState(snapshot.state);
+    this.rng.setState(this.state.rngState);
+    this.frameId = snapshot.frameId;
+    this.nextEventId = snapshot.nextEventId;
+
+    return this.getSnapshot();
   }
 
   getFrame(): GameFrame {
@@ -199,6 +239,7 @@ export class HeadlessGameClient {
       playerTeam: this.state.team,
       enemyTeam: encounter.enemyTeam,
       rng: this.rng,
+      damageScale: this.balance.battleDamageScale,
     });
 
     this.state.team = battle.playerTeam;
@@ -211,14 +252,25 @@ export class HeadlessGameClient {
       `${encounter.opponentName} battle ended with ${battle.winner} win.`,
       {
         kind: encounter.kind,
+        winner: battle.winner,
+        opponentName: encounter.opponentName,
         turns: battle.turns,
         reward: battle.winner === "player" ? reward : 0,
+        enemyPower: scoreTeam(battle.enemyTeam),
+        teamPower: scoreTeam(battle.playerTeam),
       },
     );
 
     if (battle.winner !== "player") {
       this.state.phase = "gameOver";
       this.state.gameOverReason = `Lost at wave ${this.state.currentWave} against ${encounter.opponentName}.`;
+      this.addEvent("game_over", this.state.gameOverReason, {
+        wave: this.state.currentWave,
+        opponentName: encounter.opponentName,
+        kind: encounter.kind,
+        enemyPower: scoreTeam(battle.enemyTeam),
+        teamPower: scoreTeam(battle.playerTeam),
+      });
       return;
     }
 
@@ -259,6 +311,7 @@ export class HeadlessGameClient {
       {
         ball,
         chance: Number(result.chance.toFixed(4)),
+        success: result.success,
         target: target.speciesName,
       },
     );
@@ -298,6 +351,8 @@ export class HeadlessGameClient {
         ? `${captured.speciesName} joined the team.`
         : `${captured.speciesName} was released after comparison.`,
       {
+        accepted,
+        replaceIndex: resolvedIndex,
         capturedPower: captured.powerScore,
         teamPower: scoreTeam(this.state.team),
       },
@@ -424,6 +479,32 @@ export class HeadlessGameClient {
 
 export function cloneState(state: GameState): GameState {
   return JSON.parse(JSON.stringify(state)) as GameState;
+}
+
+export function cloneClientSnapshot(snapshot: HeadlessClientSnapshot): HeadlessClientSnapshot {
+  return JSON.parse(JSON.stringify(snapshot)) as HeadlessClientSnapshot;
+}
+
+function assertValidClientSnapshot(snapshot: HeadlessClientSnapshot): void {
+  if (snapshot.version !== 1) {
+    throw new Error(`Unsupported headless snapshot version: ${snapshot.version}`);
+  }
+
+  if (snapshot.state.version !== 1) {
+    throw new Error(`Unsupported game state version: ${snapshot.state.version}`);
+  }
+
+  if (!Number.isInteger(snapshot.frameId) || snapshot.frameId < 0) {
+    throw new Error(`Invalid snapshot frame id: ${snapshot.frameId}`);
+  }
+
+  if (!Number.isInteger(snapshot.nextEventId) || snapshot.nextEventId < 1) {
+    throw new Error(`Invalid snapshot next event id: ${snapshot.nextEventId}`);
+  }
+
+  if (!Number.isInteger(snapshot.state.rngState) || snapshot.state.rngState <= 0) {
+    throw new Error(`Invalid snapshot RNG state: ${snapshot.state.rngState}`);
+  }
 }
 
 function signature(state: GameState): string {

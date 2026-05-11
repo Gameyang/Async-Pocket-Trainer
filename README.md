@@ -531,10 +531,14 @@ MVP에서는 다음 요소를 제외할 수 있습니다.
 npm ci
 npm run dev
 npm run headless -- --seed qa --runs 20 --waves 15
+npm run qa:headless:30
+npm run qa:headless:50
+npm run qa:headless:100
 npm run verify
 ```
 
 `npm run verify`는 lint, test, headless QA, build를 순서대로 실행하는 기본 품질 게이트입니다.
+30/50/100웨이브 QA 프로파일은 장시간 밸런스와 회귀를 확인할 때 선택 실행합니다.
 
 게임 로직은 HTML 렌더링에서 분리된 `HeadlessGameClient`가 실행합니다. LLM/CI는 브라우저 없이 전투, 포획, 팀 교체, 웨이브 진행, 밸런스 지표를 JSON으로 검증합니다.
 

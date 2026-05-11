@@ -17,6 +17,10 @@
     "format:write": "prettier --write .",
     "headless": "tsx src/tools/headless-run.ts",
     "qa:headless": "tsx src/tools/headless-run.ts --runs 12 --waves 15 --strategy greedy",
+    "qa:headless:30": "tsx src/tools/headless-run.ts --seed long-run --runs 100 --waves 30 --strategy greedy",
+    "qa:headless:50": "tsx src/tools/headless-run.ts --seed stress --runs 200 --waves 50 --strategy greedy",
+    "qa:headless:100": "tsx src/tools/headless-run.ts --seed endurance --runs 100 --waves 100 --strategy greedy",
+    "qa:headless:conserve": "tsx src/tools/headless-run.ts --seed conserve --runs 100 --waves 30 --strategy conserveBalls",
     "test": "vitest run",
     "test:watch": "vitest",
     "verify": "npm run lint && npm run test && npm run qa:headless && npm run build"

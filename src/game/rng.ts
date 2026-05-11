@@ -10,6 +10,14 @@ export class SeededRng {
     return this.state >>> 0;
   }
 
+  setState(state: number): void {
+    if (!Number.isInteger(state) || state <= 0 || state > 0xffffffff) {
+      throw new Error(`Invalid RNG state: ${state}`);
+    }
+
+    this.state = state >>> 0;
+  }
+
   nextUint(): number {
     let x = this.state;
     x ^= x << 13;

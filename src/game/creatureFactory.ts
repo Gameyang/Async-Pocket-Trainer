@@ -14,7 +14,7 @@ export interface CreatureFactoryOptions {
 export function createCreature(options: CreatureFactoryOptions): Creature {
   const species = options.speciesId
     ? getSpecies(options.speciesId)
-    : pickSpeciesForWave(options.rng, options.wave);
+    : pickSpeciesForWave(options.rng, options.wave, options.balance);
   const moves = pickMoves(species, options.rng);
   const growth =
     options.role === "trainer"
@@ -59,9 +59,13 @@ export function healTeam(team: readonly Creature[]): Creature[] {
   }));
 }
 
-function pickSpeciesForWave(rng: SeededRng, wave: number): SpeciesDefinition {
-  const rarityBudget = clamp(1 + Math.floor(wave / 3), 1, 8);
-  const maxBaseTotal = 250 + wave * 20;
+function pickSpeciesForWave(
+  rng: SeededRng,
+  wave: number,
+  balance: GameBalance,
+): SpeciesDefinition {
+  const rarityBudget = clamp(1 + Math.floor(wave / balance.wildRarityBudgetWaveDivisor), 1, 8);
+  const maxBaseTotal = balance.wildBaseStatBudgetBase + wave * balance.wildBaseStatBudgetPerWave;
   const candidates = speciesCatalog.filter((species) => {
     return species.rarity <= rarityBudget && getBaseStatTotal(species) <= maxBaseTotal;
   });

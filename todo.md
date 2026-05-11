@@ -76,37 +76,37 @@ QA 결과에서 반드시 볼 항목:
 
 ### Core
 
-- [ ] `HeadlessGameClient` 저장/로드 스냅샷 추가
+- [x] `HeadlessGameClient` 저장/로드 스냅샷 추가
 - [ ] battle log를 replay 가능한 event stream으로 확장
 - [ ] 상태 이상, 급소, 명중률, 타입 상성의 테스트 케이스 강화
 - [ ] 포획 후 팀 비교 정책을 전략별로 분리
 - [ ] 상점 행동을 `FrameAction` 기반으로 확장
 - [ ] 5 wave 트레이너 스냅샷 생성과 로컬 더미 PvP 추가
-- [ ] Google Sheets 연동 전용 직렬화 타입 추가
+- [x] Google Sheets 연동 전용 직렬화 타입 추가
 
 ### Async Sync / Google Sheets 준비
 
-- [ ] wave checkpoint 도달 시 저장할 `TrainerSnapshot` 도메인 타입 정의
-- [ ] Google Sheets row로 바로 변환 가능한 `SheetTrainerRow` DTO 정의
-- [ ] schema version, player id, trainer name, wave, createdAt, seed, team power, team JSON, run summary 필드 고정
-- [ ] team JSON은 creature id, species id, stats, current HP, moves, power score, rarity score를 포함
-- [ ] `TrainerSnapshot` -> `SheetTrainerRow` serializer와 parser 구현
-- [ ] parser는 schema version 불일치, 필수 필드 누락, 깨진 JSON을 명확히 거부
-- [ ] 실제 API 대신 local/mock sheet adapter를 먼저 구현
-- [ ] headless QA에서 mock sheet에 업로드/조회/랜덤 상대 선택까지 검증
-- [ ] wave별 상대 후보 필터링과 오래된 데이터 제외 정책 준비
+- [x] wave checkpoint 도달 시 저장할 `TrainerSnapshot` 도메인 타입 정의
+- [x] Google Sheets row로 바로 변환 가능한 `SheetTrainerRow` DTO 정의
+- [x] schema version, player id, trainer name, wave, createdAt, seed, team power, team JSON, run summary 필드 고정
+- [x] team JSON은 creature id, species id, stats, current HP, moves, power score, rarity score를 포함
+- [x] `TrainerSnapshot` -> `SheetTrainerRow` serializer와 parser 구현
+- [x] parser는 schema version 불일치, 필수 필드 누락, 깨진 JSON을 명확히 거부
+- [x] 실제 API 대신 local/mock sheet adapter를 먼저 구현
+- [x] headless QA에서 mock sheet에 업로드/조회/랜덤 상대 선택까지 검증
+- [x] wave별 상대 후보 필터링과 오래된 데이터 제외 정책 준비
 - [ ] 실제 Google Sheets adapter는 인증, spreadsheet id, range, append/read만 나중에 추가
 - [ ] 게임 코어는 Google Sheets API를 직접 import하지 않고 sync adapter interface만 호출
 
 ### QA
 
-- [ ] run report에 wave별 사망 원인 추가
-- [ ] run report에 capture success rate 추가
-- [ ] run report에 wave별 팀 파워 분포 추가
+- [x] run report에 wave별 사망 원인 추가
+- [x] run report에 capture success rate 추가
+- [x] run report에 wave별 팀 파워 분포 추가
 - [ ] wave checkpoint snapshot 생성/직렬화/역직렬화 invariant 추가
-- [ ] frame action 기반 input simulation controller 추가
+- [x] frame action 기반 input simulation controller 추가
 - [ ] 스타터 선택/전투 진입/포획/방출/교체/상점/회복/재시작 입력 경로 커버리지 추가
-- [ ] 30/50/100 wave 장시간 QA 프로파일 추가
+- [x] 30/50/100 wave 장시간 QA 프로파일 추가
 - [ ] seed replay 명령 추가
 - [ ] 밸런스 변경 전후 비교용 JSON summary 추가
 
@@ -129,8 +129,8 @@ QA 결과에서 반드시 볼 항목:
 
 ### Balance
 
-- [ ] wave 1~5 초반 전멸률 조정
-- [ ] wave 5/10/15 트레이너 체크포인트 난이도 조정
+- [x] wave 1~5 초반 전멸률 조정
+- [x] wave 5/10/15 트레이너 체크포인트 난이도 조정
 - [ ] 포획 확률과 볼 가격의 경제 곡선 조정
 - [ ] 좋은 개체를 얻었을 때 팀 파워가 체감되도록 score 공식 조정
 - [ ] 100-run 기준 평균 진행도 목표를 정하고 회귀 감지
@@ -179,13 +179,13 @@ QA 결과에서 반드시 볼 항목:
 
 ## 8. 현재 우선순위 체크리스트
 
-- [ ] `HeadlessGameClient` 저장/로드 스냅샷 구현
-- [ ] long-run QA 명령을 CI에서 선택 실행 가능하게 분리
-- [ ] wave별 밸런스 리포트 추가
+- [x] `HeadlessGameClient` 저장/로드 스냅샷 구현
+- [x] long-run QA 명령을 CI에서 선택 실행 가능하게 분리
+- [x] wave별 밸런스 리포트 추가
 - [ ] battle replay event stream 설계
 - [ ] capture/team decision 정책 테스트 강화
-- [ ] Google Sheets-ready checkpoint snapshot schema 설계
-- [ ] local/mock sheet adapter 구현
-- [ ] 30/50/100 wave 장시간 QA 프로파일 추가
+- [x] Google Sheets-ready checkpoint snapshot schema 설계
+- [x] local/mock sheet adapter 구현
+- [x] 30/50/100 wave 장시간 QA 프로파일 추가
 - [ ] WebGL/Canvas 렌더러 전에 `GameFrame` 계약 확장
 - [ ] Google Sheets 연동 전 로컬 더미 PvP 스냅샷 구현

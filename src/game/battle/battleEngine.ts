@@ -14,6 +14,7 @@ export interface AutoBattleOptions {
   playerTeam: readonly Creature[];
   enemyTeam: readonly Creature[];
   rng: SeededRng;
+  damageScale?: number;
   maxTurns?: number;
 }
 
@@ -54,14 +55,14 @@ export function runAutoBattle(options: AutoBattleOptions): BattleResult {
         continue;
       }
 
-      const move = chooseMove(action.actor, target);
+      const move = chooseMove(action.actor, target, options.damageScale);
       const missed = !options.rng.chance(move.accuracy);
       let damage = 0;
       let effectiveness = 1;
       let critical = false;
 
       if (!missed) {
-        const result = calculateDamage(action.actor, target, move, options.rng);
+        const result = calculateDamage(action.actor, target, move, options.rng, options.damageScale);
         damage = Math.min(target.currentHp, result.damage);
         effectiveness = result.effectiveness;
         critical = result.critical;
@@ -96,9 +97,10 @@ export function runAutoBattle(options: AutoBattleOptions): BattleResult {
   };
 }
 
-function chooseMove(attacker: Creature, defender: Creature): MoveDefinition {
+function chooseMove(attacker: Creature, defender: Creature, damageScale?: number): MoveDefinition {
   return attacker.moves.reduce((best, move) => {
-    return estimateDamage(attacker, defender, move) > estimateDamage(attacker, defender, best)
+    return estimateDamage(attacker, defender, move, damageScale) >
+      estimateDamage(attacker, defender, best, damageScale)
       ? move
       : best;
   }, attacker.moves[0]);

@@ -25,7 +25,10 @@ export function createTrainerEncounter(
 ): EncounterSnapshot {
   const teamSize = Math.min(
     balance.maxTeamSize,
-    1 + Math.floor((wave - 1) / balance.checkpointInterval),
+    1 +
+      Math.floor(
+        (wave - 1) / (balance.checkpointInterval * balance.trainerTeamSizeCheckpointSpan),
+      ),
   );
   const team = Array.from({ length: teamSize }, () =>
     createCreature({ rng, wave, balance, role: "trainer" }),

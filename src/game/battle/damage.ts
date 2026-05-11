@@ -22,12 +22,13 @@ export function estimateDamage(
   attacker: Creature,
   defender: Creature,
   move: MoveDefinition,
+  damageScale = 0.24,
 ): number {
   const attack = move.category === "special" ? attacker.stats.special : attacker.stats.attack;
   const defense = move.category === "special" ? defender.stats.special : defender.stats.defense;
   const stab = attacker.types.includes(move.type) ? 1.25 : 1;
   const effectiveness = getTypeEffectiveness(move.type, defender.types);
-  const raw = ((move.power * attack) / Math.max(1, defense)) * 0.24 + 2;
+  const raw = ((move.power * attack) / Math.max(1, defense)) * damageScale + 2;
 
   return Math.max(0, Math.floor(raw * stab * effectiveness * move.accuracy));
 }
@@ -37,6 +38,7 @@ export function calculateDamage(
   defender: Creature,
   move: MoveDefinition,
   rng: SeededRng,
+  damageScale = 0.24,
 ): DamageResult {
   const attack = move.category === "special" ? attacker.stats.special : attacker.stats.attack;
   const defense = move.category === "special" ? defender.stats.special : defender.stats.defense;
@@ -46,7 +48,7 @@ export function calculateDamage(
   const criticalChance = clamp(attacker.stats.speed / 720, 0.04, 0.22);
   const critical = rng.chance(criticalChance);
   const criticalMultiplier = critical ? 1.5 : 1;
-  const raw = ((move.power * attack) / Math.max(1, defense)) * 0.24 + 2;
+  const raw = ((move.power * attack) / Math.max(1, defense)) * damageScale + 2;
   const damage =
     effectiveness === 0
       ? 0
