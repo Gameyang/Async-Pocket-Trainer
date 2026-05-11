@@ -521,6 +521,31 @@ MVP에서는 다음 요소를 제외할 수 있습니다.
 
 ---
 
+## 개발 하네스
+
+코드 개발은 GitHub PR과 자동 검증을 기준으로 진행합니다.
+
+### 로컬 명령
+
+```bash
+npm ci
+npm run dev
+npm run verify
+```
+
+`npm run verify`는 lint, test, build를 순서대로 실행하는 기본 품질 게이트입니다.
+
+### GitHub 자동화
+
+- PR과 `main` push마다 GitHub Actions CI 실행
+- `main` 빌드 성공 시 GitHub Pages 배포 워크플로 실행
+- Dependabot으로 npm 패키지와 GitHub Actions 버전 갱신
+- PR 템플릿과 이슈 템플릿으로 변경 요약, 검증 결과, 완료 기준 기록
+
+자세한 기준은 [`docs/engineering-harness.md`](docs/engineering-harness.md)를 참고합니다.
+
+---
+
 ## MVP 목표
 
 첫 번째 플레이 가능한 버전은 다음 기능을 목표로 합니다.
