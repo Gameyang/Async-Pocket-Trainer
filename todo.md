@@ -18,6 +18,10 @@
 headless 게임 로직 자동 QA/개선으로 30~100 wave 장시간 진행이 가능한 코어를 만든다.
 ```
 
+이 goal의 완료 기준은 실제 렌더링 모듈을 붙이기 직전까지 필요한 모든 게임 로직 구현이 headless 환경에서 마무리된 상태다. 렌더링은 표현 계층일 뿐이며, 전투/포획/팀 편성/상점/웨이브/저장/비동기 대전/밸런스 검증은 `HeadlessGameClient`와 `GameFrame` 계약만으로 먼저 완성되어야 한다.
+
+Headless 진행은 실제 유저 게임 플레이와 최대한 동일해야 한다. 자동 QA는 내부 상태를 직접 조작하지 않고, 매 frame마다 `GameFrame.actions`에 노출된 입력 후보를 선택해 dispatch하는 방식으로 스타터 선택, 다음 전투 진입, 포획 시도, 포획 포기, 팀 교체, 상점 구매, 회복, 재시작 같은 모든 입력 상황을 시뮬레이션한다.
+
 반복 루프:
 
 1. 측정: `npm run verify`와 long-run headless QA를 실행한다.
@@ -54,6 +58,7 @@ npm run headless -- --seed stress --runs 200 --waves 50 --strategy greedy
 QA 결과에서 반드시 볼 항목:
 
 - `invariantErrors`가 비어 있는가
+- headless 자동 진행이 `GameFrame.actions` 기반 input simulation으로만 이루어졌는가
 - `completedTargetWave`가 목표 대비 너무 낮지 않은가
 - `averageFinalWave`가 변경 전보다 악화되지 않았는가
 - `gameOvers`가 특정 wave나 특정 상대에 과도하게 몰리지 않는가
@@ -77,6 +82,8 @@ QA 결과에서 반드시 볼 항목:
 - [ ] run report에 wave별 사망 원인 추가
 - [ ] run report에 capture success rate 추가
 - [ ] run report에 wave별 팀 파워 분포 추가
+- [ ] frame action 기반 input simulation controller 추가
+- [ ] 스타터 선택/전투 진입/포획/방출/교체/상점/회복/재시작 입력 경로 커버리지 추가
 - [ ] 30/50/100 wave 장시간 QA 프로파일 추가
 - [ ] seed replay 명령 추가
 - [ ] 밸런스 변경 전후 비교용 JSON summary 추가
@@ -110,6 +117,7 @@ QA 결과에서 반드시 볼 항목:
 - `Math.random()`을 직접 사용하지 않는다. 모든 랜덤은 seed 가능한 RNG를 통한다.
 - seed 없는 테스트를 추가하지 않는다.
 - `GameFrame`을 우회해 UI가 `GameState`를 직접 해석하지 않는다.
+- headless QA에서 private 메서드나 내부 상태를 직접 조작해 유저 입력 경로를 건너뛰지 않는다.
 - invariant 또는 frame contract 실패 상태에서 새 기능을 얹지 않는다.
 - `npm run verify` 실패 상태를 방치하지 않는다.
 - 사용자가 만든 변경을 되돌리지 않는다.
