@@ -350,20 +350,20 @@
 
 이 게임은 서버를 직접 운영하지 않는 것을 목표로 합니다.
 
-대신 Google Calendar를 단순 저장소처럼 사용합니다.
+대신 Google Sheets를 단순 저장소처럼 사용합니다.
 
 ### 기본 아이디어
 
-각 유저가 특정 웨이브에 도달하면 현재 팀 상태를 Google Calendar 이벤트 형태로 기록합니다.
+각 유저가 특정 웨이브에 도달하면 현재 팀 상태를 Google Sheets row 형태로 기록합니다.
 
-다른 유저는 비동기적으로 Calendar 이벤트를 읽어와 대전 상대 데이터로 사용합니다.
+다른 유저는 비동기적으로 Sheets row를 읽어와 대전 상대 데이터로 사용합니다.
 
 ```text
 유저 A: 10웨이브 도달
   ↓
 팀 데이터 JSON 생성
   ↓
-Google Calendar 이벤트로 업로드
+Google Sheets row로 업로드
   ↓
 유저 B: 10웨이브 도달
   ↓
@@ -376,15 +376,15 @@ Google Calendar 이벤트로 업로드
 
 ---
 
-## Google Calendar 저장 예시
+## Google Sheets 저장 예시
 
-### 이벤트 제목
+### 시트 이름
 
 ```text
-APT_WAVE_10_TEAM
+APT_WAVE_TEAMS
 ```
 
-### 이벤트 설명
+### row 데이터 예시
 
 ```json
 {
@@ -427,7 +427,7 @@ Static HTML / JS / WebGL
   ↓
 Browser Local Storage
   ↓
-Google Calendar API
+Google Sheets API
   ↓
 Async Trainer Team Data
 ```
@@ -447,7 +447,7 @@ Async Trainer Team Data
 * 기술 데이터: 정적 JSON
 * 타입 상성표: 정적 JSON
 * 유저 진행도: 로컬 저장
-* 비동기 대전 데이터: Google Calendar 이벤트
+* 비동기 대전 데이터: Google Sheets row
 
 ---
 
@@ -564,8 +564,8 @@ npm run verify
 * [ ] 웨이브 진행
 * [ ] 5웨이브마다 트레이너 대전
 * [ ] 로컬 저장
-* [ ] Google Calendar에 팀 기록 저장
-* [ ] Google Calendar에서 상대 팀 다운로드
+* [ ] Google Sheets에 팀 기록 저장
+* [ ] Google Sheets에서 상대 팀 다운로드
 * [ ] GitHub Pages 배포
 
 ---
@@ -587,11 +587,11 @@ npm run verify
 * JSON 직렬화
 * 로컬 더미 상대 데이터로 PvP 테스트
 
-### 3단계: Google Calendar 연동
+### 3단계: Google Sheets 연동
 
-* Calendar API 인증
-* 팀 데이터 이벤트 생성
-* 웨이브별 이벤트 검색
+* Sheets API 인증
+* 팀 데이터 row 생성
+* 웨이브별 row 검색
 * 상대 팀 다운로드
 
 ### 4단계: 밸런싱
