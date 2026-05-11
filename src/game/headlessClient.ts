@@ -4,6 +4,7 @@ import { createCreature, healTeam } from "./creatureFactory";
 import { defaultBalance, starterSpeciesIds } from "./data/catalog";
 import { SeededRng } from "./rng";
 import { chooseReplacementIndex, getTeamHealthRatio, scoreTeam } from "./scoring";
+import { createGameFrame, type GameFrame } from "./view/frame";
 import { calculateReward, createEncounter, replaceTeamAfterCapture } from "./wave/waveSystem";
 import type {
   AutoPlayOptions,
@@ -26,6 +27,7 @@ export class HeadlessGameClient {
   private readonly rng: SeededRng;
   private state: GameState;
   private nextEventId = 1;
+  private frameId = 0;
 
   constructor(options: HeadlessClientOptions = {}) {
     const seed = options.seed ?? "apt-headless-default";
@@ -50,6 +52,10 @@ export class HeadlessGameClient {
 
   getSnapshot(): GameState {
     return cloneState(this.state);
+  }
+
+  getFrame(): GameFrame {
+    return createGameFrame(this.state, this.balance, this.frameId);
   }
 
   getBalance(): GameBalance {
@@ -82,6 +88,7 @@ export class HeadlessGameClient {
     }
 
     this.syncRngState();
+    this.frameId += 1;
     return this.getSnapshot();
   }
 
@@ -106,6 +113,7 @@ export class HeadlessGameClient {
     }
 
     this.syncRngState();
+    this.frameId += 1;
 
     if (before === signature(this.state) && this.state.phase !== "gameOver") {
       this.addEvent("stalled", "Headless auto step made no progress.");

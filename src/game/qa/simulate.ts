@@ -1,6 +1,7 @@
 import { HeadlessGameClient } from "../headlessClient";
 import { getTeamHealthRatio, scoreTeam } from "../scoring";
 import type { AutoPlayOptions, BallType, GamePhase, GameState, RunSummary } from "../types";
+import { validateFrameContract } from "../view/frame";
 
 export interface HeadlessQaOptions {
   seed: string;
@@ -51,6 +52,9 @@ export function runHeadlessQa(options: HeadlessQaOptions): HeadlessQaReport {
 
     for (let step = 0; step < options.waves * 8 + 24; step += 1) {
       errors.push(...validateState(snapshot).map((error) => `step ${step}: ${error}`));
+      errors.push(
+        ...validateFrameContract(client.getFrame()).map((error) => `step ${step} frame: ${error}`),
+      );
 
       if (snapshot.phase === "gameOver" || snapshot.currentWave > options.waves) {
         break;
@@ -60,6 +64,9 @@ export function runHeadlessQa(options: HeadlessQaOptions): HeadlessQaReport {
     }
 
     errors.push(...validateState(snapshot).map((error) => `final: ${error}`));
+    errors.push(
+      ...validateFrameContract(client.getFrame()).map((error) => `final frame: ${error}`),
+    );
 
     runs.push({
       ...client.getRunSummary(),

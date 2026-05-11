@@ -37,3 +37,4 @@ npm run verify
 - 랜덤이 들어가는 로직은 seed를 주입할 수 있게 만들어 재현 가능한 테스트를 유지합니다.
 - 브라우저 저장소와 Google Calendar 연동은 순수 직렬화 로직과 외부 API 호출을 분리합니다.
 - 게임 기능 QA는 HTML 조작보다 `HeadlessGameClient` action과 snapshot 검증을 우선합니다.
+- 렌더러는 `GameState`가 아니라 `GameFrame`을 소비합니다. 새 UI/WebGL 기능은 필요한 entity/action/cue가 frame 계약에 먼저 드러나야 합니다.

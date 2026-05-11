@@ -65,7 +65,9 @@ export interface Creature {
 
 export interface BattleLogEntry {
   turn: number;
+  actorId: string;
   actor: string;
+  targetId: string;
   target: string;
   move: string;
   damage: number;

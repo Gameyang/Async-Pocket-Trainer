@@ -1,25 +1,34 @@
-import { starterSpeciesIds } from "../game/data/catalog";
 import { HeadlessGameClient } from "../game/headlessClient";
-import { getTeamHealthRatio, scoreTeam } from "../game/scoring";
-import type { BallType, Creature, GameAction, GameState } from "../game/types";
+import type { FrameAction, FrameEntity, GameFrame } from "../game/view/frame";
+
+const pokemonAssetUrls = import.meta.glob<string>("../resources/pokemon/*.webp", {
+  eager: true,
+  import: "default",
+  query: "?url",
+});
 
 export function mountHtmlRenderer(root: HTMLElement, client: HeadlessGameClient): void {
   const render = () => {
-    const snapshot = client.getSnapshot();
-    root.innerHTML = renderSnapshot(snapshot, client.getBalance());
-    bindActions(root, client, render);
+    const frame = client.getFrame();
+    root.innerHTML = renderFrame(frame);
+    bindActions(root, client, frame, render);
   };
 
   render();
 }
 
-function bindActions(root: HTMLElement, client: HeadlessGameClient, render: () => void): void {
-  root.querySelectorAll<HTMLButtonElement>("[data-action]").forEach((button) => {
+function bindActions(
+  root: HTMLElement,
+  client: HeadlessGameClient,
+  frame: GameFrame,
+  render: () => void,
+): void {
+  root.querySelectorAll<HTMLButtonElement>("[data-action-id]").forEach((button) => {
     button.addEventListener("click", () => {
-      const action = parseAction(button.dataset);
+      const action = frame.actions.find((candidate) => candidate.id === button.dataset.actionId);
 
-      if (action) {
-        client.dispatch(action);
+      if (action?.enabled) {
+        client.dispatch(action.action);
         render();
       }
     });
@@ -31,66 +40,39 @@ function bindActions(root: HTMLElement, client: HeadlessGameClient, render: () =
   });
 
   root.querySelector<HTMLButtonElement>("[data-auto-run]")?.addEventListener("click", () => {
-    const targetWave = client.getSnapshot().currentWave + 5;
+    const targetWave = client.getFrame().hud.wave + 5;
     client.autoPlay({ maxWaves: targetWave, strategy: "greedy" });
     render();
   });
 }
 
-function parseAction(dataset: DOMStringMap): GameAction | undefined {
-  switch (dataset.action) {
-    case "START_RUN":
-      return {
-        type: "START_RUN",
-        starterSpeciesId: Number.parseInt(dataset.speciesId ?? `${starterSpeciesIds[0]}`, 10),
-      };
-    case "RESOLVE_NEXT_ENCOUNTER":
-      return { type: "RESOLVE_NEXT_ENCOUNTER" };
-    case "ATTEMPT_CAPTURE":
-      return { type: "ATTEMPT_CAPTURE", ball: (dataset.ball ?? "pokeBall") as BallType };
-    case "ACCEPT_CAPTURE":
-      return {
-        type: "ACCEPT_CAPTURE",
-        replaceIndex:
-          dataset.replaceIndex === undefined
-            ? undefined
-            : Number.parseInt(dataset.replaceIndex, 10),
-      };
-    case "DISCARD_CAPTURE":
-      return { type: "DISCARD_CAPTURE" };
-    case "REST_TEAM":
-      return { type: "REST_TEAM" };
-    case "BUY_BALL":
-      return {
-        type: "BUY_BALL",
-        ball: (dataset.ball ?? "pokeBall") as BallType,
-        quantity: Number.parseInt(dataset.quantity ?? "1", 10),
-      };
-    default:
-      return undefined;
-  }
-}
+function renderFrame(frame: GameFrame): string {
+  const playerEntities = frame.scene.playerSlots
+    .map((id) => frame.entities.find((entity) => entity.id === id))
+    .filter((entity): entity is FrameEntity => Boolean(entity));
+  const opponentEntities = frame.scene.opponentSlots
+    .map((id) => frame.entities.find((entity) => entity.id === id))
+    .filter((entity): entity is FrameEntity => Boolean(entity));
+  const pendingCapture = frame.scene.pendingCaptureId
+    ? frame.entities.find((entity) => entity.id === frame.scene.pendingCaptureId)
+    : undefined;
 
-function renderSnapshot(
-  snapshot: GameState,
-  balance: ReturnType<HeadlessGameClient["getBalance"]>,
-): string {
   return `
-    <main class="app-shell">
+    <main class="app-shell" data-frame-id="${frame.frameId}" data-protocol="${frame.protocolVersion}">
       <header class="topbar">
         <div>
-          <p class="eyebrow">Headless Core</p>
-          <h1>Async Pocket Trainer</h1>
+          <p class="eyebrow">Frame API ${frame.protocolVersion}</p>
+          <h1>${escapeHtml(frame.hud.title)}</h1>
         </div>
         <div class="run-status">
-          <span>Wave ${snapshot.currentWave}</span>
-          <span>${snapshot.phase}</span>
-          <span>${snapshot.money}c</span>
+          <span>Wave ${frame.hud.wave}</span>
+          <span>${frame.phase}</span>
+          <span>${frame.hud.money}c</span>
         </div>
       </header>
 
       <section class="command-band">
-        ${renderPrimaryActions(snapshot, balance)}
+        ${frame.actions.map(renderAction).join("")}
         <button type="button" data-auto-step>Auto Step</button>
         <button type="button" data-auto-run>Auto +5 Waves</button>
       </section>
@@ -99,35 +81,42 @@ function renderSnapshot(
         <article class="panel team-panel">
           <div class="panel-heading">
             <h2>Team</h2>
-            <span>Power ${scoreTeam(snapshot.team)}</span>
+            <span>Power ${frame.hud.teamPower}</span>
           </div>
           <div class="meter" aria-label="Team HP">
-            <span style="width: ${Math.round(getTeamHealthRatio(snapshot.team) * 100)}%"></span>
+            <span style="width: ${Math.round(frame.hud.teamHpRatio * 100)}%"></span>
           </div>
           <div class="team-list">
-            ${snapshot.team.map(renderCreature).join("") || '<p class="empty">Choose a starter.</p>'}
+            ${playerEntities.map(renderEntity).join("") || '<p class="empty">Choose a starter.</p>'}
           </div>
         </article>
 
         <article class="panel encounter-panel">
           <div class="panel-heading">
-            <h2>Encounter</h2>
-            <span>${snapshot.pendingEncounter?.kind ?? "none"}</span>
+            <h2>${escapeHtml(frame.scene.title)}</h2>
+            <span>${escapeHtml(frame.scene.subtitle)}</span>
           </div>
-          ${renderEncounter(snapshot)}
+          ${(pendingCapture ? [pendingCapture] : opponentEntities).map(renderEntity).join("") || '<p class="empty">No pending encounter.</p>'}
+          <div class="battle-log">
+            ${frame.visualCues
+              .filter((cue) => cue.type !== "phase.change")
+              .slice(-6)
+              .map((cue) => `<p>${escapeHtml(cue.label)}</p>`)
+              .join("")}
+          </div>
         </article>
 
         <article class="panel log-panel">
           <div class="panel-heading">
-            <h2>Events</h2>
-            <span>${snapshot.events.length}</span>
+            <h2>Timeline</h2>
+            <span>${frame.timeline.length}</span>
           </div>
           <ol class="event-list">
-            ${snapshot.events
-              .slice()
-              .reverse()
-              .slice(0, 12)
-              .map((event) => `<li><span>W${event.wave}</span>${escapeHtml(event.message)}</li>`)
+            ${frame.timeline
+              .map(
+                (entry) =>
+                  `<li data-tone="${entry.tone}"><span>W${entry.wave}</span>${escapeHtml(entry.text)}</li>`,
+              )
               .join("")}
           </ol>
         </article>
@@ -136,92 +125,34 @@ function renderSnapshot(
   `;
 }
 
-function renderPrimaryActions(
-  snapshot: GameState,
-  balance: ReturnType<HeadlessGameClient["getBalance"]>,
-): string {
-  if (snapshot.phase === "starterChoice" || snapshot.phase === "gameOver") {
-    return starterSpeciesIds
-      .map(
-        (speciesId) =>
-          `<button type="button" data-action="START_RUN" data-species-id="${speciesId}">Start ${speciesId}</button>`,
-      )
-      .join("");
-  }
+function renderAction(action: FrameAction): string {
+  const disabled = action.enabled ? "" : " disabled";
+  const reason = action.reason ? ` title="${escapeHtml(action.reason)}"` : "";
 
-  if (snapshot.phase === "ready") {
-    return `
-      <button type="button" data-action="RESOLVE_NEXT_ENCOUNTER">Next Encounter</button>
-      <button type="button" data-action="REST_TEAM">Rest ${balance.teamRestCost}c</button>
-      <button type="button" data-action="BUY_BALL" data-ball="pokeBall" data-quantity="1">Buy Poké Ball</button>
-      <button type="button" data-action="BUY_BALL" data-ball="greatBall" data-quantity="1">Buy Great Ball</button>
-    `;
-  }
-
-  if (snapshot.phase === "captureDecision") {
-    return `
-      <button type="button" data-action="ATTEMPT_CAPTURE" data-ball="pokeBall">Poké Ball (${snapshot.balls.pokeBall})</button>
-      <button type="button" data-action="ATTEMPT_CAPTURE" data-ball="greatBall">Great Ball (${snapshot.balls.greatBall})</button>
-      <button type="button" data-action="DISCARD_CAPTURE">Skip</button>
-    `;
-  }
-
-  if (snapshot.phase === "teamDecision") {
-    const replacementButtons =
-      snapshot.team.length >= balance.maxTeamSize
-        ? snapshot.team
-            .map(
-              (creature, index) =>
-                `<button type="button" data-action="ACCEPT_CAPTURE" data-replace-index="${index}">Replace ${escapeHtml(
-                  creature.speciesName,
-                )}</button>`,
-            )
-            .join("")
-        : `<button type="button" data-action="ACCEPT_CAPTURE">Keep</button>`;
-
-    return `${replacementButtons}<button type="button" data-action="DISCARD_CAPTURE">Release</button>`;
-  }
-
-  return "";
+  return `<button type="button" data-action-id="${escapeHtml(action.id)}" data-role="${action.role}"${disabled}${reason}>${escapeHtml(
+    action.label,
+  )}</button>`;
 }
 
-function renderEncounter(snapshot: GameState): string {
-  const pending = snapshot.pendingCapture ?? snapshot.pendingEncounter?.enemyTeam[0];
-  const battleLog = snapshot.lastBattle?.log.slice(-6) ?? [];
-
+function renderEntity(entity: FrameEntity): string {
   return `
-    ${pending ? renderCreature(pending) : '<p class="empty">No pending encounter.</p>'}
-    <div class="battle-log">
-      ${battleLog
-        .map(
-          (entry) =>
-            `<p><strong>T${entry.turn}</strong> ${escapeHtml(entry.actor)} used ${escapeHtml(
-              entry.move,
-            )} for ${entry.damage}</p>`,
-        )
-        .join("")}
-    </div>
-  `;
-}
-
-function renderCreature(creature: Creature): string {
-  const hpPercent = Math.round((creature.currentHp / creature.stats.hp) * 100);
-
-  return `
-    <article class="creature">
-      <div>
-        <h3>${escapeHtml(creature.speciesName)}</h3>
-        <p>${creature.types.join(" / ")} · P${creature.powerScore} · R${creature.rarityScore}</p>
+    <article class="creature" data-entity-id="${escapeHtml(entity.id)}" data-owner="${entity.owner}">
+      <div class="creature-heading">
+        <div>
+          <h3>${escapeHtml(entity.name)}</h3>
+          <p>${entity.typeLabels.join(" / ")} · P${entity.scores.power} · R${entity.scores.rarity}</p>
+        </div>
+        <img src="${resolveAssetPath(entity.assetPath)}" alt="" loading="lazy" />
       </div>
-      <div class="hp-line"><span style="width: ${hpPercent}%"></span></div>
+      <div class="hp-line"><span style="width: ${Math.round(entity.hp.ratio * 100)}%"></span></div>
       <dl>
-        <div><dt>HP</dt><dd>${creature.currentHp}/${creature.stats.hp}</dd></div>
-        <div><dt>Atk</dt><dd>${creature.stats.attack}</dd></div>
-        <div><dt>Def</dt><dd>${creature.stats.defense}</dd></div>
-        <div><dt>Spc</dt><dd>${creature.stats.special}</dd></div>
-        <div><dt>Spd</dt><dd>${creature.stats.speed}</dd></div>
+        <div><dt>HP</dt><dd>${entity.hp.current}/${entity.hp.max}</dd></div>
+        <div><dt>Atk</dt><dd>${entity.stats.attack}</dd></div>
+        <div><dt>Def</dt><dd>${entity.stats.defense}</dd></div>
+        <div><dt>Spc</dt><dd>${entity.stats.special}</dd></div>
+        <div><dt>Spd</dt><dd>${entity.stats.speed}</dd></div>
       </dl>
-      <p class="moves">${creature.moves.map((move) => escapeHtml(move.name)).join(", ")}</p>
+      <p class="moves">${entity.moves.map((move) => escapeHtml(move.name)).join(", ")}</p>
     </article>
   `;
 }
@@ -233,4 +164,8 @@ function escapeHtml(value: string): string {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+function resolveAssetPath(assetPath: string): string {
+  return pokemonAssetUrls[`../${assetPath}`] ?? assetPath;
 }

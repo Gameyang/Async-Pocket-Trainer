@@ -34,14 +34,18 @@ npm run build
 
 ## Headless 우선 구조
 
-게임 로직은 `src/game/` 아래의 headless 코어가 소유합니다. HTML은 `HeadlessGameClient`의 snapshot을 렌더링하고 버튼 클릭을 action으로 dispatch하는 얇은 어댑터입니다.
+게임 로직은 `src/game/` 아래의 headless 코어가 소유합니다. HTML/WebGL/Canvas는 `HeadlessGameClient`가 만든 `GameFrame`을 렌더링하고, frame의 action descriptor를 다시 dispatch하는 얇은 어댑터입니다.
 
 ```text
 HeadlessGameClient
   -> deterministic RNG
   -> encounter / battle / capture / team / shop state
-  -> snapshot
-  -> HTML renderer
+  -> GameFrame
+     -> entities with assetKey / assetPath / owner / slot
+     -> available actions
+     -> timeline
+     -> visual cues
+  -> HTML / WebGL / Canvas renderer
 ```
 
 LLM 또는 CI는 브라우저를 열지 않고 아래 명령으로 게임 진행을 검증합니다.
@@ -51,6 +55,17 @@ npm run headless -- --seed qa --runs 20 --waves 15 --strategy greedy
 ```
 
 출력 JSON에는 run별 최종 웨이브, 전멸 여부, 팀 전투력, 체력 비율, invariant 오류가 포함됩니다. 밸런싱 변경 PR은 이 수치를 전후 비교합니다.
+
+## Graphics API 계약
+
+렌더러는 `GameState`를 직접 해석하지 않습니다. `src/game/view/frame.ts`의 `createGameFrame` 결과만 사용합니다.
+
+- `entities`: 렌더링 가능한 모든 전투 개체. `id`, `owner`, `slot`, `assetKey`, `assetPath`, HP, 스탯, 기술을 포함합니다.
+- `actions`: 현재 프레임에서 누를 수 있는 게임 명령. UI는 `action.id`와 `action.label`을 표시하고 `action.action`만 dispatch합니다.
+- `visualCues`: 공격, 빗나감, 기절, phase 변경 같은 그래픽스/사운드 트리거입니다.
+- `timeline`: 로그 UI 또는 리플레이 디버깅에 쓰는 안정적인 이벤트 목록입니다.
+
+이 계약은 headless QA에서 `validateFrameContract`로 검사합니다. 따라서 그래픽스 없이도 WebGL 렌더러가 필요한 id, asset, cue 누락을 먼저 잡습니다.
 
 ## 테스트 하네스 원칙
 

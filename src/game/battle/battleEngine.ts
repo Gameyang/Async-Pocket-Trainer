@@ -70,7 +70,9 @@ export function runAutoBattle(options: AutoBattleOptions): BattleResult {
 
       log.push({
         turn: turns,
+        actorId: action.actor.instanceId,
         actor: action.actor.speciesName,
+        targetId: target.instanceId,
         target: target.speciesName,
         move: move.name,
         damage,

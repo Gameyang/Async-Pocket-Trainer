@@ -154,6 +154,21 @@ h1 {
   background: #fbfcfa;
 }
 
+.creature-heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.creature img {
+  width: 48px;
+  height: 48px;
+  flex: 0 0 auto;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
 .creature h3 {
   margin-bottom: 2px;
   font-size: 1rem;
@@ -249,6 +264,18 @@ h1 {
 .event-list span {
   color: #718078;
   font-weight: 800;
+}
+
+.event-list [data-tone="success"] {
+  border-left-color: #2d8a68;
+}
+
+.event-list [data-tone="warning"] {
+  border-left-color: #ba8b2d;
+}
+
+.event-list [data-tone="danger"] {
+  border-left-color: #b14c43;
 }
 
 @media (max-width: 980px) {
