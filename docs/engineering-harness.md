@@ -84,6 +84,7 @@ npm run render:check
 - 랜덤 생성은 seed 가능한 인터페이스로 감싸 테스트 재현성을 확보합니다.
 - 전투 계산, 포획 확률, 팀 교체 평가는 DOM과 분리된 순수 함수로 둡니다.
 - `localStorage`, `IndexedDB`, Google Sheets API는 얇은 어댑터로 분리합니다.
+- 공개 Google Sheet 읽기는 API key/token 없이 `publicCsv` adapter로 처리합니다. 공개 쓰기는 Apps Script Web App submit URL이 있을 때만 opaque POST로 수행합니다.
 - 외부 API 테스트는 실제 네트워크 대신 fixture와 mock을 기본값으로 사용합니다.
 - 데이터 JSON은 로드 테스트를 추가해 필수 필드 누락을 빠르게 잡습니다.
 - 화면 테스트는 마지막 단계로 두고, 기본 기능 검증은 headless action과 snapshot으로 수행합니다.

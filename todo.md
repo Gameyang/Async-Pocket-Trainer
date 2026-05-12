@@ -38,6 +38,8 @@
 ## 5. Google Sheets Sync
 
 - [x] `SyncSettings` 타입을 추가한다: `enabled`, `spreadsheetId`, `range`, `apiKey` 또는 `accessToken`.
+- [x] API key/token 없이 공개 Google Sheet를 읽는 `publicCsv` 모드를 추가한다.
+- [x] 공개 시트 쓰기를 위한 Apps Script `Submit URL` checkpoint 전송을 추가한다.
 - [x] sync 설정은 localStorage에만 저장하고 repository에는 저장하지 않는다.
 - [x] checkpoint wave에서 `TrainerSnapshot` append를 호출한다.
 - [x] trainer encounter wave에서 sheet rows를 list/filter/pick해 상대 후보로 연결한다.

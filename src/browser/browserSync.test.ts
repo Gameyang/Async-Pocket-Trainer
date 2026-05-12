@@ -8,6 +8,7 @@ import type { SyncSettings } from "./syncSettings";
 
 const enabledSettings: SyncSettings = {
   enabled: true,
+  mode: "googleApi",
   spreadsheetId: "sheet-1",
   range: "APT_WAVE_TEAMS!A:I",
   apiKey: "key-1",
@@ -61,6 +62,7 @@ describe("browser sync controller", () => {
       client,
       {
         enabled: true,
+        mode: "googleApi",
         spreadsheetId: "sheet-1",
         range: "APT_WAVE_TEAMS!A:I",
       },
@@ -71,7 +73,104 @@ describe("browser sync controller", () => {
 
     expect(sync.getStatus()).toMatchObject({ state: "offline" });
   });
+
+  it("loads public CSV candidates and skips checkpoint append as read-only", async () => {
+    const opponent = buildOpponentSnapshot();
+    const csv = toCsv([serializeTrainerSnapshot(opponent)]);
+    const client = readyAtCheckpoint("public-csv-sync");
+    const sync = new BrowserSyncController(
+      client,
+      {
+        enabled: true,
+        mode: "publicCsv",
+        spreadsheetId: "sheet-1",
+        range: "APT_WAVE_TEAMS!A:I",
+      },
+      {
+        playerId: "player-a",
+        now: () => "2026-05-12T00:00:00.000Z",
+        fetch: async () => ({
+          ok: true,
+          status: 200,
+          statusText: "OK",
+          async json() {
+            return {};
+          },
+          async text() {
+            return csv;
+          },
+        }),
+      },
+    );
+
+    await sync.afterDispatch({ type: "DISCARD_CAPTURE" });
+    expect(sync.getStatus().message).toContain("read-only");
+
+    await sync.beforeDispatch({ type: "RESOLVE_NEXT_ENCOUNTER" });
+    client.dispatch({ type: "RESOLVE_NEXT_ENCOUNTER" });
+
+    expect(client.getSnapshot().lastBattle?.enemyTeam[0].instanceId).toBe(
+      opponent.team[0].creatureId,
+    );
+  });
+
+  it("submits public CSV checkpoints through Apps Script when a submit URL is configured", async () => {
+    const requests: FetchRequest[] = [];
+    const client = readyAtCheckpoint("public-csv-submit");
+    const sync = new BrowserSyncController(
+      client,
+      {
+        enabled: true,
+        mode: "publicCsv",
+        spreadsheetId: "sheet-1",
+        range: "APT_WAVE_TEAMS!A:I",
+        appsScriptSubmitUrl: "https://script.google.com/macros/s/deploy-id/exec",
+      },
+      {
+        playerId: "player-a",
+        now: () => "2026-05-12T00:00:00.000Z",
+        fetch: async (url, init = {}) => {
+          requests.push({ url, init });
+          return {
+            ok: true,
+            status: 200,
+            statusText: "OK",
+            async json() {
+              return {};
+            },
+            async text() {
+              return "";
+            },
+          };
+        },
+      },
+    );
+
+    expect(sync.getStatus().message).toContain("Apps Script ready");
+
+    await sync.afterDispatch({ type: "DISCARD_CAPTURE" });
+
+    const post = requests.find((request) => request.init.method === "POST");
+    expect(post?.url).toBe("https://script.google.com/macros/s/deploy-id/exec");
+    expect(post?.init.mode).toBe("no-cors");
+    expect(JSON.parse(post?.init.body ?? "{}").snapshot).toMatchObject({
+      playerId: "player-a",
+      wave: 5,
+      seed: "public-csv-submit",
+    });
+    expect(sync.getStatus().message).toContain("submitted");
+  });
 });
+
+interface FetchRequest {
+  url: string;
+  init: {
+    method?: string;
+    mode?: RequestMode;
+    headers?: Record<string, string>;
+    body?: string;
+  };
+}
 
 function readyAtCheckpoint(seed: string): HeadlessGameClient {
   const client = new HeadlessGameClient({ seed, trainerName: "Browser Sync" });
@@ -110,4 +209,25 @@ function buildOpponentSnapshot() {
     runSummary: opponent.getRunSummary(),
     wave: 5,
   });
+}
+
+function toCsv(rows: readonly ReturnType<typeof serializeTrainerSnapshot>[]): string {
+  const headers = [
+    "version",
+    "playerId",
+    "trainerName",
+    "wave",
+    "createdAt",
+    "seed",
+    "teamPower",
+    "teamJson",
+    "runSummaryJson",
+  ];
+  return [headers, ...rows.map((row) => Object.values(row).map(String))]
+    .map((row) => row.map(csvCell).join(","))
+    .join("\n");
+}
+
+function csvCell(value: string): string {
+  return `"${value.replaceAll('"', '""')}"`;
 }

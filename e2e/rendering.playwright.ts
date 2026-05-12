@@ -69,36 +69,48 @@ test("drives browser input through frame actions, disabled actions, and reload s
   await expect.poll(() => readShellState(page)).toEqual(beforeReload);
 });
 
-test("saves sync settings and uses mocked Google Sheets during checkpoint play", async ({
+test("reads public CSV and submits Apps Script without credentials during checkpoint play", async ({
   page,
 }) => {
   const requests: string[] = [];
-  await page.route("**/sheets.googleapis.com/**", async (route) => {
+  await page.route("**/gviz/tq**", async (route) => {
+    requests.push(route.request().method());
+    await route.fulfill({
+      contentType: "text/csv",
+      body: '"version,","playerId","trainerName","wave","createdAt","seed","teamPower","teamJson","runSummaryJson"\n',
+    });
+  });
+  await page.route("https://script.google.com/**", async (route) => {
     requests.push(route.request().method());
     await route.fulfill({
       contentType: "application/json",
-      body: JSON.stringify({
-        values: [],
-      }),
+      body: JSON.stringify({ ok: true }),
     });
   });
 
   await openFresh(page);
   await page.locator('input[name="enabled"]').check();
-  await page.locator('input[name="spreadsheetId"]').fill("sheet-1");
-  await page.locator('input[name="range"]').fill("APT_WAVE_TEAMS!A:I");
-  await page.locator('input[name="apiKey"]').fill("key-1");
+  await page.locator('select[name="mode"]').selectOption("publicCsv");
+  await page
+    .locator('input[name="spreadsheetId"]')
+    .fill("14ra0Y0zLORpru3nmT-obu3yD1UuO2kAJP4aJ5IIA0M4");
+  await page.locator('input[name="range"]').fill("APT_WAVE_TEAMS");
+  await page
+    .locator('input[name="appsScriptSubmitUrl"]')
+    .fill("https://script.google.com/macros/s/deploy-id/exec");
+  await page.locator('input[name="apiKey"]').fill("");
+  await page.locator('input[name="accessToken"]').fill("");
   await page.locator('[data-sync-form] button[type="submit"]').click();
-  await expect(page.locator("[data-sync-status]")).toContainText("Sync ready");
+  await expect(page.locator("[data-sync-status]")).toContainText("Apps Script ready");
 
   await clickAction(page, '[data-action-id^="start:"]');
   await playUntilWave(page, 5);
-  await expect(page.locator("[data-sync-status]")).toContainText("appended");
+  await expect(page.locator("[data-sync-status]")).toContainText("submitted");
 
   await clickAction(page, '[data-action-id="encounter:next"]');
   await expect(page.locator("[data-sync-status]")).toContainText(/No sheet trainer|ended/);
-  expect(requests).toContain("POST");
   expect(requests).toContain("GET");
+  expect(requests).toContain("POST");
 });
 
 async function playUntilWave(page: Page, targetWave: number): Promise<void> {

@@ -87,8 +87,11 @@ function bindSettings(root: HTMLElement, options: HtmlRendererOptions, render: (
     const data = new FormData(form);
     await options.onSyncSettingsSubmit({
       enabled: data.get("enabled") === "on",
+      mode: data.get("mode") === "googleApi" ? "googleApi" : "publicCsv",
       spreadsheetId: String(data.get("spreadsheetId") ?? ""),
       range: String(data.get("range") ?? ""),
+      publicCsvUrl: optionalFormValue(data.get("publicCsvUrl")),
+      appsScriptSubmitUrl: optionalFormValue(data.get("appsScriptSubmitUrl")),
       apiKey: optionalFormValue(data.get("apiKey")),
       accessToken: optionalFormValue(data.get("accessToken")),
     });
@@ -226,6 +229,8 @@ function renderSyncPanel(statusView: HtmlRendererStatusView): string {
 
   const { settings, status } = sync;
   const checked = settings.enabled ? " checked" : "";
+  const publicSelected = settings.mode === "publicCsv" ? " selected" : "";
+  const googleSelected = settings.mode === "googleApi" ? " selected" : "";
   const notice = statusView.saveNotice
     ? `<p class="save-notice" data-save-notice>${escapeHtml(statusView.saveNotice)}</p>`
     : "";
@@ -242,12 +247,27 @@ function renderSyncPanel(statusView: HtmlRendererStatusView): string {
           <span>Google Sheets</span>
         </label>
         <label>
-          <span>Sheet</span>
+          <span>Mode</span>
+          <select name="mode">
+            <option value="publicCsv"${publicSelected}>Public CSV</option>
+            <option value="googleApi"${googleSelected}>Google API</option>
+          </select>
+        </label>
+        <label>
+          <span>Sheet URL/ID</span>
           <input name="spreadsheetId" value="${escapeHtml(settings.spreadsheetId)}" autocomplete="off" />
         </label>
         <label>
-          <span>Range</span>
+          <span>Tab/Range</span>
           <input name="range" value="${escapeHtml(settings.range)}" autocomplete="off" />
+        </label>
+        <label>
+          <span>CSV URL</span>
+          <input name="publicCsvUrl" value="${escapeHtml(settings.publicCsvUrl ?? "")}" autocomplete="off" />
+        </label>
+        <label>
+          <span>Submit URL</span>
+          <input name="appsScriptSubmitUrl" value="${escapeHtml(settings.appsScriptSubmitUrl ?? "")}" autocomplete="off" />
         </label>
         <label>
           <span>API key</span>

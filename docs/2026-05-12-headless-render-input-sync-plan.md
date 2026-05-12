@@ -50,12 +50,19 @@
 
 - Add `SyncSettings` as browser-local configuration:
   - `enabled: boolean`
+  - `mode: "publicCsv" | "googleApi"`
   - `spreadsheetId: string`
   - `range: string`
+  - `publicCsvUrl?: string`
+  - `appsScriptSubmitUrl?: string`
   - `apiKey?: string`
   - `accessToken?: string`
 - Storage key: `apt:sync-settings:v1`.
 - Default state: sync disabled.
+- Default configured public sheet id: `14ra0Y0zLORpru3nmT-obu3yD1UuO2kAJP4aJ5IIA0M4`.
+- Public CSV mode reads `https://docs.google.com/spreadsheets/d/{spreadsheetId}/gviz/tq?tqx=out:csv&sheet={sheetName}` without API key or token.
+- Public CSV mode can submit checkpoint snapshots through an optional Apps Script Web App `/exec` URL. It uses an opaque `no-cors` POST and verifies success through the sheet/read path rather than reading the POST response.
+- Public CSV mode without `appsScriptSubmitUrl` is read-only; checkpoint append is skipped with a visible read-only status.
 - UI should expose a compact sync panel for enabled/offline/error/last synced state.
 - On checkpoint-ready wave, create `TrainerSnapshot` and append through configured adapter.
 - On trainer encounter wave, list candidates for the current wave and inject the picked snapshot into `HeadlessGameClient` before resolving the encounter.
@@ -83,7 +90,9 @@
 - The browser app can be played from starter choice through a trainer checkpoint using visible button clicks only. Done in `e2e/rendering.playwright.ts`.
 - Reload restores the same run from localStorage. Done through `src/browser/clientStorage.ts`.
 - Sync settings are stored only in localStorage and are disabled by default. Done through `src/browser/syncSettings.ts`.
-- Mocked Google Sheets sync can append and pick a snapshot from the browser integration path. Done through `src/browser/browserSync.ts` and Playwright route mocks.
+- Public Google Sheet CSV sync can read trainer candidates without API key or token. Done through `src/game/sync/publicCsvSheetAdapter.ts`.
+- Apps Script Web App submit can send checkpoint snapshots without API key or token. Done through `src/game/sync/appsScriptSubmitAdapter.ts`.
+- Mocked Google Sheets sync can append through API mode and pick a snapshot from the browser integration path. Done through `src/browser/browserSync.ts` and Playwright route mocks.
 - Headless invariants remain at 0 and renderer contract tests still forbid raw `GameState` renderer usage. Confirmed by `npm run verify` and `npm run qa:headless:100`.
 - When this day plan is complete, all checkboxes in root `todo.md` are checked. Done.
 

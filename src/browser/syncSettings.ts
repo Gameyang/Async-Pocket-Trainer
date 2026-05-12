@@ -1,19 +1,27 @@
 import type { StorageLike } from "./clientStorage";
 
 export const SYNC_SETTINGS_STORAGE_KEY = "apt:sync-settings:v1";
+export const DEFAULT_PUBLIC_SPREADSHEET_ID = "14ra0Y0zLORpru3nmT-obu3yD1UuO2kAJP4aJ5IIA0M4";
+export const DEFAULT_PUBLIC_SHEET_NAME = "APT_WAVE_TEAMS";
+
+export type SyncMode = "publicCsv" | "googleApi";
 
 export interface SyncSettings {
   enabled: boolean;
+  mode: SyncMode;
   spreadsheetId: string;
   range: string;
+  publicCsvUrl?: string;
+  appsScriptSubmitUrl?: string;
   apiKey?: string;
   accessToken?: string;
 }
 
 export const DEFAULT_SYNC_SETTINGS: SyncSettings = {
   enabled: false,
-  spreadsheetId: "",
-  range: "APT_WAVE_TEAMS!A:I",
+  mode: "publicCsv",
+  spreadsheetId: DEFAULT_PUBLIC_SPREADSHEET_ID,
+  range: DEFAULT_PUBLIC_SHEET_NAME,
 };
 
 export function loadSyncSettings(storage: StorageLike = getBrowserStorage()): SyncSettings {
@@ -55,18 +63,36 @@ export function normalizeSyncSettings(value: unknown): SyncSettings {
 
   const source = value as Record<string, unknown>;
   const enabled = readBoolean(source.enabled, "enabled");
+  const mode = readMode(source.mode, source);
   const spreadsheetId = readString(source.spreadsheetId, "spreadsheetId");
   const range = readString(source.range, "range");
+  const publicCsvUrl = readOptionalString(source.publicCsvUrl, "publicCsvUrl");
+  const appsScriptSubmitUrl = readOptionalString(source.appsScriptSubmitUrl, "appsScriptSubmitUrl");
   const apiKey = readOptionalString(source.apiKey, "apiKey");
   const accessToken = readOptionalString(source.accessToken, "accessToken");
 
   return {
     enabled,
+    mode,
     spreadsheetId,
     range: range || DEFAULT_SYNC_SETTINGS.range,
+    ...(publicCsvUrl ? { publicCsvUrl } : {}),
+    ...(appsScriptSubmitUrl ? { appsScriptSubmitUrl } : {}),
     ...(apiKey ? { apiKey } : {}),
     ...(accessToken ? { accessToken } : {}),
   };
+}
+
+function readMode(value: unknown, source: Record<string, unknown>): SyncMode {
+  if (value === undefined) {
+    return source.apiKey || source.accessToken ? "googleApi" : "publicCsv";
+  }
+
+  if (value === "publicCsv" || value === "googleApi") {
+    return value;
+  }
+
+  throw new Error("Sync settings mode must be publicCsv or googleApi.");
 }
 
 function readBoolean(value: unknown, field: string): boolean {

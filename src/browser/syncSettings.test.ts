@@ -20,6 +20,7 @@ describe("browser sync settings storage", () => {
     const saved = saveSyncSettings(
       {
         enabled: true,
+        mode: "googleApi",
         spreadsheetId: "sheet-1",
         range: "APT_WAVE_TEAMS!A:I",
         apiKey: "key-1",
@@ -40,13 +41,16 @@ describe("browser sync settings storage", () => {
     const saved = saveSyncSettings(
       {
         enabled: true,
+        mode: "publicCsv",
         spreadsheetId: "sheet-1",
         range: "APT_WAVE_TEAMS!A:I",
+        appsScriptSubmitUrl: "https://script.google.com/macros/s/deploy-id/exec",
       },
       storage,
     );
 
     expect(saved.enabled).toBe(true);
+    expect(saved.appsScriptSubmitUrl).toContain("/exec");
     expect(hasSyncCredentials(saved)).toBe(false);
   });
 
@@ -64,6 +68,7 @@ describe("browser sync settings storage", () => {
     saveSyncSettings(
       {
         enabled: true,
+        mode: "googleApi",
         spreadsheetId: "sheet-1",
         range: "APT_WAVE_TEAMS!A:I",
         accessToken: "token-1",

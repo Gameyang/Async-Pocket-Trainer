@@ -472,7 +472,8 @@ h1 {
   font-weight: 900;
 }
 
-.sync-form input {
+.sync-form input,
+.sync-form select {
   min-width: 0;
   height: 36px;
   border: 2px solid #17202a;
