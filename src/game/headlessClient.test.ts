@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { HeadlessGameClient, type HeadlessClientSnapshot } from "./headlessClient";
+import { createTrainerSnapshot } from "./sync/trainerSnapshot";
 
 describe("HeadlessGameClient", () => {
   it("runs deterministic simulations without a DOM renderer", () => {
@@ -68,4 +69,102 @@ describe("HeadlessGameClient", () => {
 
     expect(() => HeadlessGameClient.fromSnapshot(saved)).toThrow(/Invalid snapshot RNG state/);
   });
+
+  it("uses matching local trainer snapshots for checkpoint PvP encounters", () => {
+    const opponent = new HeadlessGameClient({
+      seed: "dummy-opponent",
+      trainerName: "Dummy Rival",
+    });
+    opponent.dispatch({ type: "START_RUN", starterSpeciesId: 4 });
+    const opponentSnapshot = createTrainerSnapshot(opponent.getSnapshot(), {
+      playerId: "dummy-rival",
+      createdAt: "2026-05-12T00:00:00.000Z",
+      runSummary: opponent.getRunSummary(),
+      wave: 5,
+    });
+    const challenger = new HeadlessGameClient({
+      seed: "dummy-challenger",
+      trainerSnapshots: [opponentSnapshot],
+      balance: {
+        wildStatGrowthPerWave: 0,
+        trainerStatGrowthPerWave: 0,
+        battleDamageScale: 0.08,
+      },
+    });
+
+    challenger.autoPlay({ maxWaves: 4, strategy: "greedy" });
+    expect(challenger.getSnapshot().currentWave).toBe(5);
+
+    challenger.dispatch({ type: "RESOLVE_NEXT_ENCOUNTER" });
+    const snapshot = challenger.getSnapshot();
+
+    expect(snapshot.lastBattle?.kind).toBe("trainer");
+    expect(snapshot.lastBattle?.enemyTeam[0].instanceId).toBe(opponentSnapshot.team[0].creatureId);
+    expect(snapshot.events.some((event) => event.message.includes("Dummy Rival Snapshot"))).toBe(
+      true,
+    );
+  });
+
+  it("covers core user input paths through FrameAction dispatch", () => {
+    const shopClient = startFromFrameAction("input-shop");
+    const shopFrame = shopClient.getFrame();
+    expect(shopFrame.actions.map((action) => action.id)).toEqual([
+      "encounter:next",
+      "shop:rest",
+      "shop:pokeball",
+      "shop:greatball",
+    ]);
+    dispatchFrameAction(shopClient, "shop:rest");
+    dispatchFrameAction(shopClient, "shop:pokeball");
+    expect(shopClient.getSnapshot().events.map((event) => event.type)).toContain("team_rested");
+    expect(shopClient.getSnapshot().events.map((event) => event.type)).toContain("ball_bought");
+
+    const skipClient = startFromFrameAction("input-skip");
+    dispatchFrameAction(skipClient, "encounter:next");
+    expect(skipClient.getSnapshot().phase).toBe("captureDecision");
+    dispatchFrameAction(skipClient, "capture:skip");
+    expect(skipClient.getSnapshot()).toMatchObject({
+      phase: "ready",
+      currentWave: 2,
+    });
+
+    const captureClient = startFromFrameAction("capture-1");
+    dispatchFrameAction(captureClient, "encounter:next");
+    dispatchFrameAction(captureClient, "capture:greatball");
+    expect(captureClient.getSnapshot().phase).toBe("teamDecision");
+    dispatchFrameAction(captureClient, "team:keep");
+    expect(captureClient.getSnapshot()).toMatchObject({
+      phase: "ready",
+      currentWave: 2,
+    });
+    expect(captureClient.getSnapshot().team).toHaveLength(2);
+
+    const restartClient = startFromFrameAction("input-restart");
+    const gameOverSnapshot = restartClient.saveSnapshot();
+    gameOverSnapshot.state.phase = "gameOver";
+    gameOverSnapshot.state.gameOverReason = "Restart coverage.";
+    const restored = HeadlessGameClient.fromSnapshot(gameOverSnapshot);
+    dispatchFrameAction(restored, "start:4");
+    expect(restored.getSnapshot()).toMatchObject({
+      phase: "ready",
+      currentWave: 1,
+    });
+    expect(restored.getSnapshot().team[0].speciesId).toBe(4);
+  });
 });
+
+function startFromFrameAction(seed: string): HeadlessGameClient {
+  const client = new HeadlessGameClient({ seed });
+  dispatchFrameAction(client, "start:1");
+  return client;
+}
+
+function dispatchFrameAction(client: HeadlessGameClient, actionId: string): void {
+  const action = client.getFrame().actions.find((candidate) => candidate.id === actionId);
+
+  if (!action || !action.enabled) {
+    throw new Error(`Missing enabled frame action ${actionId}`);
+  }
+
+  client.dispatch(action.action);
+}

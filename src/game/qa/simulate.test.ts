@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { compareHeadlessQaReports, summarizeHeadlessQaReport } from "./reportSummary";
 import { runHeadlessQa } from "./simulate";
 
 describe("headless QA simulation", () => {
@@ -39,5 +40,39 @@ describe("headless QA simulation", () => {
     expect(report.invariantErrors).toEqual([]);
     expect(report.aggregate.completedTargetWave).toBeGreaterThanOrEqual(5);
     expect(report.aggregate.averageFinalWave).toBeGreaterThanOrEqual(22);
+  });
+
+  it("produces deterministic seed replay summaries and balance comparison deltas", () => {
+    const options = {
+      seed: "replay-summary",
+      runs: 4,
+      waves: 6,
+      strategy: "greedy" as const,
+    };
+    const first = runHeadlessQa(options);
+    const second = runHeadlessQa(options);
+    const summary = summarizeHeadlessQaReport(first);
+    const comparison = compareHeadlessQaReports(first, second);
+
+    expect(second).toEqual(first);
+    expect(summary).toMatchObject({
+      options,
+      invariantErrorCount: 0,
+      aggregate: expect.objectContaining({
+        runs: 4,
+      }),
+    });
+    expect(summary.waves[0]).toMatchObject({
+      wave: 1,
+      battleWinRate: expect.any(Number),
+      medianTeamPower: expect.any(Number),
+    });
+    expect(comparison.delta).toEqual({
+      completedTargetWave: 0,
+      gameOvers: 0,
+      averageFinalWave: 0,
+      averageTeamPower: 0,
+      averageHealthRatio: 0,
+    });
   });
 });

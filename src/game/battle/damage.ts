@@ -24,7 +24,8 @@ export function estimateDamage(
   move: MoveDefinition,
   damageScale = 0.24,
 ): number {
-  const attack = move.category === "special" ? attacker.stats.special : attacker.stats.attack;
+  const attack =
+    move.category === "special" ? attacker.stats.special : getEffectiveAttack(attacker);
   const defense = move.category === "special" ? defender.stats.special : defender.stats.defense;
   const stab = attacker.types.includes(move.type) ? 1.25 : 1;
   const effectiveness = getTypeEffectiveness(move.type, defender.types);
@@ -40,7 +41,8 @@ export function calculateDamage(
   rng: SeededRng,
   damageScale = 0.24,
 ): DamageResult {
-  const attack = move.category === "special" ? attacker.stats.special : attacker.stats.attack;
+  const attack =
+    move.category === "special" ? attacker.stats.special : getEffectiveAttack(attacker);
   const defense = move.category === "special" ? defender.stats.special : defender.stats.defense;
   const stab = attacker.types.includes(move.type) ? 1.25 : 1;
   const effectiveness = getTypeEffectiveness(move.type, defender.types);
@@ -55,4 +57,10 @@ export function calculateDamage(
       : Math.max(1, Math.floor(raw * stab * effectiveness * variance * criticalMultiplier));
 
   return { damage, effectiveness, critical };
+}
+
+function getEffectiveAttack(attacker: Creature): number {
+  return attacker.status?.type === "burn"
+    ? Math.max(1, Math.floor(attacker.stats.attack * 0.5))
+    : attacker.stats.attack;
 }

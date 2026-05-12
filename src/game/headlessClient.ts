@@ -5,10 +5,17 @@ import { defaultBalance, starterSpeciesIds } from "./data/catalog";
 import { SeededRng } from "./rng";
 import { chooseReplacementIndex, getTeamHealthRatio, scoreTeam } from "./scoring";
 import { createGameFrame, type GameFrame } from "./view/frame";
-import { calculateReward, createEncounter, replaceTeamAfterCapture } from "./wave/waveSystem";
+import {
+  calculateReward,
+  createEncounter,
+  createTrainerEncounterFromSnapshot,
+  replaceTeamAfterCapture,
+} from "./wave/waveSystem";
+import type { TrainerSnapshot } from "./sync/trainerSnapshot";
 import type {
   AutoPlayOptions,
   BallType,
+  EncounterSnapshot,
   GameAction,
   GameBalance,
   GameEvent,
@@ -20,6 +27,7 @@ export interface HeadlessClientOptions {
   seed?: string;
   trainerName?: string;
   balance?: Partial<GameBalance>;
+  trainerSnapshots?: TrainerSnapshot[];
 }
 
 export interface HeadlessClientSnapshot {
@@ -27,12 +35,14 @@ export interface HeadlessClientSnapshot {
   frameId: number;
   nextEventId: number;
   balance: GameBalance;
+  trainerSnapshots: TrainerSnapshot[];
   state: GameState;
 }
 
 export class HeadlessGameClient {
   private balance: GameBalance;
   private readonly rng: SeededRng;
+  private trainerSnapshots: TrainerSnapshot[];
   private state: GameState;
   private nextEventId = 1;
   private frameId = 0;
@@ -41,6 +51,7 @@ export class HeadlessGameClient {
     const seed = options.seed ?? "apt-headless-default";
     this.balance = { ...defaultBalance, ...options.balance };
     this.rng = new SeededRng(seed);
+    this.trainerSnapshots = [...(options.trainerSnapshots ?? [])];
     this.state = {
       version: 1,
       seed,
@@ -63,6 +74,7 @@ export class HeadlessGameClient {
       seed: snapshot.state.seed,
       trainerName: snapshot.state.trainerName,
       balance: snapshot.balance,
+      trainerSnapshots: snapshot.trainerSnapshots,
     });
     client.loadSnapshot(snapshot);
     return client;
@@ -78,6 +90,7 @@ export class HeadlessGameClient {
       frameId: this.frameId,
       nextEventId: this.nextEventId,
       balance: { ...this.balance },
+      trainerSnapshots: this.trainerSnapshots,
       state: this.state,
     });
   }
@@ -86,6 +99,7 @@ export class HeadlessGameClient {
     assertValidClientSnapshot(snapshot);
 
     this.balance = { ...snapshot.balance };
+    this.trainerSnapshots = [...snapshot.trainerSnapshots];
     this.state = cloneState(snapshot.state);
     this.rng.setState(this.state.rngState);
     this.frameId = snapshot.frameId;
@@ -149,7 +163,10 @@ export class HeadlessGameClient {
         this.discardCapture();
       }
     } else if (this.state.phase === "teamDecision") {
-      this.acceptCapture();
+      const replaceIndex = this.state.pendingCapture
+        ? chooseReplacementIndex(this.state.team, this.state.pendingCapture, strategy)
+        : undefined;
+      this.acceptCapture(replaceIndex, { chooseReplacement: false });
     }
 
     this.syncRngState();
@@ -233,7 +250,7 @@ export class HeadlessGameClient {
       return;
     }
 
-    const encounter = createEncounter(this.state.currentWave, this.rng, this.balance);
+    const encounter = this.createEncounter();
     const battle = runAutoBattle({
       kind: encounter.kind,
       playerTeam: this.state.team,
@@ -327,14 +344,21 @@ export class HeadlessGameClient {
     }
   }
 
-  private acceptCapture(replaceIndex?: number): void {
+  private acceptCapture(
+    replaceIndex?: number,
+    options: { chooseReplacement?: boolean } = {},
+  ): void {
     if (this.state.phase !== "teamDecision" || !this.state.pendingCapture) {
       this.addEvent("team_decision_ignored", "No captured creature is pending.");
       return;
     }
 
     const captured = this.state.pendingCapture;
-    const resolvedIndex = replaceIndex ?? chooseReplacementIndex(this.state.team, captured);
+    const resolvedIndex =
+      replaceIndex ??
+      (options.chooseReplacement === false
+        ? undefined
+        : chooseReplacementIndex(this.state.team, captured));
     const oldTeamPower = scoreTeam(this.state.team);
     this.state.team = replaceTeamAfterCapture(
       this.state.team,
@@ -453,6 +477,26 @@ export class HeadlessGameClient {
     return this.state.balls.greatBall > 0 ? "greatBall" : undefined;
   }
 
+  private createEncounter(): EncounterSnapshot {
+    const snapshot = this.pickTrainerSnapshot(this.state.currentWave);
+
+    if (snapshot) {
+      return createTrainerEncounterFromSnapshot(snapshot);
+    }
+
+    return createEncounter(this.state.currentWave, this.rng, this.balance);
+  }
+
+  private pickTrainerSnapshot(wave: number): TrainerSnapshot | undefined {
+    if (wave % this.balance.checkpointInterval !== 0) {
+      return undefined;
+    }
+
+    const candidates = this.trainerSnapshots.filter((snapshot) => snapshot.wave === wave);
+
+    return candidates.length > 0 ? this.rng.pick(candidates) : undefined;
+  }
+
   private advanceWave(): void {
     this.state.currentWave += 1;
     this.state.phase = "ready";
@@ -504,6 +548,10 @@ function assertValidClientSnapshot(snapshot: HeadlessClientSnapshot): void {
 
   if (!Number.isInteger(snapshot.state.rngState) || snapshot.state.rngState <= 0) {
     throw new Error(`Invalid snapshot RNG state: ${snapshot.state.rngState}`);
+  }
+
+  if (!Array.isArray(snapshot.trainerSnapshots)) {
+    throw new Error("Headless snapshot trainerSnapshots must be an array.");
   }
 }
 

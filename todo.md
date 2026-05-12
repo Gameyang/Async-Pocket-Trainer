@@ -77,11 +77,11 @@ QA 결과에서 반드시 볼 항목:
 ### Core
 
 - [x] `HeadlessGameClient` 저장/로드 스냅샷 추가
-- [ ] battle log를 replay 가능한 event stream으로 확장
-- [ ] 상태 이상, 급소, 명중률, 타입 상성의 테스트 케이스 강화
-- [ ] 포획 후 팀 비교 정책을 전략별로 분리
-- [ ] 상점 행동을 `FrameAction` 기반으로 확장
-- [ ] 5 wave 트레이너 스냅샷 생성과 로컬 더미 PvP 추가
+- [x] battle log를 replay 가능한 event stream으로 확장
+- [x] 상태 이상, 급소, 명중률, 타입 상성의 테스트 케이스 강화
+- [x] 포획 후 팀 비교 정책을 전략별로 분리
+- [x] 상점 행동을 `FrameAction` 기반으로 확장
+- [x] 5 wave 트레이너 스냅샷 생성과 로컬 더미 PvP 추가
 - [x] Google Sheets 연동 전용 직렬화 타입 추가
 
 ### Async Sync / Google Sheets 준비
@@ -95,45 +95,45 @@ QA 결과에서 반드시 볼 항목:
 - [x] 실제 API 대신 local/mock sheet adapter를 먼저 구현
 - [x] headless QA에서 mock sheet에 업로드/조회/랜덤 상대 선택까지 검증
 - [x] wave별 상대 후보 필터링과 오래된 데이터 제외 정책 준비
-- [ ] 실제 Google Sheets adapter는 인증, spreadsheet id, range, append/read만 나중에 추가
-- [ ] 게임 코어는 Google Sheets API를 직접 import하지 않고 sync adapter interface만 호출
+- [x] 실제 Google Sheets adapter는 인증, spreadsheet id, range, append/read만 나중에 추가
+- [x] 게임 코어는 Google Sheets API를 직접 import하지 않고 sync adapter interface만 호출
 
 ### QA
 
 - [x] run report에 wave별 사망 원인 추가
 - [x] run report에 capture success rate 추가
 - [x] run report에 wave별 팀 파워 분포 추가
-- [ ] wave checkpoint snapshot 생성/직렬화/역직렬화 invariant 추가
+- [x] wave checkpoint snapshot 생성/직렬화/역직렬화 invariant 추가
 - [x] frame action 기반 input simulation controller 추가
-- [ ] 스타터 선택/전투 진입/포획/방출/교체/상점/회복/재시작 입력 경로 커버리지 추가
+- [x] 스타터 선택/전투 진입/포획/방출/교체/상점/회복/재시작 입력 경로 커버리지 추가
 - [x] 30/50/100 wave 장시간 QA 프로파일 추가
-- [ ] seed replay 명령 추가
-- [ ] 밸런스 변경 전후 비교용 JSON summary 추가
+- [x] seed replay 명령 추가
+- [x] 밸런스 변경 전후 비교용 JSON summary 추가
 
 ### Frame API
 
-- [ ] `GameFrame`에 battle replay tick 또는 sequence index 추가
-- [ ] visual cue에 sound/effect hook을 추가할지 검토
-- [ ] entity owner/slot 규칙을 WebGL 배치가 바로 쓰기 좋게 고정
-- [ ] asset key를 오리지널 몬스터 전환에도 유지 가능한 형태로 일반화
-- [ ] frame contract 테스트를 새 cue/action 추가 때마다 확장
+- [x] `GameFrame`에 battle replay tick 또는 sequence index 추가
+- [x] visual cue에 sound/effect hook을 추가할지 검토
+- [x] entity owner/slot 규칙을 WebGL 배치가 바로 쓰기 좋게 고정
+- [x] asset key를 오리지널 몬스터 전환에도 유지 가능한 형태로 일반화
+- [x] frame contract 테스트를 새 cue/action 추가 때마다 확장
 
 ### Renderer
 
-- [ ] HTML 렌더러가 raw `GameState`를 참조하지 않는지 주기적으로 점검
-- [ ] Canvas/WebGL 렌더러도 `GameFrame`만 소비하도록 구현
-- [ ] 렌더러 이벤트는 `FrameAction.action`만 dispatch
-- [ ] 렌더링 비주얼은 `sandbox/index.html`의 모바일 게임기 프레임, 픽셀풍 UI, 배틀필드, 플랫폼, 상태 카드, 하단 커맨드 패널 스타일을 기준으로 맞춘다.
-- [ ] 몬스터 이미지는 `src/resources/pokemon/*.webp` 리소스를 사용하고, `GameFrame.entities[].assetPath` 또는 asset resolver를 통해 연결한다.
-- [ ] Playwright는 최종 렌더링 확인용으로만 사용
+- [x] HTML 렌더러가 raw `GameState`를 참조하지 않는지 주기적으로 점검
+- [x] Canvas/WebGL 렌더러도 `GameFrame`만 소비하도록 구현
+- [x] 렌더러 이벤트는 `FrameAction.action`만 dispatch
+- [x] 렌더링 비주얼은 `sandbox/index.html`의 모바일 게임기 프레임, 픽셀풍 UI, 배틀필드, 플랫폼, 상태 카드, 하단 커맨드 패널 스타일을 기준으로 맞춘다.
+- [x] 몬스터 이미지는 `src/resources/pokemon/*.webp` 리소스를 사용하고, `GameFrame.entities[].assetPath` 또는 asset resolver를 통해 연결한다.
+- [x] Playwright는 최종 렌더링 확인용으로만 사용
 
 ### Balance
 
 - [x] wave 1~5 초반 전멸률 조정
 - [x] wave 5/10/15 트레이너 체크포인트 난이도 조정
-- [ ] 포획 확률과 볼 가격의 경제 곡선 조정
-- [ ] 좋은 개체를 얻었을 때 팀 파워가 체감되도록 score 공식 조정
-- [ ] 100-run 기준 평균 진행도 목표를 정하고 회귀 감지
+- [x] 포획 확률과 볼 가격의 경제 곡선 조정
+- [x] 좋은 개체를 얻었을 때 팀 파워가 체감되도록 score 공식 조정
+- [x] 100-run 기준 평균 진행도 목표를 정하고 회귀 감지
 
 ## 5. 금지사항
 
@@ -182,10 +182,10 @@ QA 결과에서 반드시 볼 항목:
 - [x] `HeadlessGameClient` 저장/로드 스냅샷 구현
 - [x] long-run QA 명령을 CI에서 선택 실행 가능하게 분리
 - [x] wave별 밸런스 리포트 추가
-- [ ] battle replay event stream 설계
-- [ ] capture/team decision 정책 테스트 강화
+- [x] battle replay event stream 설계
+- [x] capture/team decision 정책 테스트 강화
 - [x] Google Sheets-ready checkpoint snapshot schema 설계
 - [x] local/mock sheet adapter 구현
 - [x] 30/50/100 wave 장시간 QA 프로파일 추가
-- [ ] WebGL/Canvas 렌더러 전에 `GameFrame` 계약 확장
-- [ ] Google Sheets 연동 전 로컬 더미 PvP 스냅샷 구현
+- [x] WebGL/Canvas 렌더러 전에 `GameFrame` 계약 확장
+- [x] Google Sheets 연동 전 로컬 더미 PvP 스냅샷 구현

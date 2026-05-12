@@ -1,7 +1,8 @@
 import { getSpecies, starterSpeciesIds } from "../data/catalog";
 import { getTeamHealthRatio, scoreTeam } from "../scoring";
 import type {
-  BattleLogEntry,
+  BattleStatus,
+  BattleReplayEvent,
   Creature,
   GameAction,
   GameBalance,
@@ -21,6 +22,7 @@ export interface GameFrame {
   entities: FrameEntity[];
   actions: FrameAction[];
   timeline: FrameTimelineEntry[];
+  battleReplay: FrameBattleReplay;
   visualCues: FrameVisualCue[];
 }
 
@@ -50,8 +52,9 @@ export interface FrameScene {
 export interface FrameEntity {
   id: string;
   kind: "creature";
-  owner: "player" | "opponent" | "pendingCapture";
+  owner: FrameEntityOwner;
   slot: number;
+  layout: FrameEntityLayout;
   assetKey: string;
   assetPath: string;
   name: string;
@@ -83,6 +86,14 @@ export interface FrameEntity {
   flags: string[];
 }
 
+export type FrameEntityOwner = "player" | "opponent" | "pendingCapture";
+
+export interface FrameEntityLayout {
+  lane: "player" | "opponent" | "center";
+  slot: number;
+  role: "active" | "bench" | "pendingCapture";
+}
+
 export interface FrameAction {
   id: string;
   label: string;
@@ -101,10 +112,33 @@ export interface FrameTimelineEntry {
   tone: "neutral" | "success" | "warning" | "danger";
 }
 
+export interface FrameBattleReplay {
+  sequenceIndex: number;
+  events: FrameBattleReplayEvent[];
+}
+
+export interface FrameBattleReplayEvent {
+  sequence: number;
+  turn: number;
+  type: BattleReplayEvent["type"];
+  label: string;
+  sourceEntityId?: string;
+  targetEntityId?: string;
+  entityId?: string;
+  damage?: number;
+  effectiveness?: number;
+  critical?: boolean;
+  status?: BattleStatus;
+  winner?: "player" | "enemy";
+}
+
 export type FrameVisualCue =
   | {
       id: string;
       type: "battle.hit" | "battle.miss";
+      sequence: number;
+      effectKey: string;
+      soundKey: string;
       turn: number;
       sourceEntityId: string;
       targetEntityId: string;
@@ -116,12 +150,19 @@ export type FrameVisualCue =
   | {
       id: string;
       type: "creature.faint";
+      sequence: number;
+      effectKey: string;
+      soundKey: string;
+      turn: number;
       entityId: string;
       label: string;
     }
   | {
       id: string;
       type: "phase.change";
+      sequence: number;
+      effectKey: string;
+      soundKey?: string;
       label: string;
       phase: GamePhase;
     };
@@ -147,20 +188,22 @@ export function createGameFrame(
     ? toFrameEntity(state.pendingCapture, "pendingCapture", 0)
     : undefined;
   const entities: FrameEntity[] = [];
-  const addMissingEntity = (creature: Creature, owner: FrameEntity["owner"], slot: number) => {
-    if (!entities.some((entity) => entity.id === creature.instanceId)) {
-      entities.push(toFrameEntity(creature, owner, slot));
-    }
-  };
-
-  playerEntities.forEach((entity) => entities.push(entity));
-  opponentEntities.forEach((entity) => {
+  const occupiedEntitySlots = new Set<string>();
+  const addFrameEntity = (entity: FrameEntity) => {
     if (!entities.some((existing) => existing.id === entity.id)) {
       entities.push(entity);
+      occupiedEntitySlots.add(`${entity.owner}:${entity.slot}`);
     }
-  });
-  if (pendingCaptureEntity && !entities.some((entity) => entity.id === pendingCaptureEntity.id)) {
-    entities.push(pendingCaptureEntity);
+  };
+  const addMissingEntity = (creature: Creature, owner: FrameEntity["owner"], slot: number) => {
+    const resolvedSlot = resolveEntitySlot(owner, slot, occupiedEntitySlots);
+    addFrameEntity(toFrameEntity(creature, owner, resolvedSlot));
+  };
+
+  playerEntities.forEach(addFrameEntity);
+  opponentEntities.forEach(addFrameEntity);
+  if (pendingCaptureEntity) {
+    addFrameEntity(pendingCaptureEntity);
   }
   state.lastBattle?.playerTeam.forEach((creature, index) => {
     addMissingEntity(creature, "player", index);
@@ -198,6 +241,7 @@ export function createGameFrame(
     entities,
     actions: createFrameActions(state, balance),
     timeline: createTimeline(state),
+    battleReplay: createBattleReplay(state),
     visualCues: createVisualCues(state),
   };
 }
@@ -205,6 +249,7 @@ export function createGameFrame(
 export function validateFrameContract(frame: GameFrame): string[] {
   const errors: string[] = [];
   const entityIds = new Set<string>();
+  const entitySlots = new Set<string>();
   const actionIds = new Set<string>();
 
   if (frame.protocolVersion !== 1) {
@@ -217,9 +262,27 @@ export function validateFrameContract(frame: GameFrame): string[] {
     }
     entityIds.add(entity.id);
 
-    if (!entity.assetKey.startsWith("pokemon:")) {
+    if (!entity.assetKey.startsWith("monster:")) {
       errors.push(`entity ${entity.id} has invalid asset key ${entity.assetKey}`);
     }
+
+    if (!Number.isInteger(entity.slot) || entity.slot < 0) {
+      errors.push(`entity ${entity.id} has invalid slot ${entity.slot}`);
+    }
+
+    if (entity.layout.slot !== entity.slot) {
+      errors.push(`entity ${entity.id} layout slot does not match entity slot`);
+    }
+
+    if (!isValidEntityLayout(entity)) {
+      errors.push(`entity ${entity.id} has invalid layout for owner ${entity.owner}`);
+    }
+
+    const slotKey = `${entity.owner}:${entity.slot}`;
+    if (entitySlots.has(slotKey)) {
+      errors.push(`duplicate entity owner/slot ${slotKey}`);
+    }
+    entitySlots.add(slotKey);
 
     if (!/^resources\/pokemon\/\d{4}\.webp$/.test(entity.assetPath)) {
       errors.push(`entity ${entity.id} has invalid asset path ${entity.assetPath}`);
@@ -248,6 +311,14 @@ export function validateFrameContract(frame: GameFrame): string[] {
   }
 
   for (const cue of frame.visualCues) {
+    if (!Number.isInteger(cue.sequence) || cue.sequence < 0) {
+      errors.push(`cue ${cue.id} has invalid sequence ${cue.sequence}`);
+    }
+
+    if (!cue.effectKey) {
+      errors.push(`cue ${cue.id} has no effect key`);
+    }
+
     if (cue.type === "phase.change") {
       continue;
     }
@@ -271,16 +342,48 @@ export function validateFrameContract(frame: GameFrame): string[] {
     }
   }
 
+  let previousSequence = 0;
+  for (const event of frame.battleReplay.events) {
+    if (event.sequence <= previousSequence) {
+      errors.push(`battle replay sequence is not increasing at ${event.sequence}`);
+    }
+    previousSequence = event.sequence;
+
+    if (event.sourceEntityId && !entityIds.has(event.sourceEntityId)) {
+      errors.push(
+        `replay event ${event.sequence} references missing source ${event.sourceEntityId}`,
+      );
+    }
+
+    if (event.targetEntityId && !entityIds.has(event.targetEntityId)) {
+      errors.push(
+        `replay event ${event.sequence} references missing target ${event.targetEntityId}`,
+      );
+    }
+
+    if (event.entityId && !entityIds.has(event.entityId)) {
+      errors.push(`replay event ${event.sequence} references missing entity ${event.entityId}`);
+    }
+  }
+
+  const lastReplaySequence = frame.battleReplay.events.at(-1)?.sequence ?? 0;
+  if (frame.battleReplay.sequenceIndex !== lastReplaySequence) {
+    errors.push(
+      `battle replay sequenceIndex ${frame.battleReplay.sequenceIndex} does not match last event ${lastReplaySequence}`,
+    );
+  }
+
   return errors;
 }
 
-function toFrameEntity(creature: Creature, owner: FrameEntity["owner"], slot: number): FrameEntity {
+function toFrameEntity(creature: Creature, owner: FrameEntityOwner, slot: number): FrameEntity {
   return {
     id: creature.instanceId,
     kind: "creature",
     owner,
     slot,
-    assetKey: `pokemon:${creature.speciesId}`,
+    layout: createEntityLayout(owner, slot),
+    assetKey: `monster:${creature.speciesId}`,
     assetPath: `resources/pokemon/${creature.speciesId.toString().padStart(4, "0")}.webp`,
     name: creature.speciesName,
     speciesId: creature.speciesId,
@@ -303,8 +406,49 @@ function toFrameEntity(creature: Creature, owner: FrameEntity["owner"], slot: nu
       power: creature.powerScore,
       rarity: creature.rarityScore,
     },
-    flags: creature.currentHp <= 0 ? ["fainted"] : [],
+    flags: [
+      ...(creature.currentHp <= 0 ? ["fainted"] : []),
+      ...(creature.status ? [`status:${creature.status.type}`] : []),
+    ],
   };
+}
+
+function createEntityLayout(owner: FrameEntityOwner, slot: number): FrameEntityLayout {
+  if (owner === "pendingCapture") {
+    return {
+      lane: "center",
+      slot,
+      role: "pendingCapture",
+    };
+  }
+
+  return {
+    lane: owner,
+    slot,
+    role: slot === 0 ? "active" : "bench",
+  };
+}
+
+function resolveEntitySlot(
+  owner: FrameEntityOwner,
+  preferredSlot: number,
+  occupiedSlots: ReadonlySet<string>,
+): number {
+  let slot = preferredSlot;
+
+  while (occupiedSlots.has(`${owner}:${slot}`)) {
+    slot += 1;
+  }
+
+  return slot;
+}
+
+function isValidEntityLayout(entity: FrameEntity): boolean {
+  if (entity.owner === "pendingCapture") {
+    return entity.layout.lane === "center" && entity.layout.role === "pendingCapture";
+  }
+
+  return entity.layout.lane === entity.owner && entity.layout.role !== "pendingCapture";
 }
 
 function createFrameActions(state: GameState, balance: GameBalance): FrameAction[] {
@@ -438,59 +582,220 @@ function createTimeline(state: GameState): FrameTimelineEntry[] {
 }
 
 function createVisualCues(state: GameState): FrameVisualCue[] {
-  const battleCues = (state.lastBattle?.log.slice(-8) ?? []).flatMap((entry) =>
-    battleLogToCues(entry),
-  );
+  const battleCues = (state.lastBattle?.replay ?? [])
+    .filter(
+      (event) =>
+        event.type === "damage.apply" ||
+        event.type === "move.miss" ||
+        event.type === "creature.faint",
+    )
+    .slice(-12)
+    .map((event) => battleReplayEventToCue(event))
+    .filter((cue): cue is FrameVisualCue => Boolean(cue));
 
   return [
     ...battleCues,
     {
       id: `phase:${state.phase}:${state.currentWave}`,
       type: "phase.change",
+      sequence: state.lastBattle?.replay.at(-1)?.sequence ?? 0,
+      effectKey: "phase.change",
       label: state.phase,
       phase: state.phase,
     },
   ];
 }
 
-function battleLogToCues(entry: BattleLogEntry): FrameVisualCue[] {
-  const primary: FrameVisualCue = entry.missed
-    ? {
-        id: `battle:${entry.turn}:${entry.actorId}:${entry.targetId}:miss`,
-        type: "battle.miss",
-        turn: entry.turn,
-        sourceEntityId: entry.actorId,
-        targetEntityId: entry.targetId,
-        label: `${entry.actor} missed ${entry.move}.`,
-        damage: 0,
-        effectiveness: entry.effectiveness,
-        critical: entry.critical,
-      }
-    : {
-        id: `battle:${entry.turn}:${entry.actorId}:${entry.targetId}:hit`,
-        type: "battle.hit",
-        turn: entry.turn,
-        sourceEntityId: entry.actorId,
-        targetEntityId: entry.targetId,
-        label: `${entry.actor} used ${entry.move}.`,
-        damage: entry.damage,
-        effectiveness: entry.effectiveness,
-        critical: entry.critical,
-      };
+function createBattleReplay(state: GameState): FrameBattleReplay {
+  const events = (state.lastBattle?.replay ?? []).map(toFrameBattleReplayEvent);
 
-  if (entry.targetRemainingHp > 0) {
-    return [primary];
+  return {
+    sequenceIndex: events.at(-1)?.sequence ?? 0,
+    events,
+  };
+}
+
+function toFrameBattleReplayEvent(event: BattleReplayEvent): FrameBattleReplayEvent {
+  if (event.type === "battle.start") {
+    return {
+      sequence: event.sequence,
+      turn: event.turn,
+      type: event.type,
+      label: `${event.kind} battle started.`,
+    };
   }
 
-  return [
-    primary,
-    {
-      id: `faint:${entry.turn}:${entry.targetId}`,
+  if (event.type === "turn.start") {
+    return {
+      sequence: event.sequence,
+      turn: event.turn,
+      type: event.type,
+      label: `Turn ${event.turn} started.`,
+    };
+  }
+
+  if (event.type === "move.select") {
+    return {
+      sequence: event.sequence,
+      turn: event.turn,
+      type: event.type,
+      label: `${event.actorId} selected ${event.move}.`,
+      sourceEntityId: event.actorId,
+      targetEntityId: event.targetId,
+    };
+  }
+
+  if (event.type === "move.miss") {
+    return {
+      sequence: event.sequence,
+      turn: event.turn,
+      type: event.type,
+      label: `${event.actorId} missed ${event.move}.`,
+      sourceEntityId: event.actorId,
+      targetEntityId: event.targetId,
+    };
+  }
+
+  if (event.type === "turn.skip") {
+    return {
+      sequence: event.sequence,
+      turn: event.turn,
+      type: event.type,
+      label: `${event.entityId} skipped the turn: ${event.reason}`,
+      entityId: event.entityId,
+      status: event.status,
+    };
+  }
+
+  if (event.type === "damage.apply") {
+    return {
+      sequence: event.sequence,
+      turn: event.turn,
+      type: event.type,
+      label: `${event.actorId} dealt ${event.damage} damage with ${event.move}.`,
+      sourceEntityId: event.actorId,
+      targetEntityId: event.targetId,
+      damage: event.damage,
+      effectiveness: event.effectiveness,
+      critical: event.critical,
+    };
+  }
+
+  if (event.type === "status.apply") {
+    return {
+      sequence: event.sequence,
+      turn: event.turn,
+      type: event.type,
+      label: `${event.targetId} was afflicted with ${event.status}.`,
+      sourceEntityId: event.actorId,
+      targetEntityId: event.targetId,
+      status: event.status,
+    };
+  }
+
+  if (event.type === "status.immune") {
+    return {
+      sequence: event.sequence,
+      turn: event.turn,
+      type: event.type,
+      label: `${event.targetId} resisted ${event.status}.`,
+      sourceEntityId: event.actorId,
+      targetEntityId: event.targetId,
+      status: event.status,
+    };
+  }
+
+  if (event.type === "status.tick") {
+    return {
+      sequence: event.sequence,
+      turn: event.turn,
+      type: event.type,
+      label: `${event.entityId} took ${event.damage} ${event.status} damage.`,
+      entityId: event.entityId,
+      damage: event.damage,
+      status: event.status,
+    };
+  }
+
+  if (event.type === "status.clear") {
+    return {
+      sequence: event.sequence,
+      turn: event.turn,
+      type: event.type,
+      label: `${event.entityId} recovered from ${event.status}.`,
+      entityId: event.entityId,
+      status: event.status,
+    };
+  }
+
+  if (event.type === "creature.faint") {
+    return {
+      sequence: event.sequence,
+      turn: event.turn,
+      type: event.type,
+      label: `${event.entityId} fainted.`,
+      entityId: event.entityId,
+    };
+  }
+
+  return {
+    sequence: event.sequence,
+    turn: event.turn,
+    type: event.type,
+    label: `${event.winner} won the battle.`,
+    winner: event.winner,
+  };
+}
+
+function battleReplayEventToCue(event: BattleReplayEvent): FrameVisualCue | undefined {
+  if (event.type === "move.miss") {
+    return {
+      id: `battle:${event.sequence}:miss`,
+      type: "battle.miss",
+      sequence: event.sequence,
+      effectKey: "battle.miss",
+      soundKey: "sfx.battle.miss",
+      turn: event.turn,
+      sourceEntityId: event.actorId,
+      targetEntityId: event.targetId,
+      label: `${event.actorId} missed ${event.move}.`,
+      damage: 0,
+      effectiveness: 1,
+      critical: false,
+    };
+  }
+
+  if (event.type === "damage.apply") {
+    return {
+      id: `battle:${event.sequence}:hit`,
+      type: "battle.hit",
+      sequence: event.sequence,
+      effectKey: event.critical ? "battle.criticalHit" : "battle.hit",
+      soundKey: event.critical ? "sfx.battle.criticalHit" : "sfx.battle.hit",
+      turn: event.turn,
+      sourceEntityId: event.actorId,
+      targetEntityId: event.targetId,
+      label: `${event.actorId} used ${event.move}.`,
+      damage: event.damage,
+      effectiveness: event.effectiveness,
+      critical: event.critical,
+    };
+  }
+
+  if (event.type === "creature.faint") {
+    return {
+      id: `faint:${event.sequence}:${event.entityId}`,
       type: "creature.faint",
-      entityId: entry.targetId,
-      label: `${entry.target} fainted.`,
-    },
-  ];
+      sequence: event.sequence,
+      effectKey: "creature.faint",
+      soundKey: "sfx.creature.faint",
+      turn: event.turn,
+      entityId: event.entityId,
+      label: `${event.entityId} fainted.`,
+    };
+  }
+
+  return undefined;
 }
 
 function createSceneTitle(state: GameState): string {

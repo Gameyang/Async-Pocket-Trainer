@@ -36,7 +36,7 @@ export class LocalTrainerSheetAdapter implements TrainerSyncAdapter {
   }
 
   async listRows(query: TrainerRowQuery): Promise<SheetTrainerRow[]> {
-    return this.rows.filter((row) => matchesQuery(row, query)).map(cloneRow);
+    return this.rows.filter((row) => matchesTrainerRowQuery(row, query)).map(cloneRow);
   }
 
   async listSnapshots(query: TrainerRowQuery): Promise<TrainerSnapshot[]> {
@@ -44,10 +44,7 @@ export class LocalTrainerSheetAdapter implements TrainerSyncAdapter {
     return rows.map(parseSheetTrainerRow);
   }
 
-  async pickSnapshot(
-    query: TrainerRowQuery,
-    rng: SeededRng,
-  ): Promise<TrainerSnapshot | undefined> {
+  async pickSnapshot(query: TrainerRowQuery, rng: SeededRng): Promise<TrainerSnapshot | undefined> {
     const snapshots = await this.listSnapshots(query);
 
     if (snapshots.length === 0) {
@@ -63,7 +60,7 @@ export class LocalTrainerSheetAdapter implements TrainerSyncAdapter {
   }
 }
 
-function matchesQuery(row: SheetTrainerRow, query: TrainerRowQuery): boolean {
+export function matchesTrainerRowQuery(row: SheetTrainerRow, query: TrainerRowQuery): boolean {
   if (row.wave !== query.wave) {
     return false;
   }

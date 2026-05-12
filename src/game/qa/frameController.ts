@@ -1,10 +1,11 @@
 import { SeededRng } from "../rng";
-import type { AutoPlayOptions } from "../types";
+import { shouldReplaceByPower } from "../scoring";
+import type { AutoPlayStrategy } from "../types";
 import type { FrameAction, FrameEntity, GameFrame } from "../view/frame";
 
 export function chooseFrameAction(
   frame: GameFrame,
-  strategy: AutoPlayOptions["strategy"],
+  strategy: AutoPlayStrategy | undefined,
   rng: SeededRng,
 ): FrameAction | undefined {
   const enabledActions = frame.actions.filter((action) => action.enabled);
@@ -26,7 +27,7 @@ export function chooseFrameAction(
   }
 
   if (frame.phase === "teamDecision") {
-    return chooseTeamDecisionAction(frame, enabledActions);
+    return chooseTeamDecisionAction(frame, enabledActions, strategy);
   }
 
   return enabledActions[0];
@@ -35,7 +36,7 @@ export function chooseFrameAction(
 function chooseReadyAction(
   frame: GameFrame,
   actions: readonly FrameAction[],
-  strategy: AutoPlayOptions["strategy"],
+  strategy: AutoPlayStrategy | undefined,
 ): FrameAction | undefined {
   const rest = actions.find((action) => action.id === "shop:rest");
 
@@ -66,7 +67,7 @@ function chooseReadyAction(
 function chooseCaptureAction(
   frame: GameFrame,
   actions: readonly FrameAction[],
-  strategy: AutoPlayOptions["strategy"],
+  strategy: AutoPlayStrategy | undefined,
 ): FrameAction | undefined {
   if (strategy === "conserveBalls" && frame.hud.wave < 4) {
     return actions.find((action) => action.id === "capture:skip");
@@ -90,6 +91,7 @@ function chooseCaptureAction(
 function chooseTeamDecisionAction(
   frame: GameFrame,
   actions: readonly FrameAction[],
+  strategy: AutoPlayStrategy | undefined,
 ): FrameAction | undefined {
   const keep = actions.find((action) => action.id === "team:keep");
 
@@ -100,7 +102,11 @@ function chooseTeamDecisionAction(
   const pendingCapture = frame.entities.find((entity) => entity.owner === "pendingCapture");
   const weakest = findWeakestPlayerEntity(frame.entities);
 
-  if (pendingCapture && weakest && pendingCapture.scores.power > weakest.scores.power) {
+  if (
+    pendingCapture &&
+    weakest &&
+    shouldReplaceByPower(weakest.scores.power, pendingCapture.scores.power, strategy ?? "greedy")
+  ) {
     return actions.find((action) => action.id === `team:replace:${weakest.slot}`);
   }
 

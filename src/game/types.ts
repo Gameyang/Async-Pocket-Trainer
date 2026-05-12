@@ -22,6 +22,18 @@ export type MoveCategory = "physical" | "special";
 export type BallType = "pokeBall" | "greatBall";
 export type EncounterKind = "wild" | "trainer";
 export type GamePhase = "starterChoice" | "ready" | "captureDecision" | "teamDecision" | "gameOver";
+export type AutoPlayStrategy = "greedy" | "conserveBalls";
+export type BattleStatus = "burn" | "poison" | "paralysis" | "sleep" | "freeze";
+
+export interface BattleStatusState {
+  type: BattleStatus;
+  turnsRemaining?: number;
+}
+
+export interface MoveStatusEffect {
+  status: BattleStatus;
+  chance: number;
+}
 
 export interface Stats {
   hp: number;
@@ -38,6 +50,7 @@ export interface MoveDefinition {
   power: number;
   accuracy: number;
   category: MoveCategory;
+  statusEffect?: MoveStatusEffect;
 }
 
 export interface SpeciesDefinition {
@@ -61,14 +74,17 @@ export interface Creature {
   rarityScore: number;
   powerScore: number;
   captureRate: number;
+  status?: BattleStatusState;
 }
 
 export interface BattleLogEntry {
   turn: number;
   actorId: string;
   actor: string;
+  actorSide: "player" | "enemy";
   targetId: string;
   target: string;
+  targetSide: "player" | "enemy";
   move: string;
   damage: number;
   effectiveness: number;
@@ -77,6 +93,116 @@ export interface BattleLogEntry {
   targetRemainingHp: number;
 }
 
+export type BattleReplayEvent =
+  | {
+      sequence: number;
+      turn: number;
+      type: "battle.start";
+      kind: EncounterKind;
+      playerTeamIds: string[];
+      enemyTeamIds: string[];
+    }
+  | {
+      sequence: number;
+      turn: number;
+      type: "turn.start";
+      activePlayerId?: string;
+      activeEnemyId?: string;
+    }
+  | {
+      sequence: number;
+      turn: number;
+      type: "move.select";
+      actorId: string;
+      actorSide: "player" | "enemy";
+      targetId: string;
+      targetSide: "player" | "enemy";
+      move: string;
+    }
+  | {
+      sequence: number;
+      turn: number;
+      type: "move.miss";
+      actorId: string;
+      targetId: string;
+      move: string;
+    }
+  | {
+      sequence: number;
+      turn: number;
+      type: "turn.skip";
+      entityId: string;
+      side: "player" | "enemy";
+      status: BattleStatus;
+      reason: string;
+    }
+  | {
+      sequence: number;
+      turn: number;
+      type: "damage.apply";
+      actorId: string;
+      targetId: string;
+      move: string;
+      damage: number;
+      effectiveness: number;
+      critical: boolean;
+      targetHpBefore: number;
+      targetHpAfter: number;
+    }
+  | {
+      sequence: number;
+      turn: number;
+      type: "status.apply";
+      actorId: string;
+      targetId: string;
+      move: string;
+      status: BattleStatus;
+      turnsRemaining?: number;
+    }
+  | {
+      sequence: number;
+      turn: number;
+      type: "status.immune";
+      actorId: string;
+      targetId: string;
+      move: string;
+      status: BattleStatus;
+    }
+  | {
+      sequence: number;
+      turn: number;
+      type: "status.tick";
+      entityId: string;
+      side: "player" | "enemy";
+      status: "burn" | "poison";
+      damage: number;
+      hpBefore: number;
+      hpAfter: number;
+    }
+  | {
+      sequence: number;
+      turn: number;
+      type: "status.clear";
+      entityId: string;
+      side: "player" | "enemy";
+      status: BattleStatus;
+    }
+  | {
+      sequence: number;
+      turn: number;
+      type: "creature.faint";
+      entityId: string;
+      side: "player" | "enemy";
+    }
+  | {
+      sequence: number;
+      turn: number;
+      type: "battle.end";
+      winner: "player" | "enemy";
+      playerRemainingHp: number;
+      enemyRemainingHp: number;
+    };
+
 export interface BattleResult {
   kind: EncounterKind;
   winner: "player" | "enemy";
@@ -84,6 +210,7 @@ export interface BattleResult {
   playerTeam: Creature[];
   enemyTeam: Creature[];
   log: BattleLogEntry[];
+  replay: BattleReplayEvent[];
 }
 
 export interface EncounterSnapshot {
@@ -151,7 +278,7 @@ export type GameAction =
 export interface AutoPlayOptions {
   maxWaves: number;
   maxSteps?: number;
-  strategy?: "greedy" | "conserveBalls";
+  strategy?: AutoPlayStrategy;
 }
 
 export interface RunSummary {

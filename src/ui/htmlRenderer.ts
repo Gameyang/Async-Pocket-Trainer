@@ -1,4 +1,4 @@
-import { HeadlessGameClient } from "../game/headlessClient";
+import type { GameAction } from "../game/types";
 import type { FrameAction, FrameEntity, GameFrame } from "../game/view/frame";
 
 const pokemonAssetUrls = import.meta.glob<string>("../resources/pokemon/*.webp", {
@@ -7,7 +7,12 @@ const pokemonAssetUrls = import.meta.glob<string>("../resources/pokemon/*.webp",
   query: "?url",
 });
 
-export function mountHtmlRenderer(root: HTMLElement, client: HeadlessGameClient): void {
+export interface FrameClient {
+  getFrame(): GameFrame;
+  dispatch(action: GameAction): unknown;
+}
+
+export function mountHtmlRenderer(root: HTMLElement, client: FrameClient): void {
   const render = () => {
     const frame = client.getFrame();
     root.innerHTML = renderFrame(frame);
@@ -19,7 +24,7 @@ export function mountHtmlRenderer(root: HTMLElement, client: HeadlessGameClient)
 
 function bindActions(
   root: HTMLElement,
-  client: HeadlessGameClient,
+  client: FrameClient,
   frame: GameFrame,
   render: () => void,
 ): void {
@@ -32,17 +37,6 @@ function bindActions(
         render();
       }
     });
-  });
-
-  root.querySelector<HTMLButtonElement>("[data-auto-step]")?.addEventListener("click", () => {
-    client.autoStep("greedy");
-    render();
-  });
-
-  root.querySelector<HTMLButtonElement>("[data-auto-run]")?.addEventListener("click", () => {
-    const targetWave = client.getFrame().hud.wave + 5;
-    client.autoPlay({ maxWaves: targetWave, strategy: "greedy" });
-    render();
   });
 }
 
@@ -73,8 +67,6 @@ function renderFrame(frame: GameFrame): string {
 
       <section class="command-band">
         ${frame.actions.map(renderAction).join("")}
-        <button type="button" data-auto-step>Auto Step</button>
-        <button type="button" data-auto-run>Auto +5 Waves</button>
       </section>
 
       <section class="dashboard">

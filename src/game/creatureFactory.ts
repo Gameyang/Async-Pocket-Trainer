@@ -27,7 +27,7 @@ export function createCreature(options: CreatureFactoryOptions): Creature {
     types: species.types,
   };
   const powerScore = scoreCreature(partial);
-  const rarityScore = Math.round(powerScore / 12 + species.rarity * 7);
+  const rarityScore = Math.round(powerScore / 14 + species.rarity * 7);
 
   return {
     instanceId: `${species.id}-${options.wave}-${options.rng.nextUint().toString(16)}`,
@@ -48,7 +48,11 @@ export function cloneCreature(creature: Creature): Creature {
     ...creature,
     types: [...creature.types],
     stats: { ...creature.stats },
-    moves: creature.moves.map((move) => ({ ...move })),
+    moves: creature.moves.map((move) => ({
+      ...move,
+      statusEffect: move.statusEffect ? { ...move.statusEffect } : undefined,
+    })),
+    status: creature.status ? { ...creature.status } : undefined,
   };
 }
 
@@ -59,11 +63,7 @@ export function healTeam(team: readonly Creature[]): Creature[] {
   }));
 }
 
-function pickSpeciesForWave(
-  rng: SeededRng,
-  wave: number,
-  balance: GameBalance,
-): SpeciesDefinition {
+function pickSpeciesForWave(rng: SeededRng, wave: number, balance: GameBalance): SpeciesDefinition {
   const rarityBudget = clamp(1 + Math.floor(wave / balance.wildRarityBudgetWaveDivisor), 1, 8);
   const maxBaseTotal = balance.wildBaseStatBudgetBase + wave * balance.wildBaseStatBudgetPerWave;
   const candidates = speciesCatalog.filter((species) => {

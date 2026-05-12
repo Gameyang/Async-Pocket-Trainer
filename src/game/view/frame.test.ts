@@ -19,14 +19,29 @@ describe("game frame contract", () => {
     expect(frame.entities[0]).toMatchObject({
       kind: "creature",
       owner: "player",
-      assetKey: "pokemon:1",
+      slot: 0,
+      layout: {
+        lane: "player",
+        slot: 0,
+        role: "active",
+      },
+      assetKey: "monster:1",
       assetPath: "resources/pokemon/0001.webp",
     });
 
     client.dispatch({ type: "RESOLVE_NEXT_ENCOUNTER" });
     frame = client.getFrame();
+    const replay = frame.battleReplay.events;
 
     expect(validateFrameContract(frame)).toEqual([]);
+    expect(frame.battleReplay.sequenceIndex).toBe(replay.at(-1)?.sequence);
+    expect(replay[0]).toMatchObject({ sequence: 1, turn: 0, type: "battle.start" });
+    expect(replay.at(-1)?.type).toBe("battle.end");
+    expect(
+      replay.some((event) => event.type === "damage.apply" || event.type === "move.miss"),
+    ).toBe(true);
     expect(frame.visualCues.length).toBeGreaterThan(0);
+    expect(frame.visualCues.every((cue) => Number.isInteger(cue.sequence))).toBe(true);
+    expect(frame.visualCues.every((cue) => cue.effectKey.length > 0)).toBe(true);
   });
 });

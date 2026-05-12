@@ -531,14 +531,20 @@ MVP에서는 다음 요소를 제외할 수 있습니다.
 npm ci
 npm run dev
 npm run headless -- --seed qa --runs 20 --waves 15
+npm run replay:seed -- --seed qa --runs 20 --waves 15
+npm run qa:summary -- --seed qa --runs 20 --waves 15
+npm run qa:compare -- --before before.json --after after.json
 npm run qa:headless:30
 npm run qa:headless:50
 npm run qa:headless:100
+npm run render:check
 npm run verify
 ```
 
 `npm run verify`는 lint, test, headless QA, build를 순서대로 실행하는 기본 품질 게이트입니다.
 30/50/100웨이브 QA 프로파일은 장시간 밸런스와 회귀를 확인할 때 선택 실행합니다.
+`qa:headless:100`은 100-run 기준 평균 최종 웨이브 35 이상, 100웨이브 도달 5회 이상을 회귀 기준으로 강제합니다.
+`render:check`는 Playwright를 최종 렌더링 확인용으로만 실행하며, 모바일 게임기 프레임, 배틀필드, 하단 커맨드 패널, 몬스터 이미지 로딩을 확인합니다.
 
 게임 로직은 HTML 렌더링에서 분리된 `HeadlessGameClient`가 실행합니다. LLM/CI는 브라우저 없이 전투, 포획, 팀 교체, 웨이브 진행, 밸런스 지표를 JSON으로 검증합니다.
 
@@ -559,18 +565,18 @@ npm run verify
 
 첫 번째 플레이 가능한 버전은 다음 기능을 목표로 합니다.
 
-* [ ] 스타팅 포켓몬 선택
-* [ ] 야생 포켓몬 랜덤 생성
-* [ ] 자동 전투
-* [ ] 포획 시스템
-* [ ] 팀 교체 시스템
-* [ ] 상점
-* [ ] 웨이브 진행
-* [ ] 5웨이브마다 트레이너 대전
-* [ ] 로컬 저장
-* [ ] Google Sheets에 팀 기록 저장
-* [ ] Google Sheets에서 상대 팀 다운로드
-* [ ] GitHub Pages 배포
+* [x] 스타팅 포켓몬 선택
+* [x] 야생 포켓몬 랜덤 생성
+* [x] 자동 전투
+* [x] 포획 시스템
+* [x] 팀 교체 시스템
+* [x] 상점
+* [x] 웨이브 진행
+* [x] 5웨이브마다 트레이너 대전
+* [x] 로컬 저장
+* [x] Google Sheets에 팀 기록 저장
+* [x] Google Sheets에서 상대 팀 다운로드
+* [x] GitHub Pages 배포
 
 ---
 

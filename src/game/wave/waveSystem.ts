@@ -1,7 +1,9 @@
 import { createCreature } from "../creatureFactory";
+import { getMove, getSpecies } from "../data/catalog";
 import { scoreTeam } from "../scoring";
 import type { SeededRng } from "../rng";
 import type { Creature, EncounterSnapshot, GameBalance } from "../types";
+import type { TrainerSnapshot, TrainerSnapshotCreature } from "../sync/trainerSnapshot";
 
 export function createWildEncounter(
   wave: number,
@@ -26,9 +28,7 @@ export function createTrainerEncounter(
   const teamSize = Math.min(
     balance.maxTeamSize,
     1 +
-      Math.floor(
-        (wave - 1) / (balance.checkpointInterval * balance.trainerTeamSizeCheckpointSpan),
-      ),
+      Math.floor((wave - 1) / (balance.checkpointInterval * balance.trainerTeamSizeCheckpointSpan)),
   );
   const team = Array.from({ length: teamSize }, () =>
     createCreature({ rng, wave, balance, role: "trainer" }),
@@ -38,6 +38,17 @@ export function createTrainerEncounter(
     kind: "trainer",
     wave,
     opponentName: `Wave ${wave} Trainer (${scoreTeam(team)})`,
+    enemyTeam: team,
+  };
+}
+
+export function createTrainerEncounterFromSnapshot(snapshot: TrainerSnapshot): EncounterSnapshot {
+  const team = snapshot.team.map(snapshotCreatureToCreature);
+
+  return {
+    kind: "trainer",
+    wave: snapshot.wave,
+    opponentName: `${snapshot.trainerName} Snapshot (${snapshot.teamPower})`,
     enemyTeam: team,
   };
 }
@@ -76,4 +87,21 @@ export function replaceTeamAfterCapture(
   }
 
   return team.map((creature, index) => (index === replaceIndex ? captured : creature));
+}
+
+function snapshotCreatureToCreature(creature: TrainerSnapshotCreature): Creature {
+  const species = getSpecies(creature.speciesId);
+
+  return {
+    instanceId: creature.creatureId,
+    speciesId: creature.speciesId,
+    speciesName: creature.speciesName,
+    types: [...species.types],
+    stats: { ...creature.stats },
+    currentHp: Math.min(creature.currentHp, creature.stats.hp),
+    moves: creature.moves.map((moveId) => getMove(moveId)),
+    rarityScore: creature.rarityScore,
+    powerScore: creature.powerScore,
+    captureRate: species.captureRate,
+  };
 }

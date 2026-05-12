@@ -1,7 +1,14 @@
 import rawBattleData from "./pokemonBattleRuntimeData.json";
 import type { MoveRecord, PokemonBattleData, PokemonRecord } from "./pokemonBattleData";
 import { clamp } from "../rng";
-import type { ElementType, GameBalance, MoveDefinition, SpeciesDefinition, Stats } from "../types";
+import type {
+  BattleStatus,
+  ElementType,
+  GameBalance,
+  MoveDefinition,
+  SpeciesDefinition,
+  Stats,
+} from "../types";
 
 const battleData = rawBattleData as unknown as PokemonBattleData;
 const defaultLearnsetGroup = battleData.coverage.defaultLearnsetVersionGroup;
@@ -21,8 +28,8 @@ export const defaultBalance: GameBalance = {
   rewardPerWave: 3,
   trainerRewardBonus: 16,
   teamRestCost: 20,
-  pokeBallCost: 10,
-  greatBallCost: 24,
+  pokeBallCost: 9,
+  greatBallCost: 22,
   startingMoney: 50,
   startingPokeBalls: 5,
   startingGreatBalls: 1,
@@ -112,7 +119,37 @@ function toMoveDefinition(record: MoveRecord): MoveDefinition | undefined {
     power: record.power,
     accuracy: (record.accuracy ?? 100) / 100,
     category: record.damageClass,
+    statusEffect: toStatusEffect(record),
   };
+}
+
+function toStatusEffect(record: MoveRecord): MoveDefinition["statusEffect"] {
+  const ailment = record.meta?.ailment;
+
+  if (!isSupportedBattleStatus(ailment)) {
+    return undefined;
+  }
+
+  const chancePercent = record.meta?.ailmentChance || record.effectChance || 0;
+
+  if (chancePercent <= 0) {
+    return undefined;
+  }
+
+  return {
+    status: ailment,
+    chance: clamp(chancePercent / 100, 0, 1),
+  };
+}
+
+function isSupportedBattleStatus(value: string | null | undefined): value is BattleStatus {
+  return (
+    value === "burn" ||
+    value === "poison" ||
+    value === "paralysis" ||
+    value === "sleep" ||
+    value === "freeze"
+  );
 }
 
 function buildMovePool(record: PokemonRecord): string[] {

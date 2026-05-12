@@ -52,10 +52,16 @@ LLM 또는 CI는 브라우저를 열지 않고 아래 명령으로 게임 진행
 
 ```bash
 npm run headless -- --seed qa --runs 20 --waves 15 --strategy greedy
+npm run replay:seed -- --seed qa --runs 20 --waves 15
+npm run qa:summary -- --seed qa --runs 20 --waves 15
+npm run qa:compare -- --before before.json --after after.json
 npm run qa:headless:30
 npm run qa:headless:50
 npm run qa:headless:100
+npm run render:check
 ```
+
+`qa:headless:100` enforces the current long-run balance target: 100 deterministic runs must average at least wave 35 and at least 5 runs must clear the 100-wave target. `render:check` is intentionally separate from `verify`; Playwright is only used for final browser rendering confirmation.
 
 출력 JSON에는 run별 최종 웨이브, 전멸 여부, 팀 전투력, 체력 비율, invariant 오류가 포함됩니다. `waveBalance`에는 wave별 사망 원인, 포획 성공률, 팀 파워 분포, 휴식/구매 횟수가 포함됩니다. 밸런싱 변경 PR은 이 수치를 전후 비교합니다.
 
@@ -63,9 +69,10 @@ npm run qa:headless:100
 
 렌더러는 `GameState`를 직접 해석하지 않습니다. `src/game/view/frame.ts`의 `createGameFrame` 결과만 사용합니다.
 
-- `entities`: 렌더링 가능한 모든 전투 개체. `id`, `owner`, `slot`, `assetKey`, `assetPath`, HP, 스탯, 기술을 포함합니다.
+- `entities`: 렌더링 가능한 모든 전투 개체. `id`, `owner`, `slot`, WebGL 배치용 `layout`, 오리지널 몬스터 전환을 고려한 `monster:*` 형식의 `assetKey`, `assetPath`, HP, 스탯, 기술을 포함합니다.
 - `actions`: 현재 프레임에서 누를 수 있는 게임 명령. UI는 `action.id`와 `action.label`을 표시하고 `action.action`만 dispatch합니다.
-- `visualCues`: 공격, 빗나감, 기절, phase 변경 같은 그래픽스/사운드 트리거입니다.
+- `battleReplay`: 전투 시작, 턴 시작, 기술 선택, 명중/피해, 상태 이상 적용/면역/지속 피해/행동 불능, 기절, 전투 종료를 순번 있는 event stream으로 제공합니다.
+- `visualCues`: 공격, 빗나감, 기절, phase 변경 같은 그래픽스/사운드 트리거이며 `effectKey`와 선택적 `soundKey`를 포함합니다.
 - `timeline`: 로그 UI 또는 리플레이 디버깅에 쓰는 안정적인 이벤트 목록입니다.
 
 이 계약은 headless QA에서 `validateFrameContract`로 검사합니다. 따라서 그래픽스 없이도 WebGL 렌더러가 필요한 id, asset, cue 누락을 먼저 잡습니다.

@@ -3,4 +3,6 @@ src/game/data/pokemonBattleData.json
 src/game/data/pokemonBattleRuntimeData.json
 dist/
 coverage/
+test-results/
+playwright-report/
 node_modules/

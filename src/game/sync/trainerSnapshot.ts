@@ -1,12 +1,5 @@
 import { scoreTeam } from "../scoring";
-import type {
-  BallType,
-  Creature,
-  GamePhase,
-  GameState,
-  RunSummary,
-  Stats,
-} from "../types";
+import type { BallType, Creature, GamePhase, GameState, RunSummary, Stats } from "../types";
 
 export const TRAINER_SNAPSHOT_VERSION = 1;
 
@@ -49,6 +42,7 @@ export interface CreateTrainerSnapshotOptions {
   playerId: string;
   createdAt?: string;
   runSummary: RunSummary;
+  wave?: number;
 }
 
 const validPhases: GamePhase[] = [
@@ -72,7 +66,7 @@ export function createTrainerSnapshot(
     version: TRAINER_SNAPSHOT_VERSION,
     playerId: requireNonEmptyString(options.playerId, "playerId"),
     trainerName: state.trainerName,
-    wave: state.currentWave,
+    wave: options.wave ?? state.currentWave,
     createdAt,
     seed: state.seed,
     teamPower: scoreTeam(state.team),
@@ -181,9 +175,7 @@ function parseRunSummary(source: Record<string, unknown>): RunSummary {
     ballTypes.map((ball) => [ball, readNonNegativeInteger(ballsSource, ball)]),
   ) as Record<BallType, number>;
   const gameOverReason =
-    source.gameOverReason === undefined
-      ? undefined
-      : readRequiredString(source, "gameOverReason");
+    source.gameOverReason === undefined ? undefined : readRequiredString(source, "gameOverReason");
 
   return {
     seed: readRequiredString(source, "seed"),

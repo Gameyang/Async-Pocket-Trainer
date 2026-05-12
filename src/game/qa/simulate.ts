@@ -1,8 +1,14 @@
 import { HeadlessGameClient } from "../headlessClient";
 import { SeededRng } from "../rng";
 import { getTeamHealthRatio, scoreTeam } from "../scoring";
+import {
+  createTrainerSnapshot,
+  isCheckpointWave,
+  parseSheetTrainerRow,
+  serializeTrainerSnapshot,
+} from "../sync/trainerSnapshot";
 import type {
-  AutoPlayOptions,
+  AutoPlayStrategy,
   BallType,
   GameEvent,
   GamePhase,
@@ -16,7 +22,34 @@ export interface HeadlessQaOptions {
   seed: string;
   runs: number;
   waves: number;
-  strategy: AutoPlayOptions["strategy"];
+  strategy: AutoPlayStrategy;
+  targets?: HeadlessQaTargets;
+}
+
+export interface HeadlessQaTargets {
+  minAverageFinalWave?: number;
+  minCompletedTargetWave?: number;
+  maxGameOvers?: number;
+}
+
+export interface HeadlessQaTargetResult {
+  passed: boolean;
+  failures: string[];
+  minAverageFinalWave?: {
+    target: number;
+    actual: number;
+    passed: boolean;
+  };
+  minCompletedTargetWave?: {
+    target: number;
+    actual: number;
+    passed: boolean;
+  };
+  maxGameOvers?: {
+    target: number;
+    actual: number;
+    passed: boolean;
+  };
 }
 
 export interface HeadlessRunReport extends RunSummary {
@@ -34,6 +67,7 @@ export interface HeadlessQaReport {
     averageTeamPower: number;
     averageHealthRatio: number;
   };
+  targetResult?: HeadlessQaTargetResult;
   invariantErrors: string[];
   waveBalance: WaveBalanceReport[];
   runs: HeadlessRunReport[];
@@ -112,9 +146,15 @@ export function runHeadlessQa(options: HeadlessQaOptions): HeadlessQaReport {
     });
     const errors: string[] = [];
     const seenEventIds = new Set<number>();
+    const seenCheckpointWaves = new Set<number>();
     const controllerRng = new SeededRng(`${options.seed}:${index}:controller`);
     let snapshot = client.getSnapshot();
     recordWaveSnapshot(snapshot, seenEventIds, waveBalance);
+    errors.push(
+      ...validateCheckpointSnapshot(client, snapshot, seenCheckpointWaves).map(
+        (error) => `initial checkpoint: ${error}`,
+      ),
+    );
 
     for (let step = 0; step < options.waves * 12 + 48; step += 1) {
       errors.push(...validateState(snapshot).map((error) => `step ${step}: ${error}`));
@@ -134,6 +174,11 @@ export function runHeadlessQa(options: HeadlessQaOptions): HeadlessQaReport {
 
       snapshot = client.dispatch(action.action);
       recordWaveSnapshot(snapshot, seenEventIds, waveBalance);
+      errors.push(
+        ...validateCheckpointSnapshot(client, snapshot, seenCheckpointWaves).map(
+          (error) => `step ${step} checkpoint: ${error}`,
+        ),
+      );
     }
 
     errors.push(...validateState(snapshot).map((error) => `final: ${error}`));
@@ -153,21 +198,94 @@ export function runHeadlessQa(options: HeadlessQaOptions): HeadlessQaReport {
   );
   const completedTargetWave = runs.filter((run) => run.finalWave > options.waves).length;
   const gameOvers = runs.filter((run) => run.phase === "gameOver").length;
+  const aggregate = {
+    runs: options.runs,
+    completedTargetWave,
+    gameOvers,
+    averageFinalWave: average(runs.map((run) => run.finalWave)),
+    averageTeamPower: average(runs.map((run) => run.teamPower)),
+    averageHealthRatio: average(runs.map((run) => run.healthRatio)),
+  };
 
   return {
     options,
-    aggregate: {
-      runs: options.runs,
-      completedTargetWave,
-      gameOvers,
-      averageFinalWave: average(runs.map((run) => run.finalWave)),
-      averageTeamPower: average(runs.map((run) => run.teamPower)),
-      averageHealthRatio: average(runs.map((run) => run.healthRatio)),
-    },
+    aggregate,
+    targetResult: evaluateTargets(options.targets, aggregate),
     invariantErrors,
     waveBalance: toWaveBalanceReport(waveBalance),
     runs,
   };
+}
+
+function evaluateTargets(
+  targets: HeadlessQaTargets | undefined,
+  aggregate: HeadlessQaReport["aggregate"],
+): HeadlessQaTargetResult | undefined {
+  if (!targets) {
+    return undefined;
+  }
+
+  const result: HeadlessQaTargetResult = {
+    passed: true,
+    failures: [],
+  };
+
+  if (targets.minAverageFinalWave !== undefined) {
+    const passed = aggregate.averageFinalWave >= targets.minAverageFinalWave;
+    result.minAverageFinalWave = {
+      target: targets.minAverageFinalWave,
+      actual: aggregate.averageFinalWave,
+      passed,
+    };
+    recordTargetResult(
+      result,
+      passed,
+      `averageFinalWave ${aggregate.averageFinalWave} is below ${targets.minAverageFinalWave}`,
+    );
+  }
+
+  if (targets.minCompletedTargetWave !== undefined) {
+    const passed = aggregate.completedTargetWave >= targets.minCompletedTargetWave;
+    result.minCompletedTargetWave = {
+      target: targets.minCompletedTargetWave,
+      actual: aggregate.completedTargetWave,
+      passed,
+    };
+    recordTargetResult(
+      result,
+      passed,
+      `completedTargetWave ${aggregate.completedTargetWave} is below ${targets.minCompletedTargetWave}`,
+    );
+  }
+
+  if (targets.maxGameOvers !== undefined) {
+    const passed = aggregate.gameOvers <= targets.maxGameOvers;
+    result.maxGameOvers = {
+      target: targets.maxGameOvers,
+      actual: aggregate.gameOvers,
+      passed,
+    };
+    recordTargetResult(
+      result,
+      passed,
+      `gameOvers ${aggregate.gameOvers} is above ${targets.maxGameOvers}`,
+    );
+  }
+
+  return result;
+}
+
+function recordTargetResult(
+  result: HeadlessQaTargetResult,
+  passed: boolean,
+  failure: string,
+): void {
+  if (passed) {
+    return;
+  }
+
+  result.passed = false;
+  result.failures.push(failure);
 }
 
 export function validateState(state: GameState): string[] {
@@ -232,6 +350,44 @@ export function validateState(state: GameState): string[] {
   }
 
   return errors;
+}
+
+function validateCheckpointSnapshot(
+  client: HeadlessGameClient,
+  state: GameState,
+  seenCheckpointWaves: Set<number>,
+): string[] {
+  if (
+    state.phase !== "ready" ||
+    seenCheckpointWaves.has(state.currentWave) ||
+    !isCheckpointWave(state.currentWave, client.getBalance().checkpointInterval)
+  ) {
+    return [];
+  }
+
+  seenCheckpointWaves.add(state.currentWave);
+
+  try {
+    const snapshot = createTrainerSnapshot(state, {
+      playerId: `qa-${state.seed}`,
+      createdAt: "2026-05-12T00:00:00.000Z",
+      runSummary: client.getRunSummary(),
+    });
+    const row = serializeTrainerSnapshot(snapshot);
+    const parsed = parseSheetTrainerRow(row);
+
+    if (JSON.stringify(parsed) !== JSON.stringify(snapshot)) {
+      return [`checkpoint snapshot round-trip changed at wave ${state.currentWave}`];
+    }
+
+    return [];
+  } catch (error) {
+    return [
+      `checkpoint snapshot failed at wave ${state.currentWave}: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    ];
+  }
 }
 
 function average(values: readonly number[]): number {
