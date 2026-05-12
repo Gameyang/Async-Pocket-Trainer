@@ -1,5 +1,5 @@
 import { readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { HeadlessGameClient } from "../headlessClient";
@@ -79,11 +79,11 @@ describe("GoogleSheetsTrainerAdapter", () => {
   });
 
   it("keeps game core independent from the Google-specific adapter", () => {
-    const gameSources = listTypeScriptSources(join(process.cwd(), "src", "game")).filter(
-      (file) =>
-        !file.includes(`${join("src", "game", "sync")}${String.fromCharCode(92)}`) &&
-        !file.endsWith(".test.ts"),
-    );
+    const gameSources = listTypeScriptSources(join(process.cwd(), "src", "game")).filter((file) => {
+      const relativePath = toPosixPath(relative(process.cwd(), file));
+
+      return !relativePath.startsWith("src/game/sync/") && !relativePath.endsWith(".test.ts");
+    });
 
     for (const file of gameSources) {
       const source = readFileSync(file, "utf8");
@@ -142,4 +142,8 @@ function listTypeScriptSources(directory: string): string[] {
 
     return entry.isFile() && entry.name.endsWith(".ts") ? [path] : [];
   });
+}
+
+function toPosixPath(path: string): string {
+  return path.replaceAll("\\", "/");
 }
