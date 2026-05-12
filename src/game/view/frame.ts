@@ -122,6 +122,7 @@ export interface FrameBattleReplayEvent {
   turn: number;
   type: BattleReplayEvent["type"];
   label: string;
+  move?: string;
   sourceEntityId?: string;
   targetEntityId?: string;
   entityId?: string;
@@ -640,6 +641,7 @@ function toFrameBattleReplayEvent(event: BattleReplayEvent): FrameBattleReplayEv
       turn: event.turn,
       type: event.type,
       label: `${event.actorId} selected ${event.move}.`,
+      move: event.move,
       sourceEntityId: event.actorId,
       targetEntityId: event.targetId,
     };
@@ -651,6 +653,7 @@ function toFrameBattleReplayEvent(event: BattleReplayEvent): FrameBattleReplayEv
       turn: event.turn,
       type: event.type,
       label: `${event.actorId} missed ${event.move}.`,
+      move: event.move,
       sourceEntityId: event.actorId,
       targetEntityId: event.targetId,
     };
@@ -673,6 +676,7 @@ function toFrameBattleReplayEvent(event: BattleReplayEvent): FrameBattleReplayEv
       turn: event.turn,
       type: event.type,
       label: `${event.actorId} dealt ${event.damage} damage with ${event.move}.`,
+      move: event.move,
       sourceEntityId: event.actorId,
       targetEntityId: event.targetId,
       damage: event.damage,
@@ -687,6 +691,7 @@ function toFrameBattleReplayEvent(event: BattleReplayEvent): FrameBattleReplayEv
       turn: event.turn,
       type: event.type,
       label: `${event.targetId} was afflicted with ${event.status}.`,
+      move: event.move,
       sourceEntityId: event.actorId,
       targetEntityId: event.targetId,
       status: event.status,
@@ -699,6 +704,7 @@ function toFrameBattleReplayEvent(event: BattleReplayEvent): FrameBattleReplayEv
       turn: event.turn,
       type: event.type,
       label: `${event.targetId} resisted ${event.status}.`,
+      move: event.move,
       sourceEntityId: event.actorId,
       targetEntityId: event.targetId,
       status: event.status,

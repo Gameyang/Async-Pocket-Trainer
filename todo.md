@@ -1,54 +1,66 @@
-# TODO - 2026-05-12 Headless Integration Day Plan
+# TODO - Game Implementation Remaining List
 
-오늘 목표는 이미 검증된 headless 코어를 실제 브라우저 경로에 연결해, 렌더링/input/Google Sheets 동기화가 같은 `GameFrame` 계약으로 동작하게 만드는 것이다.
+기준일: 2026-05-12
 
-기준 문서는 `docs/headless-goal-completed-archive.md`에 보관했다. 상세 기획안은 `docs/2026-05-12-headless-render-input-sync-plan.md`를 따른다.
+기존 headless/render/input/sync 완료 계획은 `docs/2026-05-12-headless-integration-todo-backup.md`로 백업했다.
 
-참고 기준은 PokeRogue repo를 게임 흐름/상태 경계 참고로만 쓰고, 비주얼은 `sandbox/index.html`의 device/screen/battlefield/command 패턴을 따른다. 외부 코드와 에셋은 복사하지 않는다.
+## 기준
 
-## 1. Guardrails
+- 게임 규칙과 상태 변경의 원천은 `HeadlessGameClient`다.
+- UI는 `GameFrame`을 읽고 `FrameAction.action`만 dispatch한다.
+- 렌더러에는 전투 승패, 포획 성공, 보상 계산 같은 게임 규칙을 넣지 않는다.
+- PokeRogue는 흐름/상태 경계 참고용으로만 사용하고 코드는 복사하지 않는다.
+- 비주얼 기준은 `sandbox/index.html`의 handheld/screen/battlefield/command 패턴을 따른다.
+- Google Sheets 설정과 URL은 브라우저 localStorage에만 저장하고 repo에는 민감값을 남기지 않는다.
 
-- [x] 게임 규칙은 `HeadlessGameClient`, `GameFrame`, sync adapter 뒤에만 둔다.
-- [x] UI는 `FrameAction.action`만 dispatch한다.
-- [x] PokeRogue는 구현 구조/흐름 참고로만 사용하고 코드와 에셋은 복사하지 않는다.
-- [x] 브라우저 저장소와 Google Sheets 설정은 repo에 민감값을 남기지 않는다.
-- [x] 실제 Google Sheets 네트워크 검증은 명시적 환경값이 있을 때만 실행한다.
-- [x] 기본 품질 게이트는 `npm run verify`, 최종 렌더링 확인은 `npm run render:check`로 유지한다.
+## 1. 전투 연출
 
-## 2. Rendering
+- [x] `GameFrame.battleReplay.events`를 순서대로 재생하는 렌더러 전용 animation queue를 만든다.
+- [x] 공격자/피격자 흔들림, hit/miss, critical, effectiveness 상태를 CSS class로 표현한다.
+- [x] 데미지 숫자와 faint 연출을 `FrameVisualCue` 기반으로 표시한다.
+- [x] 전투 결과 로그가 한 번에 바뀌지 않고 턴 단위로 자연스럽게 진행되게 한다.
+- [x] 애니메이션 중 입력 잠금과 빠른 진행/스킵 처리를 구현한다.
 
-- [x] Playwright가 starter, encounter, capture/skip, team decision, shop, game over/restart 화면을 실제 클릭으로 통과한다.
-- [x] HTML renderer가 모든 phase에서 빈 화면 없이 `.app-shell`, `.dashboard`, `.command-band`를 표시한다.
-- [x] 몬스터 이미지 로딩 실패, battlefield 미표시, 모바일 overflow, 버튼 겹침을 Playwright assertion으로 잡는다.
-- [x] Canvas renderer smoke를 추가해 같은 `GameFrame`에서 entity와 command panel을 그릴 수 있는지 확인한다.
+## 2. 포획 흐름
 
-## 3. Input
+- [ ] Poke Ball / Great Ball 선택 후 투척, 흔들림, 성공/실패 연출을 추가한다.
+- [ ] 포획 성공 시 `teamDecision`으로 넘어가기 전 짧은 획득 연출을 보여준다.
+- [ ] 포획 실패 시 상대가 남아 있음을 화면에서 명확히 보여준다.
+- [ ] 볼 개수 변화가 HUD와 버튼에 즉시 반영되는지 Playwright로 검증한다.
 
-- [x] 모든 visible button은 `data-action-id`로 현재 frame action을 찾아 `action.action`만 dispatch한다.
-- [x] disabled action 클릭은 state/frame을 바꾸지 않는다.
-- [x] 브라우저 E2E에서 `data-frame-id` 증가, HUD wave 변경, timeline 증가를 확인한다.
-- [x] keyboard shortcut은 오늘 범위에서 제외하고 pointer/click input만 완성한다.
+## 3. Phase별 실제 게임 화면
 
-## 4. Browser Save
+- [ ] `starterChoice`: 스타터 3종 선택 화면을 카드 나열이 아니라 선택 장면처럼 구성한다.
+- [ ] `ready`: 다음 조우, 휴식, 구매가 가능한 캠프/웨이브 준비 화면을 만든다.
+- [ ] `captureDecision`: 전투 후 포획 판단 화면을 전투 결과와 연결한다.
+- [ ] `teamDecision`: 새 포켓몬과 기존 팀을 비교하고 교체 슬롯을 고르는 화면을 만든다.
+- [ ] `gameOver`: 최종 웨이브, 팀, 재시작 액션을 게임 결과 화면으로 보여준다.
 
-- [x] `HeadlessClientSnapshot`을 localStorage에 저장/복원하는 browser save adapter를 추가한다.
-- [x] 새로고침 후 같은 seed/run이 이어지는지 Playwright로 검증한다.
-- [x] 저장 데이터 schema version 불일치나 깨진 JSON은 새 run 시작 대신 명확한 recover path를 제공한다.
+## 4. 팀 관리
 
-## 5. Google Sheets Sync
+- [ ] 접힌 Team drawer 안에 6마리 파티를 슬롯형 UI로 정리한다.
+- [ ] 교체 판단 시 새 포켓몬과 선택 슬롯의 HP/stat/power 차이를 비교 표시한다.
+- [ ] 빈 슬롯, 기절 슬롯, 교체 후보 상태를 색과 아이콘으로 구분한다.
+- [ ] 모바일에서 팀 카드 텍스트가 버튼/HP바와 겹치지 않게 고정 크기를 검증한다.
 
-- [x] `SyncSettings` 타입을 추가한다: `enabled`, `spreadsheetId`, `range`, `apiKey` 또는 `accessToken`.
-- [x] API key/token 없이 공개 Google Sheet를 읽는 `publicCsv` 모드를 추가한다.
-- [x] 공개 시트 쓰기를 위한 Apps Script `Submit URL` checkpoint 전송을 추가한다.
-- [x] sync 설정은 localStorage에만 저장하고 repository에는 저장하지 않는다.
-- [x] checkpoint wave에서 `TrainerSnapshot` append를 호출한다.
-- [x] trainer encounter wave에서 sheet rows를 list/filter/pick해 상대 후보로 연결한다.
-- [x] 자동 테스트는 mock fetch와 local/mock adapter를 기본으로 한다.
+## 5. Google Sheets 게임 연결
 
-## 6. Verification
+- [ ] 공개 시트에서 불러온 trainer encounter임을 battle screen에 배지로 표시한다.
+- [ ] checkpoint wave 제출 성공/실패를 Sync drawer 요약에 짧게 반영한다.
+- [ ] 실제 Apps Script `/exec` URL을 받으면 public CSV read + Apps Script submit을 end-to-end로 확인한다.
+- [ ] 동기화 실패 시 게임 진행은 막지 않고 재시도 가능한 상태만 남긴다.
 
-- [x] `npm run verify`
-- [x] `npm run render:check`
-- [x] `npm run qa:headless:100`
-- [x] `npm run format`
-- [x] 최종 완료 시 루트 `todo.md`의 체크박스를 모두 닫는다.
+## 6. UX 정리
+
+- [ ] 상단 HUD를 Wave, phase label, money, ball count 중심으로 다시 압축한다.
+- [ ] 버튼 라벨을 phase별 명령처럼 정리하고 disabled reason은 title/보조 상태로만 둔다.
+- [ ] Sync/Log/Team은 기본 접힘 상태를 유지하고 첫 화면에는 게임 플레이만 보이게 한다.
+- [ ] 새 게임, 저장 삭제, 트레이너 이름 변경 같은 설정성 동작은 별도 drawer로 분리한다.
+
+## 7. 검증
+
+- [ ] Playwright screenshot 검증을 `starterChoice`, `ready`, `captureDecision`, `teamDecision`, `gameOver`로 확장한다.
+- [ ] 모바일 390x844, 좁은 320px, 데스크톱 폭에서 텍스트 겹침/overflow를 확인한다.
+- [x] `battleReplay` 재생 중 빠른 클릭이 headless state를 중복 변경하지 않는지 테스트한다.
+- [ ] 실제 public sheet GET은 credentials 없이 동작하고, POST는 Apps Script URL이 있을 때만 실행되게 테스트한다.
+- [ ] 최종 변경마다 `npm run verify`와 `npm run render:check`를 통과시킨다.

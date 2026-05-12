@@ -6,15 +6,17 @@ test("confirms the mobile game-frame rendering path", async ({ page }) => {
   const shell = page.locator(".app-shell");
   await expect(shell).toBeVisible();
   await expect(page.locator(".topbar")).toBeVisible();
+  await expect(page.locator(".screen")).toBeVisible();
+  await expect(page.locator(".battlefield")).toBeVisible();
   await expect(page.locator(".command-band")).toBeVisible();
 
   await page.locator('[data-action-id^="start:"]').first().click();
 
-  const teamImage = page.locator(".team-panel .creature img").first();
-  await expect(teamImage).toBeVisible();
+  const heroImage = page.locator(".hero-mon img").first();
+  await expect(heroImage).toBeVisible();
   await expect
     .poll(() =>
-      teamImage.evaluate(
+      heroImage.evaluate(
         (image) => image instanceof HTMLImageElement && image.complete && image.naturalWidth > 0,
       ),
     )
@@ -22,20 +24,34 @@ test("confirms the mobile game-frame rendering path", async ({ page }) => {
 
   await page.locator('[data-action-id="encounter:next"]').click();
 
-  const encounterPanel = page.locator(".encounter-panel");
+  const encounterPanel = page.locator(".screen.encounter-panel");
   const commandBand = page.locator(".command-band");
   await expect(encounterPanel).toBeVisible();
+  await expect(shell).toHaveAttribute("data-battle-playback", "playing");
+  await expect(page.locator("[data-replay-skip]")).toBeVisible();
+  const firstSequence = Number(await shell.getAttribute("data-battle-sequence"));
+  await expect(page.locator(".enemy-mon img")).toBeVisible();
+  await expect(page.locator(".battle-card.enemy")).toBeVisible();
+  await expect(page.locator(".battle-card.hero")).toBeVisible();
   await expect(page.locator(".battle-log")).toBeVisible();
+  await expect(page.locator(".battle-float").first()).toBeVisible();
+  await expect(page.locator(".log-line")).not.toContainText(/[0-9a-f]{8}/);
 
-  const dashboardBox = await page.locator(".dashboard").boundingBox();
+  await expect
+    .poll(async () => Number(await shell.getAttribute("data-battle-sequence")))
+    .toBeGreaterThan(firstSequence);
+  await expect(page.locator(".screen-monster[data-battle-effect]").first()).toBeVisible();
+  await skipBattleReplay(page);
+
+  const screenBox = await page.locator(".screen").boundingBox();
   const commandBox = await commandBand.boundingBox();
-  expect(dashboardBox).not.toBeNull();
+  expect(screenBox).not.toBeNull();
   expect(commandBox).not.toBeNull();
-  expect(commandBox?.y).toBeGreaterThan(dashboardBox?.y ?? 0);
+  expect(commandBox?.y).toBeGreaterThan(screenBox?.y ?? 0);
 
-  const battlefieldBackground = await encounterPanel.evaluate(
-    (element) => getComputedStyle(element).backgroundImage,
-  );
+  const battlefieldBackground = await page
+    .locator(".battlefield")
+    .evaluate((element) => getComputedStyle(element).backgroundImage);
   expect(battlefieldBackground).toContain("gradient");
 });
 
@@ -89,6 +105,7 @@ test("reads public CSV and submits Apps Script without credentials during checkp
   });
 
   await openFresh(page);
+  await openSync(page);
   await page.locator('input[name="enabled"]').check();
   await page.locator('select[name="mode"]').selectOption("publicCsv");
   await page
@@ -125,6 +142,14 @@ async function playUntilWave(page: Page, targetWave: number): Promise<void> {
   }
 
   throw new Error(`Could not reach wave ${targetWave}.`);
+}
+
+async function openSync(page: Page): Promise<void> {
+  const sync = page.locator(".sync-panel");
+
+  if ((await sync.getAttribute("open")) === null) {
+    await sync.locator("summary").click();
+  }
 }
 
 async function openFresh(page: Page): Promise<void> {
@@ -184,6 +209,16 @@ async function clickAction(page: Page, selector: string): Promise<void> {
   await page.locator(selector).first().click();
   await expect.poll(() => page.locator("#app").getAttribute("data-busy")).toBeNull();
   await expect(page.locator(".app-shell")).toBeVisible();
+  await skipBattleReplay(page);
+}
+
+async function skipBattleReplay(page: Page): Promise<void> {
+  const shell = page.locator(".app-shell");
+
+  if ((await shell.getAttribute("data-battle-playback")) === "playing") {
+    await page.locator("[data-replay-skip]").click();
+    await expect(shell).toHaveAttribute("data-battle-playback", "idle");
+  }
 }
 
 async function readShellState(page: Page) {
