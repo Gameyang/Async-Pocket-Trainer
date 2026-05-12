@@ -1,5 +1,7 @@
 import type { GameAction } from "../game/types";
 import type { FrameAction, FrameEntity, GameFrame } from "../game/view/frame";
+import type { BrowserSyncStatus } from "../browser/browserSync";
+import type { SyncSettings } from "../browser/syncSettings";
 
 const pokemonAssetUrls = import.meta.glob<string>("../resources/pokemon/*.webp", {
   eager: true,
@@ -9,14 +11,33 @@ const pokemonAssetUrls = import.meta.glob<string>("../resources/pokemon/*.webp",
 
 export interface FrameClient {
   getFrame(): GameFrame;
-  dispatch(action: GameAction): unknown;
+  dispatch(action: GameAction): unknown | Promise<unknown>;
 }
 
-export function mountHtmlRenderer(root: HTMLElement, client: FrameClient): void {
+export interface HtmlRendererStatusView {
+  saveNotice?: string;
+  sync?: {
+    settings: SyncSettings;
+    status: BrowserSyncStatus;
+  };
+}
+
+export interface HtmlRendererOptions {
+  getStatusView?: () => HtmlRendererStatusView;
+  onSyncSettingsSubmit?: (settings: SyncSettings) => unknown | Promise<unknown>;
+  onClearSave?: () => unknown | Promise<unknown>;
+}
+
+export function mountHtmlRenderer(
+  root: HTMLElement,
+  client: FrameClient,
+  options: HtmlRendererOptions = {},
+): void {
   const render = () => {
     const frame = client.getFrame();
-    root.innerHTML = renderFrame(frame);
+    root.innerHTML = renderFrame(frame, options.getStatusView?.() ?? {});
     bindActions(root, client, frame, render);
+    bindSettings(root, options, render);
   };
 
   render();
@@ -28,19 +49,61 @@ function bindActions(
   frame: GameFrame,
   render: () => void,
 ): void {
+  let busy = false;
+
   root.querySelectorAll<HTMLButtonElement>("[data-action-id]").forEach((button) => {
-    button.addEventListener("click", () => {
+    button.addEventListener("click", async () => {
+      if (busy) {
+        return;
+      }
+
       const action = frame.actions.find((candidate) => candidate.id === button.dataset.actionId);
 
       if (action?.enabled) {
-        client.dispatch(action.action);
-        render();
+        busy = true;
+        root.dataset.busy = "true";
+
+        try {
+          await client.dispatch(action.action);
+        } finally {
+          busy = false;
+          delete root.dataset.busy;
+          render();
+        }
       }
     });
   });
 }
 
-function renderFrame(frame: GameFrame): string {
+function bindSettings(root: HTMLElement, options: HtmlRendererOptions, render: () => void): void {
+  const form = root.querySelector<HTMLFormElement>("[data-sync-form]");
+  form?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+
+    if (!options.onSyncSettingsSubmit) {
+      return;
+    }
+
+    const data = new FormData(form);
+    await options.onSyncSettingsSubmit({
+      enabled: data.get("enabled") === "on",
+      spreadsheetId: String(data.get("spreadsheetId") ?? ""),
+      range: String(data.get("range") ?? ""),
+      apiKey: optionalFormValue(data.get("apiKey")),
+      accessToken: optionalFormValue(data.get("accessToken")),
+    });
+    render();
+  });
+
+  root
+    .querySelector<HTMLButtonElement>("[data-clear-save]")
+    ?.addEventListener("click", async () => {
+      await options.onClearSave?.();
+      render();
+    });
+}
+
+function renderFrame(frame: GameFrame, statusView: HtmlRendererStatusView): string {
   const playerEntities = frame.scene.playerSlots
     .map((id) => frame.entities.find((entity) => entity.id === id))
     .filter((entity): entity is FrameEntity => Boolean(entity));
@@ -52,11 +115,14 @@ function renderFrame(frame: GameFrame): string {
     : undefined;
 
   return `
-    <main class="app-shell" data-frame-id="${frame.frameId}" data-protocol="${frame.protocolVersion}">
+    <main class="app-shell" data-frame-id="${frame.frameId}" data-protocol="${frame.protocolVersion}" data-phase="${frame.phase}" data-wave="${frame.hud.wave}" data-money="${frame.hud.money}" data-poke-balls="${frame.hud.balls.pokeBall}" data-great-balls="${frame.hud.balls.greatBall}" data-team-size="${playerEntities.length}" data-timeline-count="${frame.timeline.length}">
       <header class="topbar">
-        <div>
+        <div class="brand">
+          <span class="mark" aria-hidden="true"></span>
+          <div>
           <p class="eyebrow">Frame API ${frame.protocolVersion}</p>
           <h1>${escapeHtml(frame.hud.title)}</h1>
+          </div>
         </div>
         <div class="run-status">
           <span>Wave ${frame.hud.wave}</span>
@@ -112,6 +178,8 @@ function renderFrame(frame: GameFrame): string {
               .join("")}
           </ol>
         </article>
+
+        ${renderSyncPanel(statusView)}
       </section>
     </main>
   `;
@@ -147,6 +215,61 @@ function renderEntity(entity: FrameEntity): string {
       <p class="moves">${entity.moves.map((move) => escapeHtml(move.name)).join(", ")}</p>
     </article>
   `;
+}
+
+function renderSyncPanel(statusView: HtmlRendererStatusView): string {
+  const sync = statusView.sync;
+
+  if (!sync) {
+    return "";
+  }
+
+  const { settings, status } = sync;
+  const checked = settings.enabled ? " checked" : "";
+  const notice = statusView.saveNotice
+    ? `<p class="save-notice" data-save-notice>${escapeHtml(statusView.saveNotice)}</p>`
+    : "";
+
+  return `
+    <article class="panel sync-panel" data-sync-state="${status.state}">
+      <div class="panel-heading">
+        <h2>Sync</h2>
+        <span data-sync-status>${escapeHtml(status.message)}</span>
+      </div>
+      <form class="sync-form" data-sync-form>
+        <label class="toggle-row">
+          <input type="checkbox" name="enabled"${checked} />
+          <span>Google Sheets</span>
+        </label>
+        <label>
+          <span>Sheet</span>
+          <input name="spreadsheetId" value="${escapeHtml(settings.spreadsheetId)}" autocomplete="off" />
+        </label>
+        <label>
+          <span>Range</span>
+          <input name="range" value="${escapeHtml(settings.range)}" autocomplete="off" />
+        </label>
+        <label>
+          <span>API key</span>
+          <input name="apiKey" type="password" value="${escapeHtml(settings.apiKey ?? "")}" autocomplete="off" />
+        </label>
+        <label>
+          <span>Token</span>
+          <input name="accessToken" type="password" value="${escapeHtml(settings.accessToken ?? "")}" autocomplete="off" />
+        </label>
+        <div class="sync-actions">
+          <button type="submit">Save Sync</button>
+          <button type="button" data-clear-save>Clear Save</button>
+        </div>
+      </form>
+      ${notice}
+    </article>
+  `;
+}
+
+function optionalFormValue(value: FormDataEntryValue | null): string | undefined {
+  const resolved = String(value ?? "").trim();
+  return resolved.length > 0 ? resolved : undefined;
 }
 
 function escapeHtml(value: string): string {

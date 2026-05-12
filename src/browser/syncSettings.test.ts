@@ -1,0 +1,94 @@
+import { describe, expect, it } from "vitest";
+
+import type { StorageLike } from "./clientStorage";
+import {
+  DEFAULT_SYNC_SETTINGS,
+  SYNC_SETTINGS_STORAGE_KEY,
+  clearSyncSettings,
+  hasSyncCredentials,
+  loadSyncSettings,
+  saveSyncSettings,
+} from "./syncSettings";
+
+describe("browser sync settings storage", () => {
+  it("defaults to disabled sync", () => {
+    expect(loadSyncSettings(createMemoryStorage())).toEqual(DEFAULT_SYNC_SETTINGS);
+  });
+
+  it("stores valid settings only in the provided storage", () => {
+    const storage = createMemoryStorage();
+    const saved = saveSyncSettings(
+      {
+        enabled: true,
+        spreadsheetId: "sheet-1",
+        range: "APT_WAVE_TEAMS!A:I",
+        apiKey: "key-1",
+      },
+      storage,
+    );
+
+    expect(saved).toMatchObject({
+      enabled: true,
+      spreadsheetId: "sheet-1",
+      apiKey: "key-1",
+    });
+    expect(loadSyncSettings(storage)).toEqual(saved);
+  });
+
+  it("keeps missing credentials as an offline-capable settings state", () => {
+    const storage = createMemoryStorage();
+    const saved = saveSyncSettings(
+      {
+        enabled: true,
+        spreadsheetId: "sheet-1",
+        range: "APT_WAVE_TEAMS!A:I",
+      },
+      storage,
+    );
+
+    expect(saved.enabled).toBe(true);
+    expect(hasSyncCredentials(saved)).toBe(false);
+  });
+
+  it("recovers from corrupt settings JSON", () => {
+    const storage = createMemoryStorage({
+      [SYNC_SETTINGS_STORAGE_KEY]: "{",
+    });
+
+    expect(loadSyncSettings(storage)).toEqual(DEFAULT_SYNC_SETTINGS);
+    expect(storage.getItem(SYNC_SETTINGS_STORAGE_KEY)).toBeNull();
+  });
+
+  it("clears sync settings explicitly", () => {
+    const storage = createMemoryStorage();
+    saveSyncSettings(
+      {
+        enabled: true,
+        spreadsheetId: "sheet-1",
+        range: "APT_WAVE_TEAMS!A:I",
+        accessToken: "token-1",
+      },
+      storage,
+    );
+
+    clearSyncSettings(storage);
+
+    expect(storage.getItem(SYNC_SETTINGS_STORAGE_KEY)).toBeNull();
+  });
+});
+
+function createMemoryStorage(initial: Record<string, string> = {}): StorageLike {
+  const values = new Map(Object.entries(initial));
+
+  return {
+    getItem(key) {
+      return values.get(key) ?? null;
+    },
+    setItem(key, value) {
+      values.set(key, value);
+    },
+    removeItem(key) {
+      values.delete(key);
+    },
+  };
+}

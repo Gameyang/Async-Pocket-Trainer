@@ -255,5 +255,5 @@ function getGlobalFetch(): FetchLike {
     throw new Error("GoogleSheetsTrainerAdapter requires a fetch implementation.");
   }
 
-  return fetchImpl as FetchLike;
+  return fetchImpl.bind(globalThis) as FetchLike;
 }

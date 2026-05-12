@@ -51,7 +51,7 @@ export class HeadlessGameClient {
     const seed = options.seed ?? "apt-headless-default";
     this.balance = { ...defaultBalance, ...options.balance };
     this.rng = new SeededRng(seed);
-    this.trainerSnapshots = [...(options.trainerSnapshots ?? [])];
+    this.trainerSnapshots = (options.trainerSnapshots ?? []).map(cloneTrainerSnapshot);
     this.state = {
       version: 1,
       seed,
@@ -99,7 +99,7 @@ export class HeadlessGameClient {
     assertValidClientSnapshot(snapshot);
 
     this.balance = { ...snapshot.balance };
-    this.trainerSnapshots = [...snapshot.trainerSnapshots];
+    this.trainerSnapshots = snapshot.trainerSnapshots.map(cloneTrainerSnapshot);
     this.state = cloneState(snapshot.state);
     this.rng.setState(this.state.rngState);
     this.frameId = snapshot.frameId;
@@ -114,6 +114,10 @@ export class HeadlessGameClient {
 
   getBalance(): GameBalance {
     return { ...this.balance };
+  }
+
+  addTrainerSnapshot(snapshot: TrainerSnapshot): void {
+    this.trainerSnapshots = [...this.trainerSnapshots, cloneTrainerSnapshot(snapshot)];
   }
 
   dispatch(action: GameAction): GameState {
@@ -527,6 +531,10 @@ export function cloneState(state: GameState): GameState {
 
 export function cloneClientSnapshot(snapshot: HeadlessClientSnapshot): HeadlessClientSnapshot {
   return JSON.parse(JSON.stringify(snapshot)) as HeadlessClientSnapshot;
+}
+
+function cloneTrainerSnapshot(snapshot: TrainerSnapshot): TrainerSnapshot {
+  return JSON.parse(JSON.stringify(snapshot)) as TrainerSnapshot;
 }
 
 function assertValidClientSnapshot(snapshot: HeadlessClientSnapshot): void {

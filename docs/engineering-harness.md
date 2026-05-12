@@ -48,6 +48,8 @@ HeadlessGameClient
   -> HTML / WebGL / Canvas renderer
 ```
 
+구현 참고는 PokeRogue를 브라우저 게임 흐름과 상태 경계의 외부 레퍼런스로만 사용합니다. 실제 구현 기준은 이 저장소의 `HeadlessGameClient`/`GameFrame` 계약이며, 비주얼 기준은 `sandbox/index.html`의 device, battlefield, command panel 구조입니다.
+
 LLM 또는 CI는 브라우저를 열지 않고 아래 명령으로 게임 진행을 검증합니다.
 
 ```bash
@@ -102,3 +104,8 @@ npm run render:check
 - GitHub Pages preview 배포
 - 테스트 커버리지 리포트
 - 릴리스 노트 자동 생성
+
+## 운영 문서
+
+- 완료된 headless 기준 TODO: [`headless-goal-completed-archive.md`](headless-goal-completed-archive.md)
+- 2026-05-12 렌더링/input/sync 통합 기획안: [`2026-05-12-headless-render-input-sync-plan.md`](2026-05-12-headless-render-input-sync-plan.md)

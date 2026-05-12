@@ -1,0 +1,113 @@
+import { describe, expect, it } from "vitest";
+
+import { HeadlessGameClient } from "../game/headlessClient";
+import { LocalTrainerSheetAdapter } from "../game/sync/localSheetAdapter";
+import { createTrainerSnapshot, serializeTrainerSnapshot } from "../game/sync/trainerSnapshot";
+import { BrowserSyncController } from "./browserSync";
+import type { SyncSettings } from "./syncSettings";
+
+const enabledSettings: SyncSettings = {
+  enabled: true,
+  spreadsheetId: "sheet-1",
+  range: "APT_WAVE_TEAMS!A:I",
+  apiKey: "key-1",
+};
+
+describe("browser sync controller", () => {
+  it("appends checkpoint snapshots through the configured adapter", async () => {
+    const client = readyAtCheckpoint("append-checkpoint");
+    const adapter = new LocalTrainerSheetAdapter();
+    const sync = new BrowserSyncController(client, enabledSettings, {
+      adapter,
+      playerId: "player-a",
+      now: () => "2026-05-12T00:00:00.000Z",
+    });
+
+    await sync.afterDispatch({ type: "DISCARD_CAPTURE" });
+
+    const rows = await adapter.listRows({ wave: 5 });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      playerId: "player-a",
+      wave: 5,
+      seed: "append-checkpoint",
+    });
+    expect(sync.getStatus()).toMatchObject({ state: "synced" });
+  });
+
+  it("loads and injects a picked trainer snapshot before a checkpoint encounter", async () => {
+    const opponent = buildOpponentSnapshot();
+    const adapter = new LocalTrainerSheetAdapter([serializeTrainerSnapshot(opponent)]);
+    const client = readyAtCheckpoint("pick-checkpoint");
+    const sync = new BrowserSyncController(client, enabledSettings, {
+      adapter,
+      playerId: "player-a",
+      now: () => "2026-05-12T00:00:00.000Z",
+    });
+
+    await sync.beforeDispatch({ type: "RESOLVE_NEXT_ENCOUNTER" });
+    client.dispatch({ type: "RESOLVE_NEXT_ENCOUNTER" });
+
+    expect(client.getSnapshot().lastBattle?.kind).toBe("trainer");
+    expect(client.getSnapshot().lastBattle?.enemyTeam[0].instanceId).toBe(
+      opponent.team[0].creatureId,
+    );
+    expect(sync.getStatus()).toMatchObject({ state: "synced", candidateCount: 1 });
+  });
+
+  it("stays offline when sync is enabled without credentials", async () => {
+    const client = readyAtCheckpoint("offline-sync");
+    const sync = new BrowserSyncController(
+      client,
+      {
+        enabled: true,
+        spreadsheetId: "sheet-1",
+        range: "APT_WAVE_TEAMS!A:I",
+      },
+      { playerId: "player-a" },
+    );
+
+    await sync.beforeDispatch({ type: "RESOLVE_NEXT_ENCOUNTER" });
+
+    expect(sync.getStatus()).toMatchObject({ state: "offline" });
+  });
+});
+
+function readyAtCheckpoint(seed: string): HeadlessGameClient {
+  const client = new HeadlessGameClient({ seed, trainerName: "Browser Sync" });
+
+  client.dispatch({ type: "START_RUN", starterSpeciesId: 1 });
+
+  for (let guard = 0; guard < 30; guard += 1) {
+    const state = client.getSnapshot();
+
+    if (state.phase === "ready" && state.currentWave === 5) {
+      return client;
+    }
+
+    const action = client.getFrame().actions.find((candidate) => candidate.enabled);
+
+    if (!action) {
+      throw new Error(`No action while preparing checkpoint from ${state.phase}.`);
+    }
+
+    client.dispatch(action.action);
+  }
+
+  throw new Error("Could not reach checkpoint wave 5.");
+}
+
+function buildOpponentSnapshot() {
+  const opponent = new HeadlessGameClient({
+    seed: "sheet-opponent",
+    trainerName: "Sheet Rival",
+  });
+  opponent.dispatch({ type: "START_RUN", starterSpeciesId: 4 });
+
+  return createTrainerSnapshot(opponent.getSnapshot(), {
+    playerId: "opponent-a",
+    createdAt: "2026-05-12T00:00:00.000Z",
+    runSummary: opponent.getRunSummary(),
+    wave: 5,
+  });
+}
