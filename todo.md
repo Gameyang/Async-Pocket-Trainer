@@ -64,3 +64,16 @@
 - [x] `battleReplay` 재생 중 빠른 클릭이 headless state를 중복 변경하지 않는지 테스트한다.
 - [ ] 실제 public sheet GET은 credentials 없이 동작하고, POST는 Apps Script URL이 있을 때만 실행되게 테스트한다.
 - [ ] 최종 변경마다 `npm run verify`와 `npm run render:check`를 통과시킨다.
+
+## 8. 오픈 자산 / 오디오 / 렌더링 완성도
+
+- [ ] PokeRogue(`https://github.com/pagefaultgames/pokerogue`)는 게임 진행, phase queue, 전투 화면 구성, 오디오/효과 트리거 방식의 참고 레퍼런스로만 사용하고 코드는 복사하지 않는다.
+- [ ] 원작 포켓몬 NPC 이미지, BGM, SFX는 repo에 포함하지 않고 CC0 또는 명확히 허용된 오픈 라이선스 자산만 사용한다.
+- [ ] 사용한 이미지/오디오 자산의 출처 URL, 라이선스, 변환 방식, 게임 내 사용 위치를 `docs/assets.md`에 기록한다.
+- [ ] 트레이너/NPC 이미지 자산을 확보해 `src/resources/trainers/*.webp`로 변환하고, trainer encounter 화면에서 결정적으로 선택해 표시한다.
+- [ ] BGM 자산은 `src/resources/audio/bgm/*`에, SFX 자산은 `src/resources/audio/sfx/*`에 저장하고 Vite 번들 경로로 로드한다.
+- [ ] `GameFrame.scene`에 trainer encounter 표시용 메타데이터를 추가하되, headless 규칙 계층에는 렌더링/오디오 재생 로직을 넣지 않는다.
+- [ ] `FrameVisualCue.soundKey`를 실제 SFX 매핑에 연결해 hit, critical hit, miss, faint, phase change, capture success/fail 사운드를 재생한다.
+- [ ] 브라우저 autoplay 제한을 고려해 첫 사용자 입력 이후 오디오를 활성화하고, mute 토글 상태를 `localStorage`에 저장한다.
+- [ ] phase별 BGM 전환을 구현한다: starter/ready, battle/captureDecision, teamDecision, gameOver.
+- [ ] Playwright에서 trainer portrait 렌더링, 오디오 토글 UI, 모바일/데스크톱 레이아웃 겹침 여부를 검증한다.
