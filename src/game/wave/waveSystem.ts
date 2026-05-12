@@ -1,5 +1,6 @@
 import { createCreature } from "../creatureFactory";
 import { getMove, getSpecies } from "../data/catalog";
+import { formatWave } from "../localization";
 import { scoreTeam } from "../scoring";
 import type { SeededRng } from "../rng";
 import type { Creature, EncounterSnapshot, GameBalance } from "../types";
@@ -16,7 +17,7 @@ export function createWildEncounter(
     kind: "wild",
     source: "generated",
     wave,
-    opponentName: `Wild ${creature.speciesName}`,
+    opponentName: `야생 ${creature.speciesName}`,
     enemyTeam: [creature],
   };
 }
@@ -39,7 +40,7 @@ export function createTrainerEncounter(
     kind: "trainer",
     source: "generated",
     wave,
-    opponentName: `Wave ${wave} Trainer (${scoreTeam(team)})`,
+    opponentName: `${formatWave(wave)} 트레이너 (${scoreTeam(team)})`,
     enemyTeam: team,
   };
 }
@@ -51,7 +52,7 @@ export function createTrainerEncounterFromSnapshot(snapshot: TrainerSnapshot): E
     kind: "trainer",
     source: "sheet",
     wave: snapshot.wave,
-    opponentName: `${snapshot.trainerName} Snapshot (${snapshot.teamPower})`,
+    opponentName: `${snapshot.trainerName} 기록 (${snapshot.teamPower})`,
     enemyTeam: team,
   };
 }

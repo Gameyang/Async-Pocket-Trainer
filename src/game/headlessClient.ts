@@ -2,6 +2,12 @@ import { runAutoBattle } from "./battle/battleEngine";
 import { attemptCapture } from "./capture/captureSystem";
 import { createCreature, healTeam } from "./creatureFactory";
 import { defaultBalance, starterSpeciesIds } from "./data/catalog";
+import {
+  DEFAULT_HEADLESS_TRAINER_NAME,
+  formatWave,
+  localizeBall,
+  localizeWinner,
+} from "./localization";
 import { SeededRng } from "./rng";
 import { chooseReplacementIndex, getTeamHealthRatio, scoreTeam } from "./scoring";
 import { createGameFrame, type GameFrame } from "./view/frame";
@@ -56,7 +62,7 @@ export class HeadlessGameClient {
       version: 1,
       seed,
       rngState: this.rng.getState(),
-      trainerName: options.trainerName ?? "Headless Trainer",
+      trainerName: options.trainerName ?? DEFAULT_HEADLESS_TRAINER_NAME,
       phase: "starterChoice",
       currentWave: 1,
       money: this.balance.startingMoney,
@@ -177,7 +183,7 @@ export class HeadlessGameClient {
     this.frameId += 1;
 
     if (before === signature(this.state) && this.state.phase !== "gameOver") {
-      this.addEvent("stalled", "Headless auto step made no progress.");
+      this.addEvent("stalled", "자동 진행이 더 이상 진행되지 않았습니다.");
     }
 
     return this.getSnapshot();
@@ -214,7 +220,7 @@ export class HeadlessGameClient {
 
   private startRun(starterSpeciesId: number = starterSpeciesIds[0], trainerName?: string): void {
     if (this.state.phase !== "starterChoice" && this.state.phase !== "gameOver") {
-      this.addEvent("start_ignored", "Run is already active.");
+      this.addEvent("start_ignored", "이미 진행 중인 도전입니다.");
       return;
     }
 
@@ -242,15 +248,19 @@ export class HeadlessGameClient {
       events: [],
     };
     this.nextEventId = 1;
-    this.addEvent("run_started", `${this.state.trainerName} chose ${starter.speciesName}.`, {
-      starterSpeciesId: starter.speciesId,
-      starterPower: starter.powerScore,
-    });
+    this.addEvent(
+      "run_started",
+      `${this.state.trainerName}님이 ${starter.speciesName}를 선택했습니다.`,
+      {
+        starterSpeciesId: starter.speciesId,
+        starterPower: starter.powerScore,
+      },
+    );
   }
 
   private resolveNextEncounter(): void {
     if (this.state.phase !== "ready") {
-      this.addEvent("encounter_ignored", "Encounter can only resolve while ready.");
+      this.addEvent("encounter_ignored", "준비 상태에서만 다음 만남을 시작할 수 있습니다.");
       return;
     }
 
@@ -274,7 +284,7 @@ export class HeadlessGameClient {
 
     this.addEvent(
       "battle_resolved",
-      `${encounter.opponentName} battle ended with ${battle.winner} win.`,
+      `${encounter.opponentName}와의 전투에서 ${localizeWinner(battle.winner)}했습니다.`,
       {
         kind: encounter.kind,
         winner: battle.winner,
@@ -288,7 +298,7 @@ export class HeadlessGameClient {
 
     if (battle.winner !== "player") {
       this.state.phase = "gameOver";
-      this.state.gameOverReason = `Lost at wave ${this.state.currentWave} against ${encounter.opponentName}.`;
+      this.state.gameOverReason = `${formatWave(this.state.currentWave)}에서 ${encounter.opponentName}에게 패배했습니다.`;
       this.addEvent("game_over", this.state.gameOverReason, {
         wave: this.state.currentWave,
         opponentName: encounter.opponentName,
@@ -316,12 +326,12 @@ export class HeadlessGameClient {
 
   private tryCapture(ball: BallType): void {
     if (this.state.phase !== "captureDecision" || !this.state.pendingEncounter) {
-      this.addEvent("capture_ignored", "No capture decision is pending.");
+      this.addEvent("capture_ignored", "포획을 선택할 대상이 없습니다.");
       return;
     }
 
     if (this.state.balls[ball] <= 0) {
-      this.addEvent("capture_no_ball", `No ${ball} remains.`);
+      this.addEvent("capture_no_ball", `${localizeBall(ball)}이 없습니다.`);
       return;
     }
 
@@ -332,7 +342,7 @@ export class HeadlessGameClient {
 
     this.addEvent(
       "capture_attempted",
-      `${ball} capture ${result.success ? "succeeded" : "failed"}.`,
+      `${localizeBall(ball)} 포획에 ${result.success ? "성공" : "실패"}했습니다.`,
       {
         ball,
         chance: Number(result.chance.toFixed(4)),
@@ -357,7 +367,7 @@ export class HeadlessGameClient {
     options: { chooseReplacement?: boolean } = {},
   ): void {
     if (this.state.phase !== "teamDecision" || !this.state.pendingCapture) {
-      this.addEvent("team_decision_ignored", "No captured creature is pending.");
+      this.addEvent("team_decision_ignored", "편성할 포획 대상이 없습니다.");
       return;
     }
 
@@ -380,8 +390,8 @@ export class HeadlessGameClient {
     this.addEvent(
       accepted ? "capture_kept" : "capture_released",
       accepted
-        ? `${captured.speciesName} joined the team.`
-        : `${captured.speciesName} was released after comparison.`,
+        ? `${captured.speciesName}가 팀에 합류했습니다.`
+        : `${captured.speciesName}를 비교 후 놓아주었습니다.`,
       {
         accepted,
         replaceIndex: resolvedIndex,
@@ -394,38 +404,38 @@ export class HeadlessGameClient {
 
   private discardCapture(): void {
     if (this.state.phase !== "captureDecision" && this.state.phase !== "teamDecision") {
-      this.addEvent("discard_ignored", "No capture can be discarded now.");
+      this.addEvent("discard_ignored", "지금은 포획 대상을 보낼 수 없습니다.");
       return;
     }
 
     const name =
       this.state.pendingCapture?.speciesName ??
       this.state.pendingEncounter?.enemyTeam[0]?.speciesName;
-    this.addEvent("capture_skipped", `${name ?? "Encounter"} was skipped.`);
+    this.addEvent("capture_skipped", `${name ?? "만남"}을(를) 보냈습니다.`);
     this.advanceWave();
   }
 
   private restTeam(): void {
     if (this.state.phase !== "ready") {
-      this.addEvent("rest_ignored", "Team rest is only available before an encounter.");
+      this.addEvent("rest_ignored", "휴식은 다음 만남 전 준비 상태에서만 가능합니다.");
       return;
     }
 
     if (this.state.money < this.balance.teamRestCost) {
-      this.addEvent("rest_denied", "Not enough money for team rest.");
+      this.addEvent("rest_denied", "팀 휴식에 필요한 코인이 부족합니다.");
       return;
     }
 
     this.state.money -= this.balance.teamRestCost;
     this.state.team = healTeam(this.state.team);
-    this.addEvent("team_rested", "Team fully restored.", {
+    this.addEvent("team_rested", "팀의 HP가 모두 회복되었습니다.", {
       cost: this.balance.teamRestCost,
     });
   }
 
   private buyBall(ball: BallType, quantity: number): void {
     if (this.state.phase !== "ready") {
-      this.addEvent("buy_ignored", "Balls can only be bought before an encounter.");
+      this.addEvent("buy_ignored", "볼은 다음 만남 전 준비 상태에서만 살 수 있습니다.");
       return;
     }
 
@@ -433,13 +443,13 @@ export class HeadlessGameClient {
     const affordableQuantity = Math.max(0, Math.min(quantity, Math.floor(this.state.money / cost)));
 
     if (affordableQuantity === 0) {
-      this.addEvent("buy_denied", `Not enough money for ${ball}.`);
+      this.addEvent("buy_denied", `${localizeBall(ball)}을(를) 살 코인이 부족합니다.`);
       return;
     }
 
     this.state.money -= affordableQuantity * cost;
     this.state.balls[ball] += affordableQuantity;
-    this.addEvent("ball_bought", `Bought ${affordableQuantity} ${ball}.`, {
+    this.addEvent("ball_bought", `${localizeBall(ball)} ${affordableQuantity}개를 샀습니다.`, {
       ball,
       quantity: affordableQuantity,
       cost: affordableQuantity * cost,

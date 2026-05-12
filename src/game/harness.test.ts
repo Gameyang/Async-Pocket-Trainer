@@ -5,7 +5,7 @@ import { buildMetadata } from "../buildMetadata";
 describe("development harness", () => {
   it("keeps the project identity available to tooling", () => {
     expect(buildMetadata).toMatchObject({
-      name: "Async Pocket Trainer",
+      name: "비동기 포켓 트레이너",
       harnessVersion: 2,
       architecture: "headless-core-with-html-renderer",
     });

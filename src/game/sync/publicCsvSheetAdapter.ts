@@ -57,7 +57,7 @@ export class PublicCsvTrainerAdapter implements TrainerSyncAdapter {
     });
 
     if (!response.ok) {
-      throw new Error(`Public CSV request failed: ${response.status} ${response.statusText}`);
+      throw new Error(`공개 CSV 요청 실패: ${response.status} ${response.statusText}`);
     }
 
     return parseCsvRows(await response.text())

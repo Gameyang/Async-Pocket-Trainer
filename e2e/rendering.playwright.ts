@@ -26,7 +26,7 @@ test("renders phase-specific screens with stable responsive layout", async ({ pa
 
   await openSnapshot(page, gameOverSnapshot());
   await assertPhaseScreen(page, "gameOver", ".game-over-screen");
-  await expect(page.locator(".result-board")).toContainText("Wave");
+  await expect(page.locator(".result-board")).toContainText("웨이브");
 
   await toggleAudio(page);
   await assertResponsiveLayout(page, testInfo.project.name);
@@ -50,7 +50,7 @@ test("confirms battle replay, capture feedback, and ball count rendering", async
   await expect.poll(() => page.locator("#app").getAttribute("data-busy")).toBeNull();
   await expect.poll(async () => (await readShellState(page)).pokeBalls).toBe(before.pokeBalls - 1);
   const after = await readShellState(page);
-  await expect(page.locator(".run-status")).toContainText(`PB ${after.pokeBalls}`);
+  await expect(page.locator(".run-status")).toContainText(`몬볼 ${after.pokeBalls}`);
 
   if (after.phase === "teamDecision") {
     await expect(page.locator('.capture-overlay[data-capture-result="success"]')).toBeVisible();
@@ -144,16 +144,16 @@ test("reads public CSV and submits Apps Script without credentials during checkp
   await page.locator('input[name="apiKey"]').fill("");
   await page.locator('input[name="accessToken"]').fill("");
   await page.locator('[data-sync-form] button[type="submit"]').click();
-  await expect(page.locator("[data-sync-status]")).toContainText("Apps Script ready");
+  await expect(page.locator("[data-sync-status]")).toContainText("Apps Script 준비됨");
 
   await clickAction(page, '[data-action-id^="start:"]');
   await playUntilWave(page, 5);
-  await expect(page.locator("[data-sync-status]")).toContainText("submitted");
+  await expect(page.locator("[data-sync-status]")).toContainText("Apps Script 제출 완료");
 
   await page.locator('[data-action-id="encounter:next"]').first().click();
   await expect.poll(() => page.locator("#app").getAttribute("data-busy")).toBeNull();
   await expect(page.locator(".app-shell")).toBeVisible();
-  await expect(page.locator("[data-sync-status]")).toContainText(/Loaded Sheet Rival|ended/);
+  await expect(page.locator("[data-sync-status]")).toContainText(/Sheet Rival 불러옴|패배/);
   await expect(page.locator('.trainer-badge[data-trainer-source="sheet"] img')).toBeVisible();
   await assertLoadedImage(page.locator('.trainer-badge[data-trainer-source="sheet"] img'));
   await skipBattleReplay(page);
@@ -369,7 +369,7 @@ function gameOverSnapshot(): HeadlessClientSnapshot {
   const snapshot = client.saveSnapshot();
   snapshot.state.phase = "gameOver";
   snapshot.state.currentWave = 9;
-  snapshot.state.gameOverReason = "E2E game over screen.";
+  snapshot.state.gameOverReason = "E2E 게임 오버 화면입니다.";
   return snapshot;
 }
 

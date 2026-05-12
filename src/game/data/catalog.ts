@@ -82,7 +82,7 @@ function toSpeciesDefinition(record: PokemonRecord): SpeciesDefinition {
 
   return {
     id: record.dexNumber,
-    name: record.names.en,
+    name: record.names.ko ?? record.names.en,
     types: record.types as ElementType[],
     baseStats,
     movePool: movePool.length > 0 ? movePool : fallbackMove,
@@ -114,7 +114,7 @@ function toMoveDefinition(record: MoveRecord): MoveDefinition | undefined {
 
   return {
     id: record.identifier,
-    name: toTitleCase(record.identifier),
+    name: record.names.ko ?? toTitleCase(record.identifier),
     type: record.type as ElementType,
     power: record.power,
     accuracy: (record.accuracy ?? 100) / 100,

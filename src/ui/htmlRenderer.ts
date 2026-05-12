@@ -11,6 +11,12 @@ import type {
 } from "../game/view/frame";
 import type { BrowserSyncStatus } from "../browser/browserSync";
 import type { SyncSettings } from "../browser/syncSettings";
+import {
+  formatMoney,
+  formatWave,
+  localizeBallShort,
+  localizeBattleStatus,
+} from "../game/localization";
 
 const BATTLE_REPLAY_STEP_MS = 260;
 const AUDIO_MUTED_STORAGE_KEY = "apt:audio-muted:v1";
@@ -272,11 +278,11 @@ function renderFrame(
           </div>
         </div>
         <div class="run-status">
-          <span>W${frame.hud.wave}</span>
+          <span>${formatWave(frame.hud.wave)}</span>
           <span>${renderPhaseLabel(frame.phase)}</span>
-          <span>${frame.hud.money}c</span>
-          <span>PB ${frame.hud.balls.pokeBall}</span>
-          <span>GB ${frame.hud.balls.greatBall}</span>
+          <span>${formatMoney(frame.hud.money)}</span>
+          <span>${localizeBallShort("pokeBall")} ${frame.hud.balls.pokeBall}</span>
+          <span>${localizeBallShort("greatBall")} ${frame.hud.balls.greatBall}</span>
         </div>
         ${renderAudioButton(audioState)}
       </header>
@@ -345,7 +351,7 @@ function renderBattleScreen({
   logLine,
 }: ScreenRenderContext): string {
   return `
-    <section class="screen encounter-panel" data-screen="battle" aria-label="battle screen">
+    <section class="screen encounter-panel" data-screen="battle" aria-label="전투 화면">
       <div class="battlefield" aria-hidden="true"></div>
       <div class="platform enemy" aria-hidden="true"></div>
       <div class="platform hero" aria-hidden="true"></div>
@@ -353,10 +359,10 @@ function renderBattleScreen({
       ${renderBattleMonster(activeOpponent, "enemy-mon", playback.activeEvent)}
       ${renderBattleMonster(activePlayer, "hero-mon", playback.activeEvent)}
       ${renderBattleCard(activeOpponent, "enemy", frame.scene.title, frame.scene.subtitle)}
-      ${renderBattleCard(activePlayer, "hero", frame.hud.trainerName, `Power ${frame.hud.teamPower}`)}
+      ${renderBattleCard(activePlayer, "hero", frame.hud.trainerName, `전투력 ${frame.hud.teamPower}`)}
       ${renderCaptureOverlay(frame.scene.capture)}
       ${renderBattleCue(playback.activeEvent, frame.entities)}
-      <div class="battle-log log-panel" aria-label="battle log">
+      <div class="battle-log log-panel" aria-label="전투 로그">
         <p class="log-line">${escapeHtml(logLine)}</p>
         ${renderReplayMeter(playback)}
         ${renderTeamDots(playerEntities)}
@@ -367,7 +373,7 @@ function renderBattleScreen({
 
 function renderStarterScreen(options: readonly FrameStarterOption[]): string {
   return `
-    <section class="screen starter-screen" data-screen="starterChoice" aria-label="starter choice">
+    <section class="screen starter-screen" data-screen="starterChoice" aria-label="스타터 선택">
       <div class="starter-stage" aria-hidden="true"></div>
       <div class="starter-choice-row">
         ${options.map(renderStarterOption).join("")}
@@ -389,28 +395,28 @@ function renderStarterOption(option: FrameStarterOption): string {
       <img src="${resolveAssetPath(option.assetPath)}" alt="" />
       <h2>${escapeHtml(option.name)}</h2>
       <p>${escapeHtml(option.typeLabels.join(" / "))}</p>
-      <span>BST ${statTotal}</span>
+      <span>종합 ${statTotal}</span>
     </article>
   `;
 }
 
 function renderReadyScreen({ frame, playerEntities, activePlayer }: ScreenRenderContext): string {
   return `
-    <section class="screen ready-screen" data-screen="ready" aria-label="wave camp">
+    <section class="screen ready-screen" data-screen="ready" aria-label="웨이브 준비">
       <div class="camp-sky" aria-hidden="true"></div>
       <div class="camp-ground" aria-hidden="true"></div>
       <div class="camp-board">
-        <span>Wave ${frame.hud.wave}</span>
+        <span>${formatWave(frame.hud.wave)}</span>
         <strong>${escapeHtml(frame.scene.subtitle)}</strong>
       </div>
       <div class="camp-party">
-        ${activePlayer ? renderCampLead(activePlayer) : '<p class="empty">Choose a starter.</p>'}
+        ${activePlayer ? renderCampLead(activePlayer) : '<p class="empty">스타터를 선택하세요.</p>'}
         ${renderTeamDots(playerEntities)}
       </div>
       <div class="camp-inventory">
-        <span>Money ${frame.hud.money}c</span>
-        <span>Poke ${frame.hud.balls.pokeBall}</span>
-        <span>Great ${frame.hud.balls.greatBall}</span>
+        <span>${formatMoney(frame.hud.money)}</span>
+        <span>${localizeBallShort("pokeBall")} ${frame.hud.balls.pokeBall}</span>
+        <span>${localizeBallShort("greatBall")} ${frame.hud.balls.greatBall}</span>
       </div>
     </section>
   `;
@@ -422,7 +428,7 @@ function renderCampLead(entity: FrameEntity): string {
       <img src="${resolveAssetPath(entity.assetPath)}" alt="" />
       <div>
         <h2>${escapeHtml(entity.name)}</h2>
-        <p>HP ${entity.hp.current}/${entity.hp.max} / Power ${entity.scores.power}</p>
+        <p>HP ${entity.hp.current}/${entity.hp.max} / 전투력 ${entity.scores.power}</p>
       </div>
     </div>
   `;
@@ -434,10 +440,10 @@ function renderTeamDecisionScreen({
   pendingCapture,
 }: ScreenRenderContext): string {
   return `
-    <section class="screen team-decision-screen" data-screen="teamDecision" aria-label="team decision">
+    <section class="screen team-decision-screen" data-screen="teamDecision" aria-label="팀 편성">
       ${renderCaptureOverlay(frame.scene.capture)}
       <div class="candidate-panel">
-        ${pendingCapture ? renderCandidateCard(pendingCapture) : '<p class="empty">No capture pending.</p>'}
+        ${pendingCapture ? renderCandidateCard(pendingCapture) : '<p class="empty">대기 중인 포획 대상이 없습니다.</p>'}
       </div>
       <div class="slot-compare-grid">
         ${renderTeamSlots(playerEntities, pendingCapture, frame.actions)}
@@ -456,9 +462,9 @@ function renderCandidateCard(entity: FrameEntity): string {
       </div>
       <dl>
         <div><dt>HP</dt><dd>${entity.hp.max}</dd></div>
-        <div><dt>Atk</dt><dd>${entity.stats.attack}</dd></div>
-        <div><dt>Def</dt><dd>${entity.stats.defense}</dd></div>
-        <div><dt>Pow</dt><dd>${entity.scores.power}</dd></div>
+        <div><dt>공격</dt><dd>${entity.stats.attack}</dd></div>
+        <div><dt>방어</dt><dd>${entity.stats.defense}</dd></div>
+        <div><dt>전투력</dt><dd>${entity.scores.power}</dd></div>
       </dl>
     </article>
   `;
@@ -470,10 +476,10 @@ function renderGameOverScreen({
   opponentEntities,
 }: ScreenRenderContext): string {
   return `
-    <section class="screen game-over-screen" data-screen="gameOver" aria-label="game over">
+    <section class="screen game-over-screen" data-screen="gameOver" aria-label="게임 오버">
       <div class="result-board">
-        <span>Run ended</span>
-        <h2>Wave ${frame.hud.wave}</h2>
+        <span>도전 종료</span>
+        <h2>${formatWave(frame.hud.wave)}</h2>
         <p>${escapeHtml(frame.hud.gameOverReason ?? frame.scene.subtitle)}</p>
       </div>
       <div class="result-matchup">
@@ -499,7 +505,8 @@ function renderCommandBand(actions: readonly FrameAction[], locked: boolean): st
 }
 
 function renderAudioButton(audioState: AudioState): string {
-  return `<button type="button" class="audio-toggle" data-audio-toggle aria-label="Toggle audio">${audioState.muted ? "Sound" : "Mute"}</button>`;
+  const label = audioState.muted ? "소리 켜기" : "음소거";
+  return `<button type="button" class="audio-toggle" data-audio-toggle aria-label="${label}">${label}</button>`;
 }
 
 function renderTrainerBadge(trainer: FrameTrainerScene | undefined): string {
@@ -544,10 +551,10 @@ function renderTeamPanel(
   return `
     <details class="drawer team-panel">
       <summary>
-        <span>Team</span>
-        <span>Power ${frame.hud.teamPower}</span>
+        <span>팀</span>
+        <span>전투력 ${frame.hud.teamPower}</span>
       </summary>
-      <div class="meter" aria-label="Team HP">
+      <div class="meter" aria-label="팀 HP">
         <span style="width: ${Math.round(frame.hud.teamHpRatio * 100)}%"></span>
       </div>
       <div class="team-slot-list">
@@ -579,7 +586,7 @@ function renderTeamSlot(
   const delta = entity && pendingCapture ? pendingCapture.scores.power - entity.scores.power : 0;
   const deltaText = pendingCapture && entity ? `${delta >= 0 ? "+" : ""}${delta}` : "";
   const actionButton = action
-    ? `<button type="button" data-action-id="${escapeHtml(action.id)}" data-role="${action.role}">Swap</button>`
+    ? `<button type="button" data-action-id="${escapeHtml(action.id)}" data-role="${action.role}">교체</button>`
     : "";
 
   if (!entity) {
@@ -587,8 +594,8 @@ function renderTeamSlot(
       <article class="team-slot" data-slot-state="empty">
         <span class="slot-icon" aria-hidden="true"></span>
         <div>
-          <h3>Slot ${index + 1}</h3>
-          <p>Empty</p>
+          <h3>${index + 1}번 슬롯</h3>
+          <p>비어 있음</p>
         </div>
       </article>
     `;
@@ -600,7 +607,7 @@ function renderTeamSlot(
       <img src="${resolveAssetPath(entity.assetPath)}" alt="" loading="lazy" />
       <div>
         <h3>${escapeHtml(entity.name)}</h3>
-        <p>HP ${entity.hp.current}/${entity.hp.max} / P${entity.scores.power}</p>
+        <p>HP ${entity.hp.current}/${entity.hp.max} / 전투력 ${entity.scores.power}</p>
       </div>
       <div class="slot-meter hp-line"><span style="width: ${Math.round(entity.hp.ratio * 100)}%"></span></div>
       ${pendingCapture ? `<span class="slot-delta" data-delta="${delta >= 0 ? "up" : "down"}">${deltaText}</span>` : ""}
@@ -613,14 +620,14 @@ function renderTimelinePanel(frame: GameFrame): string {
   return `
     <details class="drawer timeline-panel">
       <summary>
-        <span>Log</span>
+        <span>로그</span>
         <span>${frame.timeline.length}</span>
       </summary>
       <ol class="event-list">
         ${frame.timeline
           .map(
             (entry) =>
-              `<li data-tone="${entry.tone}"><span>W${entry.wave}</span>${escapeHtml(entry.text)}</li>`,
+              `<li data-tone="${entry.tone}"><span>${formatWave(entry.wave)}</span>${escapeHtml(entry.text)}</li>`,
           )
           .join("")}
       </ol>
@@ -636,19 +643,19 @@ function renderSettingsPanel(frame: GameFrame, statusView: HtmlRendererStatusVie
   return `
     <details class="drawer settings-panel">
       <summary>
-        <span>Settings</span>
-        <span>Run</span>
+        <span>설정</span>
+        <span>도전</span>
       </summary>
       <form class="trainer-form" data-trainer-form>
         <label>
-          <span>Trainer</span>
+          <span>트레이너 이름</span>
           <input name="trainerName" value="${escapeHtml(frame.hud.trainerName)}" autocomplete="off" />
         </label>
-        <button type="submit">Rename</button>
+        <button type="submit">이름 변경</button>
       </form>
       <div class="settings-actions">
-        <button type="button" data-new-run>New Run</button>
-        <button type="button" data-clear-save>Clear Save</button>
+        <button type="button" data-new-run>새 도전</button>
+        <button type="button" data-clear-save>저장 삭제</button>
       </div>
       ${notice}
     </details>
@@ -658,7 +665,7 @@ function renderSettingsPanel(frame: GameFrame, statusView: HtmlRendererStatusVie
 function renderAction(action: FrameAction, locked = false): string {
   const disabled = action.enabled && !locked ? "" : " disabled";
   const reason = locked
-    ? ' title="Battle replay is playing."'
+    ? ' title="전투 리플레이 재생 중입니다."'
     : action.reason
       ? ` title="${escapeHtml(action.reason)}"`
       : "";
@@ -726,7 +733,7 @@ function renderReplayMeter(playback: BattlePlaybackView): string {
   const current = playback.activeEvent?.sequence ?? 0;
   const total = playback.visibleEvents.at(-1)?.sequence ?? current;
   const button = playback.isPlaying
-    ? '<button type="button" class="replay-skip" data-replay-skip aria-label="Fast forward battle replay">&gt;&gt;</button>'
+    ? '<button type="button" class="replay-skip" data-replay-skip aria-label="전투 리플레이 빠르게 넘기기">&gt;&gt;</button>'
     : "";
 
   return `
@@ -761,7 +768,7 @@ function createBattleCueText(
   activeEvent: FrameBattleReplayEvent,
 ): { kind: string; text: string } | undefined {
   if (activeEvent.type === "damage.apply") {
-    const prefix = activeEvent.critical ? "CRIT " : "";
+    const prefix = activeEvent.critical ? "급소 " : "";
     const suffix =
       activeEvent.effectiveness && activeEvent.effectiveness > 1
         ? "!"
@@ -775,15 +782,15 @@ function createBattleCueText(
   }
 
   if (activeEvent.type === "move.miss") {
-    return { kind: "miss", text: "MISS" };
+    return { kind: "miss", text: "빗나감" };
   }
 
   if (activeEvent.type === "creature.faint") {
-    return { kind: "faint", text: "FAINT" };
+    return { kind: "faint", text: "기절" };
   }
 
   if (activeEvent.type === "status.apply" || activeEvent.type === "status.tick") {
-    return { kind: "status", text: String(activeEvent.status ?? "STATUS").toUpperCase() };
+    return { kind: "status", text: localizeBattleStatus(activeEvent.status) };
   }
 
   return undefined;
@@ -798,59 +805,59 @@ function formatBattleEventLabel(
   const entity = resolveEntityName(activeEvent.entityId, entities);
 
   if (activeEvent.type === "battle.start") {
-    return "Battle started.";
+    return "전투가 시작되었습니다.";
   }
 
   if (activeEvent.type === "turn.start") {
-    return `Turn ${activeEvent.turn}`;
+    return `${activeEvent.turn}턴`;
   }
 
   if (activeEvent.type === "move.select") {
-    return `${source} readied ${activeEvent.move ?? "a move"}.`;
+    return `${source}이(가) ${activeEvent.move ?? "기술"}을(를) 준비했습니다.`;
   }
 
   if (activeEvent.type === "move.miss") {
-    return `${source}'s ${activeEvent.move ?? "move"} missed ${target}.`;
+    return `${source}의 ${activeEvent.move ?? "기술"}이(가) ${target}에게 빗나갔습니다.`;
   }
 
   if (activeEvent.type === "damage.apply") {
-    const critical = activeEvent.critical ? " Critical hit." : "";
-    return `${source} hit ${target} with ${activeEvent.move ?? "a move"} for ${activeEvent.damage ?? 0}.${critical}`;
+    const critical = activeEvent.critical ? " 급소에 맞았습니다!" : "";
+    return `${source}의 ${activeEvent.move ?? "기술"}! ${target}에게 ${activeEvent.damage ?? 0} 피해.${critical}`;
   }
 
   if (activeEvent.type === "turn.skip") {
-    return `${entity} could not move.`;
+    return `${entity}은(는) 움직일 수 없습니다.`;
   }
 
   if (activeEvent.type === "status.apply") {
-    return `${target} was afflicted with ${activeEvent.status}.`;
+    return `${target}이(가) ${localizeBattleStatus(activeEvent.status)} 상태가 되었습니다.`;
   }
 
   if (activeEvent.type === "status.immune") {
-    return `${target} resisted ${activeEvent.status}.`;
+    return `${target}은(는) ${localizeBattleStatus(activeEvent.status)}에 면역입니다.`;
   }
 
   if (activeEvent.type === "status.tick") {
-    return `${entity} took ${activeEvent.damage ?? 0} ${activeEvent.status} damage.`;
+    return `${entity}이(가) ${localizeBattleStatus(activeEvent.status)} 피해 ${activeEvent.damage ?? 0}를 받았습니다.`;
   }
 
   if (activeEvent.type === "status.clear") {
-    return `${entity} recovered from ${activeEvent.status}.`;
+    return `${entity}의 ${localizeBattleStatus(activeEvent.status)} 상태가 풀렸습니다.`;
   }
 
   if (activeEvent.type === "creature.faint") {
-    return `${entity} fainted.`;
+    return `${entity}이(가) 쓰러졌습니다.`;
   }
 
-  return activeEvent.winner === "player" ? "Your team won the battle." : "The opponent won.";
+  return activeEvent.winner === "player" ? "우리 팀이 승리했습니다." : "상대가 승리했습니다.";
 }
 
 function resolveEntityName(id: string | undefined, entities: readonly FrameEntity[]): string {
   if (!id) {
-    return "It";
+    return "대상";
   }
 
-  return entities.find((entity) => entity.id === id)?.name ?? "It";
+  return entities.find((entity) => entity.id === id)?.name ?? "대상";
 }
 
 function resolveBattleEffect(
@@ -1049,15 +1056,15 @@ function saveMutedPreference(muted: boolean): void {
 function renderPhaseLabel(phase: GameFrame["phase"]): string {
   switch (phase) {
     case "starterChoice":
-      return "Starter";
+      return "스타터";
     case "ready":
-      return "Ready";
+      return "준비";
     case "captureDecision":
-      return "Catch";
+      return "포획";
     case "teamDecision":
-      return "Team";
+      return "편성";
     case "gameOver":
-      return "Game Over";
+      return "게임 오버";
   }
 }
 
@@ -1076,27 +1083,27 @@ function renderSyncPanel(statusView: HtmlRendererStatusView): string {
   return `
     <details class="drawer sync-panel" data-sync-state="${status.state}">
       <summary>
-        <span>Sync</span>
+        <span>동기화</span>
         <span data-sync-status>${escapeHtml(status.message)}</span>
       </summary>
       <form class="sync-form" data-sync-form>
         <label class="toggle-row">
           <input type="checkbox" name="enabled"${checked} />
-          <span>Google Sheets</span>
+          <span>Google Sheets 사용</span>
         </label>
         <label>
-          <span>Mode</span>
+          <span>방식</span>
           <select name="mode">
-            <option value="publicCsv"${publicSelected}>Public CSV</option>
+            <option value="publicCsv"${publicSelected}>공개 CSV</option>
             <option value="googleApi"${googleSelected}>Google API</option>
           </select>
         </label>
         <label>
-          <span>Sheet URL/ID</span>
+          <span>시트 URL/ID</span>
           <input name="spreadsheetId" value="${escapeHtml(settings.spreadsheetId)}" autocomplete="off" />
         </label>
         <label>
-          <span>Tab/Range</span>
+          <span>탭/범위</span>
           <input name="range" value="${escapeHtml(settings.range)}" autocomplete="off" />
         </label>
         <label>
@@ -1104,19 +1111,19 @@ function renderSyncPanel(statusView: HtmlRendererStatusView): string {
           <input name="publicCsvUrl" value="${escapeHtml(settings.publicCsvUrl ?? "")}" autocomplete="off" />
         </label>
         <label>
-          <span>Submit URL</span>
+          <span>제출 URL</span>
           <input name="appsScriptSubmitUrl" value="${escapeHtml(settings.appsScriptSubmitUrl ?? "")}" autocomplete="off" />
         </label>
         <label>
-          <span>API key</span>
+          <span>API 키</span>
           <input name="apiKey" type="password" value="${escapeHtml(settings.apiKey ?? "")}" autocomplete="off" />
         </label>
         <label>
-          <span>Token</span>
+          <span>토큰</span>
           <input name="accessToken" type="password" value="${escapeHtml(settings.accessToken ?? "")}" autocomplete="off" />
         </label>
         <div class="sync-actions">
-          <button type="submit">Save Sync</button>
+          <button type="submit">동기화 저장</button>
         </div>
       </form>
     </details>

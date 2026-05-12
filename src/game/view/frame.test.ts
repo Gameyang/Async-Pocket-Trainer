@@ -120,8 +120,8 @@ describe("game frame contract", () => {
     expect(validateFrameContract(frame)).toEqual([]);
     expect(frame.scene.trainer).toMatchObject({
       source: "sheet",
-      label: "Sheet Trainer",
-      trainerName: "Sheet Rival Snapshot (592)",
+      label: "시트 트레이너",
+      trainerName: "Sheet Rival 기록 (592)",
       portraitPath: "resources/trainers/sheet-rival.webp",
     });
   });

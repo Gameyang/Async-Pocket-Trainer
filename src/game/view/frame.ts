@@ -1,4 +1,15 @@
 import { getSpecies, starterSpeciesIds } from "../data/catalog";
+import {
+  formatMoney,
+  formatWave,
+  GAME_TITLE,
+  localizeBall,
+  localizeBattleStatus,
+  localizeEncounterKind,
+  localizeType,
+  localizeTypes,
+  localizeWinner,
+} from "../localization";
 import { getTeamHealthRatio, scoreTeam } from "../scoring";
 import type {
   BattleStatus,
@@ -283,7 +294,7 @@ export function createGameFrame(
     stateKey: createStateKey(state),
     phase: state.phase,
     hud: {
-      title: "Async Pocket Trainer",
+      title: GAME_TITLE,
       trainerName: state.trainerName,
       wave: state.currentWave,
       money: state.money,
@@ -485,7 +496,7 @@ function speciesToStarterOption(species: SpeciesDefinition): FrameStarterOption 
   return {
     speciesId: species.id,
     name: species.name,
-    typeLabels: [...species.types],
+    typeLabels: localizeTypes(species.types),
     assetKey: `monster:${species.id}`,
     assetPath: `resources/pokemon/${species.id.toString().padStart(4, "0")}.webp`,
     stats: { ...species.baseStats },
@@ -503,7 +514,7 @@ function createCaptureScene(state: GameState): FrameCaptureScene | undefined {
       targetEntityId: target?.instanceId,
       targetName: target?.speciesName,
       shakes: 0,
-      label: target ? `${target.speciesName} is weak enough to catch.` : "Choose a ball.",
+      label: target ? `${target.speciesName}를 포획할 기회입니다.` : "사용할 볼을 선택하세요.",
     };
   }
 
@@ -515,7 +526,7 @@ function createCaptureScene(state: GameState): FrameCaptureScene | undefined {
       targetName: state.pendingCapture.speciesName,
       chance: latestCapture.chance,
       shakes: 3,
-      label: `${state.pendingCapture.speciesName} was caught.`,
+      label: `${state.pendingCapture.speciesName} 포획 성공!`,
     };
   }
 
@@ -529,7 +540,7 @@ function createCaptureScene(state: GameState): FrameCaptureScene | undefined {
       targetName: target?.speciesName ?? latestCapture.targetName,
       chance: latestCapture.chance,
       shakes: Math.max(1, Math.min(2, Math.ceil((latestCapture.chance ?? 0.45) * 3))),
-      label: `${target?.speciesName ?? latestCapture.targetName ?? "The target"} broke free.`,
+      label: `${target?.speciesName ?? latestCapture.targetName ?? "대상"}이 볼에서 빠져나왔습니다.`,
     };
   }
 
@@ -571,12 +582,12 @@ function createTrainerScene(state: GameState): FrameTrainerScene | undefined {
 
   const source = state.pendingEncounter?.source ?? state.lastBattle?.encounterSource ?? "generated";
   const trainerName =
-    state.pendingEncounter?.opponentName ?? state.lastBattle?.opponentName ?? "Trainer";
+    state.pendingEncounter?.opponentName ?? state.lastBattle?.opponentName ?? "트레이너";
   const portraitPath = pickTrainerPortrait(trainerName, source);
 
   return {
     source,
-    label: source === "sheet" ? "Sheet Trainer" : "Trainer",
+    label: source === "sheet" ? "시트 트레이너" : "트레이너",
     trainerName,
     portraitKey: `trainer:${portraitPath.split("/").at(-1)?.replace(".webp", "") ?? "portrait"}`,
     portraitPath,
@@ -619,7 +630,7 @@ function toFrameEntity(creature: Creature, owner: FrameEntityOwner, slot: number
     assetPath: `resources/pokemon/${creature.speciesId.toString().padStart(4, "0")}.webp`,
     name: creature.speciesName,
     speciesId: creature.speciesId,
-    typeLabels: [...creature.types],
+    typeLabels: localizeTypes(creature.types),
     hp: {
       current: creature.currentHp,
       max: creature.stats.hp,
@@ -630,7 +641,7 @@ function toFrameEntity(creature: Creature, owner: FrameEntityOwner, slot: number
     moves: creature.moves.map((move) => ({
       id: move.id,
       name: move.name,
-      type: move.type,
+      type: localizeType(move.type),
       power: move.power,
       accuracy: move.accuracy,
     })),
@@ -687,7 +698,7 @@ function createFrameActions(state: GameState, balance: GameBalance): FrameAction
   if (state.phase === "starterChoice" || state.phase === "gameOver") {
     return starterSpeciesIds.map((speciesId) => ({
       id: `start:${speciesId}`,
-      label: `Choose ${getSpecies(speciesId).name}`,
+      label: `${getSpecies(speciesId).name} 선택`,
       role: "primary",
       enabled: true,
       action: { type: "START_RUN", starterSpeciesId: speciesId },
@@ -698,37 +709,37 @@ function createFrameActions(state: GameState, balance: GameBalance): FrameAction
     return [
       {
         id: "encounter:next",
-        label: "Scout",
+        label: "정찰",
         role: "primary",
         enabled: true,
         action: { type: "RESOLVE_NEXT_ENCOUNTER" },
       },
       {
         id: "shop:rest",
-        label: `Rest ${balance.teamRestCost}c`,
+        label: `휴식 ${formatMoney(balance.teamRestCost)}`,
         role: "secondary",
         enabled: state.money >= balance.teamRestCost,
         cost: balance.teamRestCost,
         action: { type: "REST_TEAM" },
-        reason: state.money >= balance.teamRestCost ? undefined : "Not enough money",
+        reason: state.money >= balance.teamRestCost ? undefined : "코인이 부족합니다",
       },
       {
         id: "shop:pokeball",
-        label: `Poke Ball ${balance.pokeBallCost}c`,
+        label: `${localizeBall("pokeBall")} ${formatMoney(balance.pokeBallCost)}`,
         role: "secondary",
         enabled: state.money >= balance.pokeBallCost,
         cost: balance.pokeBallCost,
         action: { type: "BUY_BALL", ball: "pokeBall", quantity: 1 },
-        reason: state.money >= balance.pokeBallCost ? undefined : "Not enough money",
+        reason: state.money >= balance.pokeBallCost ? undefined : "코인이 부족합니다",
       },
       {
         id: "shop:greatball",
-        label: `Great Ball ${balance.greatBallCost}c`,
+        label: `${localizeBall("greatBall")} ${formatMoney(balance.greatBallCost)}`,
         role: "secondary",
         enabled: state.money >= balance.greatBallCost,
         cost: balance.greatBallCost,
         action: { type: "BUY_BALL", ball: "greatBall", quantity: 1 },
-        reason: state.money >= balance.greatBallCost ? undefined : "Not enough money",
+        reason: state.money >= balance.greatBallCost ? undefined : "코인이 부족합니다",
       },
     ];
   }
@@ -738,25 +749,25 @@ function createFrameActions(state: GameState, balance: GameBalance): FrameAction
     return [
       {
         id: "capture:pokeball",
-        label: `Throw Poke (${state.balls.pokeBall})`,
+        label: `${localizeBall("pokeBall")} 던지기 (${state.balls.pokeBall})`,
         role: "primary",
         enabled: state.balls.pokeBall > 0,
         targetEntityId,
         action: { type: "ATTEMPT_CAPTURE", ball: "pokeBall" },
-        reason: state.balls.pokeBall > 0 ? undefined : "No Poke Balls",
+        reason: state.balls.pokeBall > 0 ? undefined : `${localizeBall("pokeBall")}이 없습니다`,
       },
       {
         id: "capture:greatball",
-        label: `Throw Great (${state.balls.greatBall})`,
+        label: `${localizeBall("greatBall")} 던지기 (${state.balls.greatBall})`,
         role: "primary",
         enabled: state.balls.greatBall > 0,
         targetEntityId,
         action: { type: "ATTEMPT_CAPTURE", ball: "greatBall" },
-        reason: state.balls.greatBall > 0 ? undefined : "No Great Balls",
+        reason: state.balls.greatBall > 0 ? undefined : `${localizeBall("greatBall")}이 없습니다`,
       },
       {
         id: "capture:skip",
-        label: "Leave",
+        label: "보내기",
         role: "danger",
         enabled: true,
         targetEntityId,
@@ -772,7 +783,7 @@ function createFrameActions(state: GameState, balance: GameBalance): FrameAction
         ? [
             {
               id: "team:keep",
-              label: "Add to Team",
+              label: "팀에 추가",
               role: "primary",
               enabled: true,
               targetEntityId: capture?.instanceId,
@@ -781,7 +792,7 @@ function createFrameActions(state: GameState, balance: GameBalance): FrameAction
           ]
         : state.team.map((creature, index) => ({
             id: `team:replace:${index}`,
-            label: `Swap ${creature.speciesName}`,
+            label: `${creature.speciesName}와 교체`,
             role: "primary" as const,
             enabled: true,
             targetEntityId: creature.instanceId,
@@ -792,7 +803,7 @@ function createFrameActions(state: GameState, balance: GameBalance): FrameAction
       ...keepAction,
       {
         id: "team:release",
-        label: "Release",
+        label: "놓아주기",
         role: "danger",
         enabled: true,
         targetEntityId: capture?.instanceId,
@@ -862,7 +873,7 @@ function createCaptureCue(state: GameState): FrameVisualCue | undefined {
     sequence: (state.lastBattle?.replay.at(-1)?.sequence ?? 0) + latestEvent.id,
     effectKey: type,
     soundKey: latestCapture.success ? "sfx.capture.success" : "sfx.capture.fail",
-    label: latestCapture.success ? "Capture succeeded." : "Capture failed.",
+    label: latestCapture.success ? "포획 성공!" : "포획 실패",
     ball: latestCapture.ball,
     targetEntityId: target?.instanceId,
     targetName: target?.speciesName ?? latestCapture.targetName,
@@ -884,7 +895,7 @@ function toFrameBattleReplayEvent(event: BattleReplayEvent): FrameBattleReplayEv
       sequence: event.sequence,
       turn: event.turn,
       type: event.type,
-      label: `${event.kind} battle started.`,
+      label: `${localizeEncounterKind(event.kind)} 전투가 시작되었습니다.`,
     };
   }
 
@@ -893,7 +904,7 @@ function toFrameBattleReplayEvent(event: BattleReplayEvent): FrameBattleReplayEv
       sequence: event.sequence,
       turn: event.turn,
       type: event.type,
-      label: `Turn ${event.turn} started.`,
+      label: `${event.turn}턴 시작`,
     };
   }
 
@@ -902,7 +913,7 @@ function toFrameBattleReplayEvent(event: BattleReplayEvent): FrameBattleReplayEv
       sequence: event.sequence,
       turn: event.turn,
       type: event.type,
-      label: `${event.actorId} selected ${event.move}.`,
+      label: `${event.actorId}이(가) ${event.move}을(를) 준비했습니다.`,
       move: event.move,
       sourceEntityId: event.actorId,
       targetEntityId: event.targetId,
@@ -914,7 +925,7 @@ function toFrameBattleReplayEvent(event: BattleReplayEvent): FrameBattleReplayEv
       sequence: event.sequence,
       turn: event.turn,
       type: event.type,
-      label: `${event.actorId} missed ${event.move}.`,
+      label: `${event.actorId}의 ${event.move}이(가) 빗나갔습니다.`,
       move: event.move,
       sourceEntityId: event.actorId,
       targetEntityId: event.targetId,
@@ -926,7 +937,7 @@ function toFrameBattleReplayEvent(event: BattleReplayEvent): FrameBattleReplayEv
       sequence: event.sequence,
       turn: event.turn,
       type: event.type,
-      label: `${event.entityId} skipped the turn: ${event.reason}`,
+      label: `${event.entityId}은(는) 움직일 수 없습니다: ${event.reason}`,
       entityId: event.entityId,
       status: event.status,
     };
@@ -937,7 +948,7 @@ function toFrameBattleReplayEvent(event: BattleReplayEvent): FrameBattleReplayEv
       sequence: event.sequence,
       turn: event.turn,
       type: event.type,
-      label: `${event.actorId} dealt ${event.damage} damage with ${event.move}.`,
+      label: `${event.actorId}의 ${event.move}: ${event.damage} 피해`,
       move: event.move,
       sourceEntityId: event.actorId,
       targetEntityId: event.targetId,
@@ -952,7 +963,7 @@ function toFrameBattleReplayEvent(event: BattleReplayEvent): FrameBattleReplayEv
       sequence: event.sequence,
       turn: event.turn,
       type: event.type,
-      label: `${event.targetId} was afflicted with ${event.status}.`,
+      label: `${event.targetId}이(가) ${localizeBattleStatus(event.status)} 상태가 되었습니다.`,
       move: event.move,
       sourceEntityId: event.actorId,
       targetEntityId: event.targetId,
@@ -965,7 +976,7 @@ function toFrameBattleReplayEvent(event: BattleReplayEvent): FrameBattleReplayEv
       sequence: event.sequence,
       turn: event.turn,
       type: event.type,
-      label: `${event.targetId} resisted ${event.status}.`,
+      label: `${event.targetId}이(가) ${localizeBattleStatus(event.status)}에 면역입니다.`,
       move: event.move,
       sourceEntityId: event.actorId,
       targetEntityId: event.targetId,
@@ -978,7 +989,7 @@ function toFrameBattleReplayEvent(event: BattleReplayEvent): FrameBattleReplayEv
       sequence: event.sequence,
       turn: event.turn,
       type: event.type,
-      label: `${event.entityId} took ${event.damage} ${event.status} damage.`,
+      label: `${event.entityId}이(가) ${localizeBattleStatus(event.status)} 피해 ${event.damage}를 받았습니다.`,
       entityId: event.entityId,
       damage: event.damage,
       status: event.status,
@@ -990,7 +1001,7 @@ function toFrameBattleReplayEvent(event: BattleReplayEvent): FrameBattleReplayEv
       sequence: event.sequence,
       turn: event.turn,
       type: event.type,
-      label: `${event.entityId} recovered from ${event.status}.`,
+      label: `${event.entityId}의 ${localizeBattleStatus(event.status)} 상태가 풀렸습니다.`,
       entityId: event.entityId,
       status: event.status,
     };
@@ -1001,7 +1012,7 @@ function toFrameBattleReplayEvent(event: BattleReplayEvent): FrameBattleReplayEv
       sequence: event.sequence,
       turn: event.turn,
       type: event.type,
-      label: `${event.entityId} fainted.`,
+      label: `${event.entityId}이(가) 쓰러졌습니다.`,
       entityId: event.entityId,
     };
   }
@@ -1010,7 +1021,7 @@ function toFrameBattleReplayEvent(event: BattleReplayEvent): FrameBattleReplayEv
     sequence: event.sequence,
     turn: event.turn,
     type: event.type,
-    label: `${event.winner} won the battle.`,
+    label: `${localizeWinner(event.winner)}했습니다.`,
     winner: event.winner,
   };
 }
@@ -1026,7 +1037,7 @@ function battleReplayEventToCue(event: BattleReplayEvent): FrameVisualCue | unde
       turn: event.turn,
       sourceEntityId: event.actorId,
       targetEntityId: event.targetId,
-      label: `${event.actorId} missed ${event.move}.`,
+      label: `${event.actorId}의 ${event.move}이(가) 빗나갔습니다.`,
       damage: 0,
       effectiveness: 1,
       critical: false,
@@ -1043,7 +1054,7 @@ function battleReplayEventToCue(event: BattleReplayEvent): FrameVisualCue | unde
       turn: event.turn,
       sourceEntityId: event.actorId,
       targetEntityId: event.targetId,
-      label: `${event.actorId} used ${event.move}.`,
+      label: `${event.actorId}의 ${event.move}`,
       damage: event.damage,
       effectiveness: event.effectiveness,
       critical: event.critical,
@@ -1059,7 +1070,7 @@ function battleReplayEventToCue(event: BattleReplayEvent): FrameVisualCue | unde
       soundKey: "sfx.creature.faint",
       turn: event.turn,
       entityId: event.entityId,
-      label: `${event.entityId} fainted.`,
+      label: `${event.entityId}이(가) 쓰러졌습니다.`,
     };
   }
 
@@ -1068,26 +1079,26 @@ function battleReplayEventToCue(event: BattleReplayEvent): FrameVisualCue | unde
 
 function createSceneTitle(state: GameState): string {
   if (state.phase === "starterChoice") {
-    return "Choose a starter";
+    return "스타터 선택";
   }
 
   if (state.phase === "gameOver") {
-    return "Run ended";
+    return "도전 종료";
   }
 
-  return `Wave ${state.currentWave}`;
+  return formatWave(state.currentWave);
 }
 
 function createSceneSubtitle(state: GameState): string {
   if (state.pendingCapture) {
-    return `Compare captured ${state.pendingCapture.speciesName}`;
+    return `포획한 ${state.pendingCapture.speciesName}을(를) 팀과 비교하세요`;
   }
 
   if (state.pendingEncounter) {
     return state.pendingEncounter.opponentName;
   }
 
-  return "Prepare for the next encounter";
+  return "다음 만남을 준비하세요";
 }
 
 function createStateKey(state: GameState): string {

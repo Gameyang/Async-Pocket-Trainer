@@ -30,7 +30,7 @@ function teamDecisionFrame(capturedPower: number): GameFrame {
     stateKey: "team-decision",
     phase: "teamDecision",
     hud: {
-      title: "Async Pocket Trainer",
+      title: "비동기 포켓 트레이너",
       trainerName: "QA",
       wave: 4,
       money: 0,
@@ -42,8 +42,8 @@ function teamDecisionFrame(capturedPower: number): GameFrame {
       teamHpRatio: 1,
     },
     scene: {
-      title: "Wave 4",
-      subtitle: "Compare capture",
+      title: "4웨이브",
+      subtitle: "포획한 몬스터를 비교하세요",
       playerSlots: ["weak", "strong"],
       opponentSlots: [],
       pendingCaptureId: "capture",
@@ -60,7 +60,7 @@ function teamDecisionFrame(capturedPower: number): GameFrame {
       replaceAction(1),
       {
         id: "team:release",
-        label: "Release",
+        label: "놓아주기",
         role: "danger",
         enabled: true,
         action: { type: "DISCARD_CAPTURE" },
@@ -78,7 +78,7 @@ function teamDecisionFrame(capturedPower: number): GameFrame {
 function replaceAction(index: number): FrameAction {
   return {
     id: `team:replace:${index}`,
-    label: `Replace ${index}`,
+    label: `${index + 1}번 슬롯과 교체`,
     role: "primary",
     enabled: true,
     action: { type: "ACCEPT_CAPTURE", replaceIndex: index },
@@ -100,7 +100,7 @@ function entity(id: string, owner: FrameEntity["owner"], slot: number, power: nu
     assetPath: "resources/pokemon/0001.webp",
     name: id,
     speciesId: 1,
-    typeLabels: ["normal"],
+    typeLabels: ["노말"],
     hp: {
       current: 100,
       max: 100,
@@ -116,8 +116,8 @@ function entity(id: string, owner: FrameEntity["owner"], slot: number, power: nu
     moves: [
       {
         id: "tackle",
-        name: "Tackle",
-        type: "normal",
+        name: "몸통박치기",
+        type: "노말",
         power: 40,
         accuracy: 1,
       },

@@ -108,7 +108,7 @@ describe("browser sync controller", () => {
     );
 
     await sync.afterDispatch({ type: "DISCARD_CAPTURE" });
-    expect(sync.getStatus().message).toContain("read-only");
+    expect(sync.getStatus().message).toContain("읽기 전용");
     expect(requests.some((request) => request.init.method === "POST")).toBe(false);
 
     await sync.beforeDispatch({ type: "RESOLVE_NEXT_ENCOUNTER" });
@@ -151,7 +151,7 @@ describe("browser sync controller", () => {
       },
     );
 
-    expect(sync.getStatus().message).toContain("Apps Script ready");
+    expect(sync.getStatus().message).toContain("Apps Script 준비됨");
 
     await sync.afterDispatch({ type: "DISCARD_CAPTURE" });
 
@@ -163,7 +163,7 @@ describe("browser sync controller", () => {
       wave: 5,
       seed: "public-csv-submit",
     });
-    expect(sync.getStatus().message).toContain("submitted");
+    expect(sync.getStatus().message).toContain("Apps Script 제출 완료");
   });
 });
 

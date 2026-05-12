@@ -17,6 +17,7 @@ import {
   isCheckpointWave,
   type TrainerSnapshot,
 } from "../game/sync/trainerSnapshot";
+import { formatWave } from "../game/localization";
 import type { GameAction } from "../game/types";
 import { hasSyncCredentials, type SyncSettings } from "./syncSettings";
 
@@ -48,7 +49,7 @@ export class BrowserSyncController {
   private appendedCheckpoints = new Set<string>();
   private status: BrowserSyncStatus = {
     state: "disabled",
-    message: "Sync disabled",
+    message: "동기화 꺼짐",
   };
 
   constructor(
@@ -96,7 +97,7 @@ export class BrowserSyncController {
 
     this.status = {
       state: "syncing",
-      message: `Loading wave ${state.currentWave} trainers`,
+      message: `${formatWave(state.currentWave)} 트레이너 불러오는 중`,
     };
 
     try {
@@ -112,12 +113,12 @@ export class BrowserSyncController {
 
       this.status = {
         state: "synced",
-        message: picked ? `Loaded ${picked.trainerName}` : "No sheet trainer found",
+        message: picked ? `${picked.trainerName} 불러옴` : "시트 트레이너가 없습니다",
         lastSyncedAt: this.now(),
         candidateCount: candidates.length,
       };
     } catch (error) {
-      this.status = toErrorStatus(error, "Trainer list failed");
+      this.status = toErrorStatus(error, "트레이너 목록 불러오기 실패");
     }
   }
 
@@ -153,7 +154,7 @@ export class BrowserSyncController {
     this.appendedCheckpoints.add(checkpointKey);
     this.status = {
       state: "syncing",
-      message: `Appending wave ${state.currentWave}`,
+      message: `${formatWave(state.currentWave)} 기록 업로드 중`,
     };
 
     try {
@@ -166,11 +167,11 @@ export class BrowserSyncController {
       );
       this.status = {
         state: "synced",
-        message: `Wave ${state.currentWave} appended`,
+        message: `${formatWave(state.currentWave)} 기록 업로드 완료`,
         lastSyncedAt: this.now(),
       };
     } catch (error) {
-      this.status = toErrorStatus(error, "Checkpoint append failed");
+      this.status = toErrorStatus(error, "체크포인트 업로드 실패");
     }
   }
 
@@ -178,7 +179,7 @@ export class BrowserSyncController {
     if (!this.settings.enabled) {
       this.status = {
         state: "disabled",
-        message: "Sync disabled",
+        message: "동기화 꺼짐",
       };
       return undefined;
     }
@@ -188,8 +189,8 @@ export class BrowserSyncController {
         state: "offline",
         message:
           this.settings.mode === "publicCsv"
-            ? "Public sync needs sheet URL or CSV URL"
-            : "Sync needs sheet, range, and credential",
+            ? "공개 동기화에는 시트 URL 또는 CSV URL이 필요합니다"
+            : "시트, 범위, 인증 정보가 필요합니다",
       };
       return undefined;
     }
@@ -204,7 +205,7 @@ export class BrowserSyncController {
       this.adapter = undefined;
       this.status = {
         state: "disabled",
-        message: "Sync disabled",
+        message: "동기화 꺼짐",
       };
       return;
     }
@@ -213,7 +214,7 @@ export class BrowserSyncController {
       this.adapter = undefined;
       this.status = {
         state: "offline",
-        message: "Public sync needs sheet URL or CSV URL",
+        message: "공개 동기화에는 시트 URL 또는 CSV URL이 필요합니다",
       };
       return;
     }
@@ -239,9 +240,7 @@ export class BrowserSyncController {
         : undefined;
       this.status = {
         state: "ready",
-        message: this.appsScriptSubmitter
-          ? "Public sheet + Apps Script ready"
-          : "Public sheet ready",
+        message: this.appsScriptSubmitter ? "공개 시트와 Apps Script 준비됨" : "공개 시트 준비됨",
       };
       return;
     }
@@ -254,7 +253,7 @@ export class BrowserSyncController {
       this.adapter = undefined;
       this.status = {
         state: "offline",
-        message: "Sync needs sheet, range, and credential",
+        message: "시트, 범위, 인증 정보가 필요합니다",
       };
       return;
     }
@@ -270,7 +269,7 @@ export class BrowserSyncController {
       });
     this.status = {
       state: "ready",
-      message: "Sync ready",
+      message: "동기화 준비됨",
     };
   }
 
@@ -278,7 +277,7 @@ export class BrowserSyncController {
     if (!this.appsScriptSubmitter) {
       this.status = {
         state: "synced",
-        message: "Public sheet read-only; checkpoint not uploaded",
+        message: "공개 시트는 읽기 전용이라 체크포인트를 업로드하지 않았습니다",
         lastSyncedAt: this.now(),
       };
       return;
@@ -292,7 +291,7 @@ export class BrowserSyncController {
     this.appendedCheckpoints.add(checkpointKey);
     this.status = {
       state: "syncing",
-      message: `Submitting wave ${state.currentWave}`,
+      message: `${formatWave(state.currentWave)} 제출 중`,
     };
 
     try {
@@ -305,11 +304,11 @@ export class BrowserSyncController {
       );
       this.status = {
         state: "synced",
-        message: `Wave ${state.currentWave} submitted to Apps Script`,
+        message: `${formatWave(state.currentWave)} Apps Script 제출 완료`,
         lastSyncedAt: this.now(),
       };
     } catch (error) {
-      this.status = toErrorStatus(error, "Apps Script submit failed");
+      this.status = toErrorStatus(error, "Apps Script 제출 실패");
     }
   }
 }

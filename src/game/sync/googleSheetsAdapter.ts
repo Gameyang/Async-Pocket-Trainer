@@ -127,7 +127,7 @@ export class GoogleSheetsTrainerAdapter implements TrainerSyncAdapter {
     });
 
     if (!response.ok) {
-      throw new Error(`Google Sheets request failed: ${response.status} ${response.statusText}`);
+      throw new Error(`Google Sheets 요청 실패: ${response.status} ${response.statusText}`);
     }
 
     return response.json();

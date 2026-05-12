@@ -100,11 +100,9 @@ describe("HeadlessGameClient", () => {
 
     expect(snapshot.lastBattle?.kind).toBe("trainer");
     expect(snapshot.lastBattle?.encounterSource).toBe("sheet");
-    expect(snapshot.lastBattle?.opponentName).toContain("Dummy Rival Snapshot");
+    expect(snapshot.lastBattle?.opponentName).toContain("Dummy Rival 기록");
     expect(snapshot.lastBattle?.enemyTeam[0].instanceId).toBe(opponentSnapshot.team[0].creatureId);
-    expect(snapshot.events.some((event) => event.message.includes("Dummy Rival Snapshot"))).toBe(
-      true,
-    );
+    expect(snapshot.events.some((event) => event.message.includes("Dummy Rival 기록"))).toBe(true);
   });
 
   it("covers core user input paths through FrameAction dispatch", () => {

@@ -1,7 +1,7 @@
 {
-  "name": "Async Pocket Trainer",
-  "short_name": "Pocket Trainer",
-  "description": "A browser monster-battle roguelike prototype.",
+  "name": "비동기 포켓 트레이너",
+  "short_name": "포켓 트레이너",
+  "description": "한국어 브라우저 몬스터 배틀 로그라이크.",
   "start_url": "./",
   "display": "standalone",
   "background_color": "#26384f",

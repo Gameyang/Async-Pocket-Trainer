@@ -238,7 +238,7 @@ function resolveStatusSkip(
       entityId: actor.instanceId,
       side,
       status: status.type,
-      reason: "Fully paralyzed.",
+      reason: "마비로 움직일 수 없습니다.",
     });
     return true;
   }
@@ -254,7 +254,7 @@ function resolveStatusSkip(
     entityId: actor.instanceId,
     side,
     status: status.type,
-    reason: status.type === "sleep" ? "Asleep." : "Frozen.",
+    reason: status.type === "sleep" ? "잠들어 있습니다." : "얼어붙었습니다.",
   });
 
   if (remainingTurns <= 1) {
