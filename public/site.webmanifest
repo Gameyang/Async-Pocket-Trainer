@@ -1,0 +1,17 @@
+{
+  "name": "Async Pocket Trainer",
+  "short_name": "Pocket Trainer",
+  "description": "A browser monster-battle roguelike prototype.",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#26384f",
+  "theme_color": "#26384f",
+  "icons": [
+    {
+      "src": "./favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

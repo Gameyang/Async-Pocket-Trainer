@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Async Pocket Trainer">
+  <rect width="64" height="64" rx="12" fill="#26384f" />
+  <path d="M8 36c7-13 17-20 31-20 6 0 11 1 17 4-3 6-8 10-14 12l11 13c-8 4-17 5-27 2S10 42 8 36Z" fill="#8bd8ff" stroke="#101722" stroke-width="4" stroke-linejoin="round" />
+  <circle cx="25" cy="35" r="14" fill="#f7f7f2" stroke="#101722" stroke-width="4" />
+  <path d="M11 35h28" stroke="#101722" stroke-width="4" stroke-linecap="round" />
+  <path d="M14 31a14 14 0 0 1 22 0" fill="#e25248" />
+  <circle cx="25" cy="35" r="5" fill="#f7f7f2" stroke="#101722" stroke-width="3" />
+  <path d="M39 17c4 6 4 12 1 18 6-2 11-6 15-12-5-3-10-5-16-6Z" fill="#f6c453" stroke="#101722" stroke-width="4" stroke-linejoin="round" />
+</svg>
