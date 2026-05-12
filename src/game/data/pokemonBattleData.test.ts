@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import rawBattleData from "./pokemonBattleData.json";
+import rawBattleData from "./pokemonBattleData.json" with { type: "json" };
 import type { PokemonBattleData } from "./pokemonBattleData";
 
 function readBattleData(): PokemonBattleData {

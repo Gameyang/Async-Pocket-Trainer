@@ -3,11 +3,15 @@ import { getTeamHealthRatio, scoreTeam } from "../scoring";
 import type {
   BattleStatus,
   BattleReplayEvent,
+  BallType,
   Creature,
+  EncounterSource,
   GameAction,
   GameBalance,
+  GameEvent,
   GamePhase,
   GameState,
+  SpeciesDefinition,
 } from "../types";
 
 export type FrameProtocolVersion = 1;
@@ -47,7 +51,50 @@ export interface FrameScene {
   opponentSlots: string[];
   pendingCaptureId?: string;
   focusEntityId?: string;
+  starterOptions: FrameStarterOption[];
+  capture?: FrameCaptureScene;
+  trainer?: FrameTrainerScene;
+  bgmKey: FrameBgmKey;
 }
+
+export interface FrameStarterOption {
+  speciesId: number;
+  name: string;
+  typeLabels: string[];
+  assetKey: string;
+  assetPath: string;
+  stats: {
+    hp: number;
+    attack: number;
+    defense: number;
+    special: number;
+    speed: number;
+  };
+}
+
+export interface FrameCaptureScene {
+  result: "choosing" | "success" | "failure";
+  ball?: BallType;
+  targetEntityId?: string;
+  targetName?: string;
+  chance?: number;
+  shakes: number;
+  label: string;
+}
+
+export interface FrameTrainerScene {
+  source: EncounterSource;
+  label: string;
+  trainerName: string;
+  portraitKey: string;
+  portraitPath: string;
+}
+
+export type FrameBgmKey =
+  | "bgm.starterReady"
+  | "bgm.battleCapture"
+  | "bgm.teamDecision"
+  | "bgm.gameOver";
 
 export interface FrameEntity {
   id: string;
@@ -163,9 +210,20 @@ export type FrameVisualCue =
       type: "phase.change";
       sequence: number;
       effectKey: string;
-      soundKey?: string;
+      soundKey: string;
       label: string;
       phase: GamePhase;
+    }
+  | {
+      id: string;
+      type: "capture.success" | "capture.fail";
+      sequence: number;
+      effectKey: string;
+      soundKey: string;
+      label: string;
+      ball: BallType;
+      targetEntityId?: string;
+      targetName?: string;
     };
 
 export function createGameFrame(
@@ -173,6 +231,7 @@ export function createGameFrame(
   balance: GameBalance,
   frameId: number,
 ): GameFrame {
+  const captureScene = createCaptureScene(state);
   const playerEntities = state.team.map((creature, index) =>
     toFrameEntity(creature, "player", index),
   );
@@ -181,7 +240,9 @@ export function createGameFrame(
       ? (state.pendingEncounter?.enemyTeam ?? [])
       : state.phase === "gameOver"
         ? (state.lastBattle?.enemyTeam ?? [])
-        : [];
+        : captureScene?.result === "failure"
+          ? (state.lastBattle?.enemyTeam ?? [])
+          : [];
   const opponentEntities = opponentTeam.map((creature, index) =>
     toFrameEntity(creature, "opponent", index),
   );
@@ -238,6 +299,10 @@ export function createGameFrame(
       opponentSlots: opponentEntities.map((entity) => entity.id),
       pendingCaptureId: pendingCaptureEntity?.id,
       focusEntityId,
+      starterOptions: createStarterOptions(state),
+      capture: captureScene,
+      trainer: createTrainerScene(state),
+      bgmKey: createBgmKey(state),
     },
     entities,
     actions: createFrameActions(state, balance),
@@ -311,6 +376,19 @@ export function validateFrameContract(frame: GameFrame): string[] {
     errors.push(`scene references missing pending capture ${frame.scene.pendingCaptureId}`);
   }
 
+  for (const option of frame.scene.starterOptions) {
+    if (!/^resources\/pokemon\/\d{4}\.webp$/.test(option.assetPath)) {
+      errors.push(`starter ${option.speciesId} has invalid asset path ${option.assetPath}`);
+    }
+  }
+
+  if (
+    frame.scene.trainer &&
+    !/^resources\/trainers\/[a-z0-9-]+\.webp$/.test(frame.scene.trainer.portraitPath)
+  ) {
+    errors.push(`trainer has invalid portrait path ${frame.scene.trainer.portraitPath}`);
+  }
+
   for (const cue of frame.visualCues) {
     if (!Number.isInteger(cue.sequence) || cue.sequence < 0) {
       errors.push(`cue ${cue.id} has invalid sequence ${cue.sequence}`);
@@ -318,6 +396,10 @@ export function validateFrameContract(frame: GameFrame): string[] {
 
     if (!cue.effectKey) {
       errors.push(`cue ${cue.id} has no effect key`);
+    }
+
+    if (!cue.soundKey) {
+      errors.push(`cue ${cue.id} has no sound key`);
     }
 
     if (cue.type === "phase.change") {
@@ -340,6 +422,14 @@ export function validateFrameContract(frame: GameFrame): string[] {
       !entityIds.has(cue.targetEntityId)
     ) {
       errors.push(`cue references missing target entity ${cue.targetEntityId}`);
+    }
+
+    if (
+      (cue.type === "capture.success" || cue.type === "capture.fail") &&
+      cue.targetEntityId &&
+      !entityIds.has(cue.targetEntityId)
+    ) {
+      errors.push(`cue references missing capture target ${cue.targetEntityId}`);
     }
   }
 
@@ -375,6 +465,147 @@ export function validateFrameContract(frame: GameFrame): string[] {
   }
 
   return errors;
+}
+
+const trainerPortraits = [
+  "resources/trainers/field-scout.webp",
+  "resources/trainers/checkpoint-captain.webp",
+  "resources/trainers/sheet-rival.webp",
+] as const;
+
+function createStarterOptions(state: GameState): FrameStarterOption[] {
+  if (state.phase !== "starterChoice") {
+    return [];
+  }
+
+  return starterSpeciesIds.map((speciesId) => speciesToStarterOption(getSpecies(speciesId)));
+}
+
+function speciesToStarterOption(species: SpeciesDefinition): FrameStarterOption {
+  return {
+    speciesId: species.id,
+    name: species.name,
+    typeLabels: [...species.types],
+    assetKey: `monster:${species.id}`,
+    assetPath: `resources/pokemon/${species.id.toString().padStart(4, "0")}.webp`,
+    stats: { ...species.baseStats },
+  };
+}
+
+function createCaptureScene(state: GameState): FrameCaptureScene | undefined {
+  const latestCapture = parseLatestCaptureAttempt(state.events.at(-1));
+
+  if (state.phase === "captureDecision" && state.pendingEncounter) {
+    const target = state.pendingEncounter.enemyTeam[0];
+
+    return {
+      result: "choosing",
+      targetEntityId: target?.instanceId,
+      targetName: target?.speciesName,
+      shakes: 0,
+      label: target ? `${target.speciesName} is weak enough to catch.` : "Choose a ball.",
+    };
+  }
+
+  if (state.phase === "teamDecision" && state.pendingCapture && latestCapture?.success) {
+    return {
+      result: "success",
+      ball: latestCapture.ball,
+      targetEntityId: state.pendingCapture.instanceId,
+      targetName: state.pendingCapture.speciesName,
+      chance: latestCapture.chance,
+      shakes: 3,
+      label: `${state.pendingCapture.speciesName} was caught.`,
+    };
+  }
+
+  if (latestCapture && !latestCapture.success) {
+    const target = state.lastBattle?.enemyTeam[0];
+
+    return {
+      result: "failure",
+      ball: latestCapture.ball,
+      targetEntityId: target?.instanceId,
+      targetName: target?.speciesName ?? latestCapture.targetName,
+      chance: latestCapture.chance,
+      shakes: Math.max(1, Math.min(2, Math.ceil((latestCapture.chance ?? 0.45) * 3))),
+      label: `${target?.speciesName ?? latestCapture.targetName ?? "The target"} broke free.`,
+    };
+  }
+
+  return undefined;
+}
+
+function parseLatestCaptureAttempt(event: GameEvent | undefined):
+  | {
+      ball: BallType;
+      chance?: number;
+      success: boolean;
+      targetName?: string;
+    }
+  | undefined {
+  if (event?.type !== "capture_attempted") {
+    return undefined;
+  }
+
+  const data = event.data ?? {};
+  const ball = data.ball === "greatBall" ? "greatBall" : "pokeBall";
+  const success = data.success === true;
+  const chance = typeof data.chance === "number" ? data.chance : undefined;
+  const targetName = typeof data.target === "string" ? data.target : undefined;
+
+  return {
+    ball,
+    chance,
+    success,
+    targetName,
+  };
+}
+
+function createTrainerScene(state: GameState): FrameTrainerScene | undefined {
+  const kind = state.pendingEncounter?.kind ?? state.lastBattle?.kind;
+
+  if (kind !== "trainer") {
+    return undefined;
+  }
+
+  const source = state.pendingEncounter?.source ?? state.lastBattle?.encounterSource ?? "generated";
+  const trainerName =
+    state.pendingEncounter?.opponentName ?? state.lastBattle?.opponentName ?? "Trainer";
+  const portraitPath = pickTrainerPortrait(trainerName, source);
+
+  return {
+    source,
+    label: source === "sheet" ? "Sheet Trainer" : "Trainer",
+    trainerName,
+    portraitKey: `trainer:${portraitPath.split("/").at(-1)?.replace(".webp", "") ?? "portrait"}`,
+    portraitPath,
+  };
+}
+
+function pickTrainerPortrait(trainerName: string, source: EncounterSource): string {
+  if (source === "sheet") {
+    return "resources/trainers/sheet-rival.webp";
+  }
+
+  const hash = trainerName.split("").reduce((sum, character) => sum + character.charCodeAt(0), 0);
+  return trainerPortraits[hash % (trainerPortraits.length - 1)];
+}
+
+function createBgmKey(state: GameState): FrameBgmKey {
+  if (state.phase === "gameOver") {
+    return "bgm.gameOver";
+  }
+
+  if (state.phase === "teamDecision") {
+    return "bgm.teamDecision";
+  }
+
+  if (state.phase === "captureDecision" || state.lastBattle?.replay.length) {
+    return "bgm.battleCapture";
+  }
+
+  return "bgm.starterReady";
 }
 
 function toFrameEntity(creature: Creature, owner: FrameEntityOwner, slot: number): FrameEntity {
@@ -456,7 +687,7 @@ function createFrameActions(state: GameState, balance: GameBalance): FrameAction
   if (state.phase === "starterChoice" || state.phase === "gameOver") {
     return starterSpeciesIds.map((speciesId) => ({
       id: `start:${speciesId}`,
-      label: `Start ${getSpecies(speciesId).name}`,
+      label: `Choose ${getSpecies(speciesId).name}`,
       role: "primary",
       enabled: true,
       action: { type: "START_RUN", starterSpeciesId: speciesId },
@@ -467,7 +698,7 @@ function createFrameActions(state: GameState, balance: GameBalance): FrameAction
     return [
       {
         id: "encounter:next",
-        label: "Next Encounter",
+        label: "Scout",
         role: "primary",
         enabled: true,
         action: { type: "RESOLVE_NEXT_ENCOUNTER" },
@@ -479,23 +710,25 @@ function createFrameActions(state: GameState, balance: GameBalance): FrameAction
         enabled: state.money >= balance.teamRestCost,
         cost: balance.teamRestCost,
         action: { type: "REST_TEAM" },
-        reason: state.money >= balance.teamRestCost ? undefined : "Not enough money.",
+        reason: state.money >= balance.teamRestCost ? undefined : "Not enough money",
       },
       {
         id: "shop:pokeball",
-        label: `Buy Poke Ball ${balance.pokeBallCost}c`,
+        label: `Poke Ball ${balance.pokeBallCost}c`,
         role: "secondary",
         enabled: state.money >= balance.pokeBallCost,
         cost: balance.pokeBallCost,
         action: { type: "BUY_BALL", ball: "pokeBall", quantity: 1 },
+        reason: state.money >= balance.pokeBallCost ? undefined : "Not enough money",
       },
       {
         id: "shop:greatball",
-        label: `Buy Great Ball ${balance.greatBallCost}c`,
+        label: `Great Ball ${balance.greatBallCost}c`,
         role: "secondary",
         enabled: state.money >= balance.greatBallCost,
         cost: balance.greatBallCost,
         action: { type: "BUY_BALL", ball: "greatBall", quantity: 1 },
+        reason: state.money >= balance.greatBallCost ? undefined : "Not enough money",
       },
     ];
   }
@@ -505,23 +738,25 @@ function createFrameActions(state: GameState, balance: GameBalance): FrameAction
     return [
       {
         id: "capture:pokeball",
-        label: `Poke Ball (${state.balls.pokeBall})`,
+        label: `Throw Poke (${state.balls.pokeBall})`,
         role: "primary",
         enabled: state.balls.pokeBall > 0,
         targetEntityId,
         action: { type: "ATTEMPT_CAPTURE", ball: "pokeBall" },
+        reason: state.balls.pokeBall > 0 ? undefined : "No Poke Balls",
       },
       {
         id: "capture:greatball",
-        label: `Great Ball (${state.balls.greatBall})`,
+        label: `Throw Great (${state.balls.greatBall})`,
         role: "primary",
         enabled: state.balls.greatBall > 0,
         targetEntityId,
         action: { type: "ATTEMPT_CAPTURE", ball: "greatBall" },
+        reason: state.balls.greatBall > 0 ? undefined : "No Great Balls",
       },
       {
         id: "capture:skip",
-        label: "Skip",
+        label: "Leave",
         role: "danger",
         enabled: true,
         targetEntityId,
@@ -537,7 +772,7 @@ function createFrameActions(state: GameState, balance: GameBalance): FrameAction
         ? [
             {
               id: "team:keep",
-              label: "Keep",
+              label: "Add to Team",
               role: "primary",
               enabled: true,
               targetEntityId: capture?.instanceId,
@@ -546,7 +781,7 @@ function createFrameActions(state: GameState, balance: GameBalance): FrameAction
           ]
         : state.team.map((creature, index) => ({
             id: `team:replace:${index}`,
-            label: `Replace ${creature.speciesName}`,
+            label: `Swap ${creature.speciesName}`,
             role: "primary" as const,
             enabled: true,
             targetEntityId: creature.instanceId,
@@ -593,18 +828,45 @@ function createVisualCues(state: GameState): FrameVisualCue[] {
     .slice(-12)
     .map((event) => battleReplayEventToCue(event))
     .filter((cue): cue is FrameVisualCue => Boolean(cue));
+  const captureCue = createCaptureCue(state);
 
   return [
     ...battleCues,
+    ...(captureCue ? [captureCue] : []),
     {
       id: `phase:${state.phase}:${state.currentWave}`,
       type: "phase.change",
       sequence: state.lastBattle?.replay.at(-1)?.sequence ?? 0,
       effectKey: "phase.change",
+      soundKey: "sfx.phase.change",
       label: state.phase,
       phase: state.phase,
     },
   ];
+}
+
+function createCaptureCue(state: GameState): FrameVisualCue | undefined {
+  const latestEvent = state.events.at(-1);
+  const latestCapture = parseLatestCaptureAttempt(latestEvent);
+
+  if (!latestEvent || !latestCapture) {
+    return undefined;
+  }
+
+  const target = state.pendingCapture ?? state.lastBattle?.enemyTeam[0];
+  const type = latestCapture.success ? "capture.success" : "capture.fail";
+
+  return {
+    id: `capture:${latestEvent.id}:${latestCapture.ball}`,
+    type,
+    sequence: (state.lastBattle?.replay.at(-1)?.sequence ?? 0) + latestEvent.id,
+    effectKey: type,
+    soundKey: latestCapture.success ? "sfx.capture.success" : "sfx.capture.fail",
+    label: latestCapture.success ? "Capture succeeded." : "Capture failed.",
+    ball: latestCapture.ball,
+    targetEntityId: target?.instanceId,
+    targetName: target?.speciesName ?? latestCapture.targetName,
+  };
 }
 
 function createBattleReplay(state: GameState): FrameBattleReplay {

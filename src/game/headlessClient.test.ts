@@ -99,6 +99,8 @@ describe("HeadlessGameClient", () => {
     const snapshot = challenger.getSnapshot();
 
     expect(snapshot.lastBattle?.kind).toBe("trainer");
+    expect(snapshot.lastBattle?.encounterSource).toBe("sheet");
+    expect(snapshot.lastBattle?.opponentName).toContain("Dummy Rival Snapshot");
     expect(snapshot.lastBattle?.enemyTeam[0].instanceId).toBe(opponentSnapshot.team[0].creatureId);
     expect(snapshot.events.some((event) => event.message.includes("Dummy Rival Snapshot"))).toBe(
       true,

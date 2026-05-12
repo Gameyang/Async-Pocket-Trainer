@@ -14,6 +14,7 @@ export function createWildEncounter(
 
   return {
     kind: "wild",
+    source: "generated",
     wave,
     opponentName: `Wild ${creature.speciesName}`,
     enemyTeam: [creature],
@@ -36,6 +37,7 @@ export function createTrainerEncounter(
 
   return {
     kind: "trainer",
+    source: "generated",
     wave,
     opponentName: `Wave ${wave} Trainer (${scoreTeam(team)})`,
     enemyTeam: team,
@@ -47,6 +49,7 @@ export function createTrainerEncounterFromSnapshot(snapshot: TrainerSnapshot): E
 
   return {
     kind: "trainer",
+    source: "sheet",
     wave: snapshot.wave,
     opponentName: `${snapshot.trainerName} Snapshot (${snapshot.teamPower})`,
     enemyTeam: team,

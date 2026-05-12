@@ -14,6 +14,7 @@ import { mountHtmlRenderer } from "./ui/htmlRenderer";
 export { buildMetadata };
 
 const PLAYER_ID_STORAGE_KEY = "apt:player-id:v1";
+const TRAINER_NAME_STORAGE_KEY = "apt:trainer-name:v1";
 const app = typeof document === "undefined" ? null : document.querySelector<HTMLDivElement>("#app");
 
 if (app) {
@@ -23,7 +24,7 @@ if (app) {
     ? HeadlessGameClient.fromSnapshot(loaded.snapshot)
     : new HeadlessGameClient({
         seed: "browser-preview",
-        trainerName: "Browser Trainer",
+        trainerName: getBrowserTrainerName(storage),
       });
   const syncController = new BrowserSyncController(client, loadSyncSettings(storage), {
     playerId: getBrowserPlayerId(storage),
@@ -37,10 +38,14 @@ if (app) {
     {
       getFrame: () => client.getFrame(),
       async dispatch(action) {
-        await syncController.beforeDispatch(action);
-        const state = client.dispatch(action);
+        const resolvedAction =
+          action.type === "START_RUN"
+            ? { ...action, trainerName: getBrowserTrainerName(storage) }
+            : action;
+        await syncController.beforeDispatch(resolvedAction);
+        const state = client.dispatch(resolvedAction);
         saveClientSnapshot(client.saveSnapshot(), storage);
-        await syncController.afterDispatch(action);
+        await syncController.afterDispatch(resolvedAction);
         saveClientSnapshot(client.saveSnapshot(), storage);
         return state;
       },
@@ -62,6 +67,14 @@ if (app) {
         clearClientSnapshot(storage);
         saveNotice = "Browser save cleared";
       },
+      onNewRun() {
+        clearClientSnapshot(storage);
+        window.location.reload();
+      },
+      onTrainerNameSubmit(trainerName: string) {
+        saveBrowserTrainerName(storage, trainerName);
+        saveNotice = "Trainer name saved";
+      },
     },
   );
 }
@@ -79,4 +92,14 @@ function getBrowserPlayerId(storage: Storage): string {
       : `player-${Date.now().toString(36)}`;
   storage.setItem(PLAYER_ID_STORAGE_KEY, created);
   return created;
+}
+
+function getBrowserTrainerName(storage: Storage): string {
+  const saved = storage.getItem(TRAINER_NAME_STORAGE_KEY)?.trim();
+  return saved || "Browser Trainer";
+}
+
+function saveBrowserTrainerName(storage: Storage, trainerName: string): void {
+  const normalized = trainerName.trim() || "Browser Trainer";
+  storage.setItem(TRAINER_NAME_STORAGE_KEY, normalized);
 }

@@ -1,4 +1,4 @@
-import rawBattleData from "./pokemonBattleRuntimeData.json";
+import rawBattleData from "./pokemonBattleRuntimeData.json" with { type: "json" };
 import type { MoveRecord, PokemonBattleData, PokemonRecord } from "./pokemonBattleData";
 import { clamp } from "../rng";
 import type {

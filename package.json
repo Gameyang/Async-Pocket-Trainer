@@ -16,6 +16,7 @@
     "format": "prettier --check .",
     "format:write": "prettier --write .",
     "render:check": "playwright test",
+    "assets:generate": "node scripts/generate-local-assets.mjs",
     "headless": "tsx src/tools/headless-run.ts",
     "replay:seed": "tsx src/tools/seed-replay.ts",
     "qa:headless": "tsx src/tools/headless-run.ts --runs 12 --waves 15 --strategy greedy",

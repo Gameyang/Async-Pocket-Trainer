@@ -47,6 +47,8 @@ function teamDecisionFrame(capturedPower: number): GameFrame {
       playerSlots: ["weak", "strong"],
       opponentSlots: [],
       pendingCaptureId: "capture",
+      starterOptions: [],
+      bgmKey: "bgm.teamDecision",
     },
     entities: [
       entity("weak", "player", 0, 100),

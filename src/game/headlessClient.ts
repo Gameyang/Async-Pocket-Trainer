@@ -255,13 +255,17 @@ export class HeadlessGameClient {
     }
 
     const encounter = this.createEncounter();
-    const battle = runAutoBattle({
-      kind: encounter.kind,
-      playerTeam: this.state.team,
-      enemyTeam: encounter.enemyTeam,
-      rng: this.rng,
-      damageScale: this.balance.battleDamageScale,
-    });
+    const battle = {
+      ...runAutoBattle({
+        kind: encounter.kind,
+        playerTeam: this.state.team,
+        enemyTeam: encounter.enemyTeam,
+        rng: this.rng,
+        damageScale: this.balance.battleDamageScale,
+      }),
+      encounterSource: encounter.source,
+      opponentName: encounter.opponentName,
+    };
 
     this.state.team = battle.playerTeam;
     this.state.pendingEncounter = encounter;

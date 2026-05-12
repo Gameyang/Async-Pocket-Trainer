@@ -205,6 +205,8 @@ export type BattleReplayEvent =
 
 export interface BattleResult {
   kind: EncounterKind;
+  encounterSource?: EncounterSource;
+  opponentName?: string;
   winner: "player" | "enemy";
   turns: number;
   playerTeam: Creature[];
@@ -215,10 +217,13 @@ export interface BattleResult {
 
 export interface EncounterSnapshot {
   kind: EncounterKind;
+  source?: EncounterSource;
   wave: number;
   opponentName: string;
   enemyTeam: Creature[];
 }
+
+export type EncounterSource = "generated" | "sheet";
 
 export interface GameEvent {
   id: number;

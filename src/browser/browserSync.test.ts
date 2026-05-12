@@ -78,6 +78,7 @@ describe("browser sync controller", () => {
     const opponent = buildOpponentSnapshot();
     const csv = toCsv([serializeTrainerSnapshot(opponent)]);
     const client = readyAtCheckpoint("public-csv-sync");
+    const requests: FetchRequest[] = [];
     const sync = new BrowserSyncController(
       client,
       {
@@ -89,22 +90,26 @@ describe("browser sync controller", () => {
       {
         playerId: "player-a",
         now: () => "2026-05-12T00:00:00.000Z",
-        fetch: async () => ({
-          ok: true,
-          status: 200,
-          statusText: "OK",
-          async json() {
-            return {};
-          },
-          async text() {
-            return csv;
-          },
-        }),
+        fetch: async (url, init = {}) => {
+          requests.push({ url, init });
+          return {
+            ok: true,
+            status: 200,
+            statusText: "OK",
+            async json() {
+              return {};
+            },
+            async text() {
+              return csv;
+            },
+          };
+        },
       },
     );
 
     await sync.afterDispatch({ type: "DISCARD_CAPTURE" });
     expect(sync.getStatus().message).toContain("read-only");
+    expect(requests.some((request) => request.init.method === "POST")).toBe(false);
 
     await sync.beforeDispatch({ type: "RESOLVE_NEXT_ENCOUNTER" });
     client.dispatch({ type: "RESOLVE_NEXT_ENCOUNTER" });
