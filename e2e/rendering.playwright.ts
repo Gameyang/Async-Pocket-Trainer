@@ -28,6 +28,12 @@ test("renders phase-specific screens with stable responsive layout", async ({ pa
   await expect(page.locator(".reward-board")).toBeVisible();
   await expect(page.locator(".command-band button")).toHaveCount(2);
 
+  await openSnapshot(page, failedCaptureReadySnapshot());
+  await assertPhaseScreen(page, "ready", ".encounter-panel");
+  await expect(page.locator('.capture-overlay[data-capture-result="failure"]')).toBeVisible();
+  await expect(page.locator('.command-band [data-action-id="encounter:next"]')).toBeVisible();
+  await clickAction(page, '[data-action-id="encounter:next"]');
+
   await openSnapshot(page, gameOverSnapshot());
   await assertPhaseScreen(page, "gameOver", ".game-over-screen");
   await expect(page.locator(".result-board")).toContainText("웨이브");
@@ -348,6 +354,27 @@ function gameOverSnapshot(): HeadlessClientSnapshot {
   snapshot.state.currentWave = 9;
   snapshot.state.gameOverReason = "E2E 게임 오버 화면입니다.";
   return snapshot;
+}
+
+function failedCaptureReadySnapshot(): HeadlessClientSnapshot {
+  for (let index = 0; index < 50; index += 1) {
+    const client = new HeadlessGameClient({ seed: `e2e-capture-fail-${index}` });
+    client.dispatch({ type: "START_RUN", starterSpeciesId: 1 });
+    client.dispatch({ type: "RESOLVE_NEXT_ENCOUNTER" });
+
+    if (client.getSnapshot().phase !== "captureDecision") {
+      continue;
+    }
+
+    client.dispatch({ type: "ATTEMPT_CAPTURE", ball: "pokeBall" });
+
+    const snapshot = client.getSnapshot();
+    if (snapshot.phase === "ready" && snapshot.events.at(-1)?.type === "capture_attempted") {
+      return client.saveSnapshot();
+    }
+  }
+
+  throw new Error("Could not create deterministic failed capture snapshot.");
 }
 
 function buildSheetTrainerCsv(): string {

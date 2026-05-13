@@ -649,7 +649,10 @@ export function selectCommandItems(
   pendingCapture: FrameEntity | undefined,
 ): CommandItem[] {
   if (frame.phase === "ready") {
-    return [];
+    return selectReadyShopActions(frame, playerEntities).map((action) => ({
+      type: "action",
+      action,
+    }));
   }
 
   if (frame.phase === "teamDecision") {

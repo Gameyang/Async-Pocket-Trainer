@@ -272,6 +272,8 @@ function renderFrame(
     logLine,
     activeCue,
   });
+  const showReadyFailureCommands =
+    frame.phase === "ready" && frame.scene.capture?.result === "failure";
 
   return `
     <main class="app-shell" data-frame-id="${frame.frameId}" data-protocol="${frame.protocolVersion}" data-phase="${frame.phase}" data-wave="${frame.hud.wave}" data-money="${frame.hud.money}" data-poke-balls="${frame.hud.balls.pokeBall}" data-great-balls="${frame.hud.balls.greatBall}" data-team-size="${playerEntities.length}" data-timeline-count="${frame.timeline.length}" data-battle-playback="${playback.isPlaying ? "playing" : "idle"}" data-battle-sequence="${playback.activeEvent?.sequence ?? 0}" data-battle-event-type="${escapeHtml(playback.activeEvent?.type ?? "")}" data-audio-muted="${audioState.muted ? "true" : "false"}">
@@ -299,7 +301,7 @@ function renderFrame(
       ${playback.isPlaying ? "" : renderTeamRecordPanel(statusView.teamRecord, playerEntities)}
 
       ${
-        frame.phase === "starterChoice" || frame.phase === "ready"
+        frame.phase === "starterChoice" || (frame.phase === "ready" && !showReadyFailureCommands)
           ? ""
           : renderCommandBand(frame, playback.isPlaying, playerEntities, pendingCapture)
       }
