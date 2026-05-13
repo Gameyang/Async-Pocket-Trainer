@@ -18,6 +18,19 @@ describe("renderer contract boundaries", () => {
     expect(canvas).toContain("GameFrame");
     expect(canvas).toContain("entity.assetPath");
   });
+
+  it("keeps browser-visible renderer hooks stable", () => {
+    const source = readSource("htmlRenderer.ts");
+
+    expect(source).toContain("data-screen");
+    expect(source).toContain("data-action-id");
+    expect(source).toContain("data-capture-result");
+    expect(source).toContain("data-battle-effect");
+    expect(source).toContain("data-audio-toggle");
+    expect(source).toContain("resolveAssetPath(entity.assetPath)");
+    expect(source).toContain("resolveAssetPath(option.assetPath)");
+    expect(source).toContain("resolveTrainerAssetPath(trainer.portraitPath)");
+  });
 });
 
 function readSource(fileName: string): string {

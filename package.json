@@ -15,7 +15,7 @@
     "lint": "eslint .",
     "format": "prettier --check .",
     "format:write": "prettier --write .",
-    "render:check": "playwright test",
+    "render:check": "npm run build && playwright test",
     "assets:generate": "node scripts/generate-local-assets.mjs",
     "headless": "tsx src/tools/headless-run.ts",
     "replay:seed": "tsx src/tools/seed-replay.ts",

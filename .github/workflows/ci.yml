@@ -45,6 +45,12 @@ jobs:
       - name: Run quality gate
         run: npm run verify
 
+      - name: Install browser dependencies
+        run: npx playwright install --with-deps chromium
+
+      - name: Run browser rendering checks
+        run: npm run render:check
+
       - name: Run 30-wave headless profile
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.headless_profile == 'wave30' }}
         run: npm run qa:headless:30

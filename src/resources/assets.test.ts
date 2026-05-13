@@ -1,6 +1,8 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
+import pokemonRuntimeData from "../game/data/pokemonBattleRuntimeData.json" with { type: "json" };
+
 const trainerPortraits = [
   "trainers/field-scout.webp",
   "trainers/checkpoint-captain.webp",
@@ -41,6 +43,16 @@ describe("local generated assets", () => {
       expect(bytes.byteLength).toBeGreaterThan(1024);
       expect(bytes.toString("ascii", 0, 4)).toBe("RIFF");
       expect(bytes.toString("ascii", 8, 12)).toBe("WAVE");
+    }
+  });
+
+  it("keeps every runtime Pokemon sprite present as WebP", () => {
+    for (const species of pokemonRuntimeData.pokemon) {
+      const bytes = readAsset(`pokemon/${species.dexNumber.toString().padStart(4, "0")}.webp`);
+
+      expect(bytes.byteLength).toBeGreaterThan(1024);
+      expect(bytes.toString("ascii", 0, 4)).toBe("RIFF");
+      expect(bytes.toString("ascii", 8, 12)).toBe("WEBP");
     }
   });
 });

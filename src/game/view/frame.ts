@@ -192,10 +192,19 @@ export interface FrameBattleReplayEvent {
   type: BattleReplayEvent["type"];
   label: string;
   move?: string;
+  sourceSide?: "player" | "enemy";
+  targetSide?: "player" | "enemy";
+  side?: "player" | "enemy";
+  activePlayerId?: string;
+  activeEnemyId?: string;
   sourceEntityId?: string;
   targetEntityId?: string;
   entityId?: string;
   damage?: number;
+  targetHpBefore?: number;
+  targetHpAfter?: number;
+  hpBefore?: number;
+  hpAfter?: number;
   effectiveness?: number;
   critical?: boolean;
   status?: BattleStatus;
@@ -264,7 +273,11 @@ export function createGameFrame(
         ? (state.lastBattle?.enemyTeam ?? [])
         : captureScene?.result === "failure"
           ? (state.lastBattle?.enemyTeam ?? [])
-          : [];
+          : state.pendingCapture
+            ? []
+            : state.lastBattle?.replay.length
+              ? state.lastBattle.enemyTeam
+              : [];
   const opponentEntities = opponentTeam.map((creature, index) =>
     toFrameEntity(creature, "opponent", index),
   );
@@ -940,6 +953,8 @@ function toFrameBattleReplayEvent(event: BattleReplayEvent): FrameBattleReplayEv
       turn: event.turn,
       type: event.type,
       label: `${event.turn}턴 시작`,
+      activePlayerId: event.activePlayerId,
+      activeEnemyId: event.activeEnemyId,
     };
   }
 
@@ -950,6 +965,8 @@ function toFrameBattleReplayEvent(event: BattleReplayEvent): FrameBattleReplayEv
       type: event.type,
       label: `${withJosa(event.actorId, "이/가")} ${withJosa(event.move, "을/를")} 준비했습니다.`,
       move: event.move,
+      sourceSide: event.actorSide,
+      targetSide: event.targetSide,
       sourceEntityId: event.actorId,
       targetEntityId: event.targetId,
     };
@@ -962,6 +979,8 @@ function toFrameBattleReplayEvent(event: BattleReplayEvent): FrameBattleReplayEv
       type: event.type,
       label: `${withJosa(`${event.actorId}의 ${event.move}`, "이/가")} 빗나갔습니다.`,
       move: event.move,
+      sourceSide: undefined,
+      targetSide: undefined,
       sourceEntityId: event.actorId,
       targetEntityId: event.targetId,
     };
@@ -974,6 +993,7 @@ function toFrameBattleReplayEvent(event: BattleReplayEvent): FrameBattleReplayEv
       type: event.type,
       label: `${withJosa(event.entityId, "은/는")} 움직일 수 없습니다: ${event.reason}`,
       entityId: event.entityId,
+      side: event.side,
       status: event.status,
     };
   }
@@ -985,9 +1005,13 @@ function toFrameBattleReplayEvent(event: BattleReplayEvent): FrameBattleReplayEv
       type: event.type,
       label: `${event.actorId}의 ${event.move}: ${event.damage} 피해`,
       move: event.move,
+      sourceSide: undefined,
+      targetSide: undefined,
       sourceEntityId: event.actorId,
       targetEntityId: event.targetId,
       damage: event.damage,
+      targetHpBefore: event.targetHpBefore,
+      targetHpAfter: event.targetHpAfter,
       effectiveness: event.effectiveness,
       critical: event.critical,
     };
@@ -1000,6 +1024,8 @@ function toFrameBattleReplayEvent(event: BattleReplayEvent): FrameBattleReplayEv
       type: event.type,
       label: `${withJosa(event.targetId, "이/가")} ${localizeBattleStatus(event.status)} 상태가 되었습니다.`,
       move: event.move,
+      sourceSide: undefined,
+      targetSide: undefined,
       sourceEntityId: event.actorId,
       targetEntityId: event.targetId,
       status: event.status,
@@ -1013,6 +1039,8 @@ function toFrameBattleReplayEvent(event: BattleReplayEvent): FrameBattleReplayEv
       type: event.type,
       label: `${withJosa(event.targetId, "은/는")} ${localizeBattleStatus(event.status)}에 면역입니다.`,
       move: event.move,
+      sourceSide: undefined,
+      targetSide: undefined,
       sourceEntityId: event.actorId,
       targetEntityId: event.targetId,
       status: event.status,
@@ -1026,7 +1054,10 @@ function toFrameBattleReplayEvent(event: BattleReplayEvent): FrameBattleReplayEv
       type: event.type,
       label: `${withJosa(event.entityId, "이/가")} ${localizeBattleStatus(event.status)} 피해 ${withJosa(String(event.damage), "을/를")} 받았습니다.`,
       entityId: event.entityId,
+      side: event.side,
       damage: event.damage,
+      hpBefore: event.hpBefore,
+      hpAfter: event.hpAfter,
       status: event.status,
     };
   }
@@ -1038,6 +1069,7 @@ function toFrameBattleReplayEvent(event: BattleReplayEvent): FrameBattleReplayEv
       type: event.type,
       label: `${event.entityId}의 ${localizeBattleStatus(event.status)} 상태가 풀렸습니다.`,
       entityId: event.entityId,
+      side: event.side,
       status: event.status,
     };
   }
@@ -1049,6 +1081,7 @@ function toFrameBattleReplayEvent(event: BattleReplayEvent): FrameBattleReplayEv
       type: event.type,
       label: `${withJosa(event.entityId, "이/가")} 쓰러졌습니다.`,
       entityId: event.entityId,
+      side: event.side,
     };
   }
 

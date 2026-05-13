@@ -109,9 +109,9 @@ export function mountHtmlRenderer(
     root.innerHTML = renderFrame(frame, options.getStatusView?.() ?? {}, playbackView, audioState);
     bindActions(root, client, frame, playbackView, audioState, render);
     bindSettings(root, options, render);
-    bindAudio(root, audioState, frame, render);
+    bindAudio(root, audioState, frame, playbackView, render);
     bindBattlePlayback(root, battlePlayback, frame, render);
-    syncAudio(audioState, frame);
+    syncAudio(audioState, frame, playbackView);
     scheduleBattlePlayback(battlePlayback, frame, render);
   };
 
@@ -224,13 +224,14 @@ function bindAudio(
   root: HTMLElement,
   audioState: AudioState,
   frame: GameFrame,
+  playback: BattlePlaybackView,
   render: () => void,
 ): void {
   root.querySelector<HTMLButtonElement>("[data-audio-toggle]")?.addEventListener("click", () => {
     unlockAudio(audioState);
     audioState.muted = !audioState.muted;
     saveMutedPreference(audioState.muted);
-    syncAudio(audioState, frame);
+    syncAudio(audioState, frame, playback);
     render();
   });
 }
@@ -241,25 +242,31 @@ function renderFrame(
   playback: BattlePlaybackView,
   audioState: AudioState,
 ): string {
+  const entityView = createEntityPlaybackView(frame, playback);
   const playerEntities = frame.scene.playerSlots
-    .map((id) => frame.entities.find((entity) => entity.id === id))
+    .map((id) => entityView.entitiesById.get(id))
     .filter((entity): entity is FrameEntity => Boolean(entity));
   const opponentEntities = frame.scene.opponentSlots
-    .map((id) => frame.entities.find((entity) => entity.id === id))
+    .map((id) => entityView.entitiesById.get(id))
     .filter((entity): entity is FrameEntity => Boolean(entity));
   const pendingCapture = frame.scene.pendingCaptureId
-    ? frame.entities.find((entity) => entity.id === frame.scene.pendingCaptureId)
+    ? entityView.entitiesById.get(frame.scene.pendingCaptureId)
     : undefined;
-  const activePlayer = playerEntities[0];
+  const activeIds = resolveActiveBattleIds(frame, playback, entityView.entitiesById);
+  const activePlayer =
+    (activeIds.playerId ? entityView.entitiesById.get(activeIds.playerId) : undefined) ??
+    playerEntities.find((entity) => entity.hp.current > 0) ??
+    playerEntities[0];
   const activeOpponent =
     pendingCapture ??
+    (activeIds.opponentId ? entityView.entitiesById.get(activeIds.opponentId) : undefined) ??
     opponentEntities.find((entity) => entity.hp.current > 0) ??
     opponentEntities[0];
   const latestCue = [...frame.visualCues].reverse().find((cue) => cue.type !== "phase.change");
   const latestLine = frame.timeline[0]?.text ?? latestCue?.label ?? frame.scene.subtitle;
   const logLine =
     playback.isPlaying && playback.activeEvent
-      ? formatBattleEventLabel(playback.activeEvent, frame.entities)
+      ? formatBattleEventLabel(playback.activeEvent, entityView.entities)
       : latestLine;
   const screen = renderScreen({
     frame,
@@ -294,7 +301,7 @@ function renderFrame(
 
       ${screen}
 
-      ${frame.phase === "starterChoice" ? "" : renderCommandBand(frame.actions, playback.isPlaying)}
+      ${frame.phase === "starterChoice" ? "" : renderCommandBand(frame, playback.isPlaying)}
 
       <section class="drawer-stack">
         ${renderTeamPanel(frame, playerEntities, pendingCapture)}
@@ -347,9 +354,139 @@ function shouldRenderBattleScreen(frame: GameFrame, playback: BattlePlaybackView
   );
 }
 
+interface EntityPlaybackView {
+  entities: FrameEntity[];
+  entitiesById: Map<string, FrameEntity>;
+}
+
+function createEntityPlaybackView(
+  frame: GameFrame,
+  playback: BattlePlaybackView,
+): EntityPlaybackView {
+  if (frame.battleReplay.events.length === 0) {
+    return {
+      entities: frame.entities,
+      entitiesById: new Map(frame.entities.map((entity) => [entity.id, entity])),
+    };
+  }
+
+  const initialHp = new Map<string, number>();
+  for (const event of frame.battleReplay.events) {
+    if (
+      event.type === "damage.apply" &&
+      event.targetEntityId &&
+      event.targetHpBefore !== undefined &&
+      !initialHp.has(event.targetEntityId)
+    ) {
+      initialHp.set(event.targetEntityId, event.targetHpBefore);
+    }
+
+    if (
+      event.type === "status.tick" &&
+      event.entityId &&
+      event.hpBefore !== undefined &&
+      !initialHp.has(event.entityId)
+    ) {
+      initialHp.set(event.entityId, event.hpBefore);
+    }
+  }
+
+  const currentHp = new Map(initialHp);
+  for (const event of playback.visibleEvents) {
+    if (
+      event.type === "damage.apply" &&
+      event.targetEntityId &&
+      event.targetHpAfter !== undefined
+    ) {
+      currentHp.set(event.targetEntityId, event.targetHpAfter);
+    }
+
+    if (event.type === "status.tick" && event.entityId && event.hpAfter !== undefined) {
+      currentHp.set(event.entityId, event.hpAfter);
+    }
+
+    if (event.type === "creature.faint" && event.entityId) {
+      currentHp.set(event.entityId, 0);
+    }
+  }
+
+  const entities = frame.entities.map((entity) => {
+    const current = Math.max(
+      0,
+      Math.min(entity.hp.max, currentHp.get(entity.id) ?? entity.hp.current),
+    );
+    const flags = new Set(entity.flags.filter((flag) => flag !== "fainted"));
+
+    if (current <= 0) {
+      flags.add("fainted");
+    }
+
+    return {
+      ...entity,
+      hp: {
+        ...entity.hp,
+        current,
+        ratio: entity.hp.max === 0 ? 0 : Number((current / entity.hp.max).toFixed(4)),
+      },
+      flags: [...flags],
+    };
+  });
+
+  return {
+    entities,
+    entitiesById: new Map(entities.map((entity) => [entity.id, entity])),
+  };
+}
+
+function resolveActiveBattleIds(
+  frame: GameFrame,
+  playback: BattlePlaybackView,
+  entitiesById: ReadonlyMap<string, FrameEntity>,
+): { playerId?: string; opponentId?: string } {
+  let playerId: string | undefined;
+  let opponentId: string | undefined;
+
+  const setActive = (entityId: string | undefined) => {
+    if (!entityId) {
+      return;
+    }
+
+    const entity = entitiesById.get(entityId);
+
+    if (entity?.owner === "player") {
+      playerId = entityId;
+    } else if (entity?.owner === "opponent") {
+      opponentId = entityId;
+    }
+  };
+
+  for (const event of playback.visibleEvents) {
+    if (event.type === "turn.start") {
+      playerId = event.activePlayerId ?? playerId;
+      opponentId = event.activeEnemyId ?? opponentId;
+    }
+
+    setActive(event.sourceEntityId);
+    setActive(event.targetEntityId);
+    setActive(event.entityId);
+  }
+
+  return {
+    playerId:
+      playerId ??
+      frame.scene.playerSlots.find((id) => (entitiesById.get(id)?.hp.current ?? 0) > 0) ??
+      frame.scene.playerSlots[0],
+    opponentId:
+      opponentId ??
+      frame.scene.opponentSlots.find((id) => (entitiesById.get(id)?.hp.current ?? 0) > 0) ??
+      frame.scene.opponentSlots[0],
+  };
+}
+
 function renderBattleScreen({
   frame,
   playerEntities,
+  opponentEntities,
   activePlayer,
   activeOpponent,
   playback,
@@ -366,7 +503,7 @@ function renderBattleScreen({
       ${renderBattleCard(activeOpponent, "enemy", frame.scene.title, frame.scene.subtitle)}
       ${renderBattleCard(activePlayer, "hero", frame.hud.trainerName, `전투력 ${frame.hud.teamPower}`)}
       ${renderCaptureOverlay(frame.scene.capture)}
-      ${renderBattleCue(playback.activeEvent, frame.entities)}
+      ${renderBattleCue(playback.activeEvent, playerEntities.concat(opponentEntities))}
       <div class="battle-log log-panel" aria-label="전투 로그">
         <p class="log-line">${escapeHtml(logLine)}</p>
         ${renderReplayMeter(playback)}
@@ -516,7 +653,16 @@ function renderGameOverScreen({
   `;
 }
 
-function renderCommandBand(actions: readonly FrameAction[], locked: boolean): string {
+function renderCommandBand(frame: GameFrame, locked: boolean): string {
+  const actions =
+    frame.phase === "teamDecision"
+      ? frame.actions.filter((action) => !action.id.startsWith("team:replace:"))
+      : frame.actions;
+
+  if (actions.length === 0) {
+    return "";
+  }
+
   return `
     <section class="command-band" data-command-count="${actions.length}">
       ${actions.map((action) => renderAction(action, locked)).join("")}
@@ -706,9 +852,10 @@ function renderBattleMonster(
 
   const effect = resolveBattleEffect(entity, activeEvent);
   const effectAttribute = effect ? ` data-battle-effect="${effect}"` : "";
+  const faintedAttribute = entity.flags.includes("fainted") ? ' data-fainted="true"' : "";
 
   return `
-    <div class="screen-monster ${className}" data-entity-id="${escapeHtml(entity.id)}"${effectAttribute}>
+    <div class="screen-monster ${className}" data-entity-id="${escapeHtml(entity.id)}"${effectAttribute}${faintedAttribute}>
       <img src="${resolveAssetPath(entity.assetPath)}" alt="${escapeHtml(`${entity.name} 포켓몬`)}" />
     </div>
   `;
@@ -1009,7 +1156,7 @@ function unlockAudio(audioState: AudioState): void {
   audioState.unlocked = true;
 }
 
-function syncAudio(audioState: AudioState, frame: GameFrame): void {
+function syncAudio(audioState: AudioState, frame: GameFrame, playback: BattlePlaybackView): void {
   if (!audioState.unlocked || audioState.muted) {
     audioState.bgm?.pause();
     return;
@@ -1017,7 +1164,16 @@ function syncAudio(audioState: AudioState, frame: GameFrame): void {
 
   syncBgm(audioState, frame.scene.bgmKey);
 
+  const activeSequence = playback.activeEvent?.sequence;
   for (const cue of frame.visualCues) {
+    if (
+      playback.isPlaying &&
+      (cue.type === "battle.hit" || cue.type === "battle.miss" || cue.type === "creature.faint") &&
+      cue.sequence !== activeSequence
+    ) {
+      continue;
+    }
+
     if (audioState.playedCueIds.has(cue.id)) {
       continue;
     }
