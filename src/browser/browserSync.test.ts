@@ -189,7 +189,9 @@ function readyAtCheckpoint(seed: string): HeadlessGameClient {
       return client;
     }
 
-    const action = client.getFrame().actions.find((candidate) => candidate.enabled);
+    const action =
+      client.getFrame().actions.find((candidate) => candidate.id === "encounter:next") ??
+      client.getFrame().actions.find((candidate) => candidate.enabled);
 
     if (!action) {
       throw new Error(`No action while preparing checkpoint from ${state.phase}.`);

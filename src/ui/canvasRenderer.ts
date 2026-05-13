@@ -1,4 +1,5 @@
 import type { FrameEntity, GameFrame } from "../game/view/frame";
+import { formatMoney, formatWave, localizeBall } from "../game/localization";
 
 export interface CanvasFrameRenderer {
   render(frame: GameFrame): void;
@@ -83,7 +84,18 @@ function drawDevice(context: CanvasRenderingContext2D, frame: GameFrame, draw: D
   context.font = "700 16px sans-serif";
   context.fillText(frame.hud.title, 24, 43);
   context.font = "700 12px sans-serif";
-  context.fillText(`W${frame.hud.wave}  ${frame.hud.money}c`, draw.width - 120, 43);
+  context.textAlign = "right";
+  context.fillText(
+    `${formatWave(frame.hud.wave)}  ${formatMoney(frame.hud.money)}`,
+    draw.width - 24,
+    35,
+  );
+  context.fillText(
+    `${localizeBall("pokeBall")} ${frame.hud.balls.pokeBall}  ${localizeBall("greatBall")} ${frame.hud.balls.greatBall}`,
+    draw.width - 24,
+    53,
+  );
+  context.textAlign = "left";
 
   const screenTop = 78;
   const screenHeight = draw.height - 196;

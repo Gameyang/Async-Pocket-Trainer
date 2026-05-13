@@ -22,6 +22,21 @@ describe("capture economy curve", () => {
     expect(defaultBalance.greatBallCost).toBeGreaterThan(defaultBalance.pokeBallCost * 2);
     expect(defaultBalance.greatBallCost).toBeLessThan(defaultBalance.pokeBallCost * 3);
   });
+
+  it("supports defeated-capture floors and elite route bonuses", () => {
+    const defeated = creature({ currentHp: 0, rarityScore: 80, captureRate: 0.4 });
+    const fullLowHpBonus = calculateCaptureChance(defeated, 8, "pokeBall");
+    const floored = calculateCaptureChance(defeated, 8, "pokeBall", {
+      hpRatioFloor: defaultBalance.defeatedCaptureHpRatioFloor,
+    });
+    const elite = calculateCaptureChance(defeated, 8, "pokeBall", {
+      hpRatioFloor: defaultBalance.defeatedCaptureHpRatioFloor,
+      chanceBonus: defaultBalance.eliteCaptureChanceBonus,
+    });
+
+    expect(floored).toBeLessThan(fullLowHpBonus);
+    expect(elite).toBeGreaterThan(floored);
+  });
 });
 
 const tackle: MoveDefinition = {

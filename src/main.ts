@@ -30,9 +30,11 @@ if (app) {
   const syncController = new BrowserSyncController(client, loadSyncSettings(storage), {
     playerId: getBrowserPlayerId(storage),
   });
-  let saveNotice = loaded.recovered
-    ? `손상된 저장 데이터를 복구했습니다${loaded.error ? `: ${loaded.error}` : ""}`
-    : "";
+  if (loaded.error) {
+    console.warn("Recovered browser save data after validation error:", loaded.error);
+  }
+
+  let saveNotice = loaded.recovered ? "손상된 저장 데이터를 복구했습니다." : "";
 
   mountHtmlRenderer(
     app,

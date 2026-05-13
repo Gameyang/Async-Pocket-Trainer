@@ -24,6 +24,12 @@ export type EncounterKind = "wild" | "trainer";
 export type GamePhase = "starterChoice" | "ready" | "captureDecision" | "teamDecision" | "gameOver";
 export type AutoPlayStrategy = "greedy" | "conserveBalls";
 export type BattleStatus = "burn" | "poison" | "paralysis" | "sleep" | "freeze";
+export type RouteId = "normal" | "elite" | "supply";
+
+export interface SelectedRoute {
+  id: RouteId;
+  wave: number;
+}
 
 export interface BattleStatusState {
   type: BattleStatus;
@@ -206,6 +212,7 @@ export type BattleReplayEvent =
 export interface BattleResult {
   kind: EncounterKind;
   encounterSource?: EncounterSource;
+  encounterRoute?: RouteId;
   opponentName?: string;
   winner: "player" | "enemy";
   turns: number;
@@ -218,6 +225,7 @@ export interface BattleResult {
 export interface EncounterSnapshot {
   kind: EncounterKind;
   source?: EncounterSource;
+  routeId?: RouteId;
   wave: number;
   opponentName: string;
   enemyTeam: Creature[];
@@ -246,6 +254,13 @@ export interface GameBalance {
   rewardBase: number;
   rewardPerWave: number;
   trainerRewardBonus: number;
+  restCostPerWave: number;
+  supplyRouteCost: number;
+  eliteRewardBonus: number;
+  eliteStatMultiplier: number;
+  eliteCaptureChanceBonus: number;
+  defeatedCaptureHpRatioFloor: number;
+  checkpointTeamSizeGrowthPerCheckpoint: number;
   teamRestCost: number;
   pokeBallCost: number;
   greatBallCost: number;
@@ -264,6 +279,8 @@ export interface GameState {
   money: number;
   balls: Record<BallType, number>;
   team: Creature[];
+  selectedRoute?: SelectedRoute;
+  supplyUsedAtWave?: number;
   pendingEncounter?: EncounterSnapshot;
   pendingCapture?: Creature;
   lastBattle?: BattleResult;
@@ -273,6 +290,7 @@ export interface GameState {
 
 export type GameAction =
   | { type: "START_RUN"; starterSpeciesId?: number; trainerName?: string }
+  | { type: "CHOOSE_ROUTE"; routeId: RouteId }
   | { type: "RESOLVE_NEXT_ENCOUNTER" }
   | { type: "ATTEMPT_CAPTURE"; ball: BallType }
   | { type: "ACCEPT_CAPTURE"; replaceIndex?: number }

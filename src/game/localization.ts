@@ -1,5 +1,7 @@
 import type { BallType, BattleStatus, ElementType, EncounterKind, GamePhase } from "./types";
 
+export type KoreanJosaPair = "이/가" | "을/를" | "은/는" | "와/과" | "으로/로";
+
 export const GAME_TITLE = "비동기 포켓 트레이너";
 export const DEFAULT_BROWSER_TRAINER_NAME = "브라우저 트레이너";
 export const DEFAULT_HEADLESS_TRAINER_NAME = "자동 트레이너";
@@ -49,6 +51,32 @@ export function localizeBallShort(ball: BallType): string {
   return ball === "greatBall" ? "슈퍼" : "몬볼";
 }
 
+export function withJosa(value: string, pair: KoreanJosaPair): string {
+  const trimmed = value.trimEnd();
+  const suffix = selectJosa(trimmed, pair);
+
+  return `${trimmed}${suffix}`;
+}
+
+export function selectJosa(value: string, pair: KoreanJosaPair): string {
+  const code = getLastKoreanSyllableCode(value);
+  const jongseong = code === undefined ? getDigitJongseong(value) : (code - 0xac00) % 28;
+  const hasFinal = jongseong !== undefined && jongseong > 0;
+
+  switch (pair) {
+    case "이/가":
+      return hasFinal ? "이" : "가";
+    case "을/를":
+      return hasFinal ? "을" : "를";
+    case "은/는":
+      return hasFinal ? "은" : "는";
+    case "와/과":
+      return hasFinal ? "과" : "와";
+    case "으로/로":
+      return hasFinal && jongseong !== 8 ? "으로" : "로";
+  }
+}
+
 export function localizeBattleStatus(status: BattleStatus | undefined): string {
   return status ? statusLabels[status] : "상태 이상";
 }
@@ -82,4 +110,37 @@ export function localizeTypes(types: readonly ElementType[]): string[] {
 
 export function localizeWinner(winner: "player" | "enemy"): string {
   return winner === "player" ? "승리" : "패배";
+}
+
+function getLastKoreanSyllableCode(value: string): number | undefined {
+  for (let index = value.length - 1; index >= 0; index -= 1) {
+    const code = value.charCodeAt(index);
+
+    if (code >= 0xac00 && code <= 0xd7a3) {
+      return code;
+    }
+  }
+
+  return undefined;
+}
+
+function getDigitJongseong(value: string): number | undefined {
+  const digit = value.match(/\d(?=\D*$)/)?.[0];
+
+  if (!digit) {
+    return undefined;
+  }
+
+  return {
+    "0": 21,
+    "1": 8,
+    "2": 0,
+    "3": 16,
+    "4": 0,
+    "5": 0,
+    "6": 1,
+    "7": 8,
+    "8": 8,
+    "9": 0,
+  }[digit];
 }

@@ -1,4 +1,4 @@
-import { getSpecies, starterSpeciesIds } from "../data/catalog";
+import { getMove, getSpecies, starterSpeciesIds } from "../data/catalog";
 import {
   formatMoney,
   formatWave,
@@ -9,8 +9,9 @@ import {
   localizeType,
   localizeTypes,
   localizeWinner,
+  withJosa,
 } from "../localization";
-import { getTeamHealthRatio, scoreTeam } from "../scoring";
+import { getTeamHealthRatio, scoreCreature, scoreTeam } from "../scoring";
 import type {
   BattleStatus,
   BattleReplayEvent,
@@ -22,8 +23,10 @@ import type {
   GameEvent,
   GamePhase,
   GameState,
+  RouteId,
   SpeciesDefinition,
 } from "../types";
+import { calculateRestCost } from "../wave/waveSystem";
 
 export type FrameProtocolVersion = 1;
 
@@ -74,6 +77,14 @@ export interface FrameStarterOption {
   typeLabels: string[];
   assetKey: string;
   assetPath: string;
+  power: number;
+  moves: Array<{
+    id: string;
+    name: string;
+    type: string;
+    power: number;
+    accuracy: number;
+  }>;
   stats: {
     hp: number;
     attack: number;
@@ -493,12 +504,22 @@ function createStarterOptions(state: GameState): FrameStarterOption[] {
 }
 
 function speciesToStarterOption(species: SpeciesDefinition): FrameStarterOption {
+  const moves = species.movePool.slice(0, 4).map((moveId) => getMove(moveId));
+
   return {
     speciesId: species.id,
     name: species.name,
     typeLabels: localizeTypes(species.types),
     assetKey: `monster:${species.id}`,
     assetPath: `resources/pokemon/${species.id.toString().padStart(4, "0")}.webp`,
+    power: scoreCreature({ stats: species.baseStats, moves, types: species.types }),
+    moves: moves.map((move) => ({
+      id: move.id,
+      name: move.name,
+      type: localizeType(move.type),
+      power: move.power,
+      accuracy: move.accuracy,
+    })),
     stats: { ...species.baseStats },
   };
 }
@@ -514,7 +535,9 @@ function createCaptureScene(state: GameState): FrameCaptureScene | undefined {
       targetEntityId: target?.instanceId,
       targetName: target?.speciesName,
       shakes: 0,
-      label: target ? `${target.speciesName}를 포획할 기회입니다.` : "사용할 볼을 선택하세요.",
+      label: target
+        ? `${withJosa(target.speciesName, "을/를")} 포획할 기회입니다.`
+        : "사용할 볼을 선택하세요.",
     };
   }
 
@@ -526,7 +549,7 @@ function createCaptureScene(state: GameState): FrameCaptureScene | undefined {
       targetName: state.pendingCapture.speciesName,
       chance: latestCapture.chance,
       shakes: 3,
-      label: `${state.pendingCapture.speciesName} 포획 성공!`,
+      label: `${withJosa(state.pendingCapture.speciesName, "이/가")} 포획되었습니다!`,
     };
   }
 
@@ -540,7 +563,7 @@ function createCaptureScene(state: GameState): FrameCaptureScene | undefined {
       targetName: target?.speciesName ?? latestCapture.targetName,
       chance: latestCapture.chance,
       shakes: Math.max(1, Math.min(2, Math.ceil((latestCapture.chance ?? 0.45) * 3))),
-      label: `${target?.speciesName ?? latestCapture.targetName ?? "대상"}이 볼에서 빠져나왔습니다.`,
+      label: `${withJosa(target?.speciesName ?? latestCapture.targetName ?? "대상", "은/는")} 볼에서 빠져나왔습니다.`,
     };
   }
 
@@ -706,26 +729,32 @@ function createFrameActions(state: GameState, balance: GameBalance): FrameAction
   }
 
   if (state.phase === "ready") {
+    const selectedRoute = getSelectedRouteId(state);
+    const restCost = calculateRestCost(state.currentWave, balance);
+
     return [
+      routeAction("normal", selectedRoute, state, balance),
+      routeAction("elite", selectedRoute, state, balance),
+      routeAction("supply", selectedRoute, state, balance),
       {
         id: "encounter:next",
-        label: "정찰",
+        label: selectedRoute === "supply" ? "보급 받기" : `${routeActionName(selectedRoute)} 시작`,
         role: "primary",
         enabled: true,
         action: { type: "RESOLVE_NEXT_ENCOUNTER" },
       },
       {
         id: "shop:rest",
-        label: `휴식 ${formatMoney(balance.teamRestCost)}`,
+        label: `전원 회복 ${formatMoney(restCost)}`,
         role: "secondary",
-        enabled: state.money >= balance.teamRestCost,
-        cost: balance.teamRestCost,
+        enabled: state.money >= restCost,
+        cost: restCost,
         action: { type: "REST_TEAM" },
-        reason: state.money >= balance.teamRestCost ? undefined : "코인이 부족합니다",
+        reason: state.money >= restCost ? undefined : "코인이 부족합니다",
       },
       {
         id: "shop:pokeball",
-        label: `${localizeBall("pokeBall")} ${formatMoney(balance.pokeBallCost)}`,
+        label: `${localizeBall("pokeBall")} 구매 ${formatMoney(balance.pokeBallCost)}`,
         role: "secondary",
         enabled: state.money >= balance.pokeBallCost,
         cost: balance.pokeBallCost,
@@ -734,7 +763,7 @@ function createFrameActions(state: GameState, balance: GameBalance): FrameAction
       },
       {
         id: "shop:greatball",
-        label: `${localizeBall("greatBall")} ${formatMoney(balance.greatBallCost)}`,
+        label: `${localizeBall("greatBall")} 구매 ${formatMoney(balance.greatBallCost)}`,
         role: "secondary",
         enabled: state.money >= balance.greatBallCost,
         cost: balance.greatBallCost,
@@ -754,7 +783,10 @@ function createFrameActions(state: GameState, balance: GameBalance): FrameAction
         enabled: state.balls.pokeBall > 0,
         targetEntityId,
         action: { type: "ATTEMPT_CAPTURE", ball: "pokeBall" },
-        reason: state.balls.pokeBall > 0 ? undefined : `${localizeBall("pokeBall")}이 없습니다`,
+        reason:
+          state.balls.pokeBall > 0
+            ? undefined
+            : `${withJosa(localizeBall("pokeBall"), "이/가")} 없습니다`,
       },
       {
         id: "capture:greatball",
@@ -763,11 +795,14 @@ function createFrameActions(state: GameState, balance: GameBalance): FrameAction
         enabled: state.balls.greatBall > 0,
         targetEntityId,
         action: { type: "ATTEMPT_CAPTURE", ball: "greatBall" },
-        reason: state.balls.greatBall > 0 ? undefined : `${localizeBall("greatBall")}이 없습니다`,
+        reason:
+          state.balls.greatBall > 0
+            ? undefined
+            : `${withJosa(localizeBall("greatBall"), "이/가")} 없습니다`,
       },
       {
         id: "capture:skip",
-        label: "보내기",
+        label: "포획 포기",
         role: "danger",
         enabled: true,
         targetEntityId,
@@ -792,7 +827,7 @@ function createFrameActions(state: GameState, balance: GameBalance): FrameAction
           ]
         : state.team.map((creature, index) => ({
             id: `team:replace:${index}`,
-            label: `${creature.speciesName}와 교체`,
+            label: `${withJosa(creature.speciesName, "와/과")} 교체`,
             role: "primary" as const,
             enabled: true,
             targetEntityId: creature.instanceId,
@@ -803,7 +838,7 @@ function createFrameActions(state: GameState, balance: GameBalance): FrameAction
       ...keepAction,
       {
         id: "team:release",
-        label: "놓아주기",
+        label: "포획한 포켓몬 놓아주기",
         role: "danger",
         enabled: true,
         targetEntityId: capture?.instanceId,
@@ -913,7 +948,7 @@ function toFrameBattleReplayEvent(event: BattleReplayEvent): FrameBattleReplayEv
       sequence: event.sequence,
       turn: event.turn,
       type: event.type,
-      label: `${event.actorId}이(가) ${event.move}을(를) 준비했습니다.`,
+      label: `${withJosa(event.actorId, "이/가")} ${withJosa(event.move, "을/를")} 준비했습니다.`,
       move: event.move,
       sourceEntityId: event.actorId,
       targetEntityId: event.targetId,
@@ -925,7 +960,7 @@ function toFrameBattleReplayEvent(event: BattleReplayEvent): FrameBattleReplayEv
       sequence: event.sequence,
       turn: event.turn,
       type: event.type,
-      label: `${event.actorId}의 ${event.move}이(가) 빗나갔습니다.`,
+      label: `${withJosa(`${event.actorId}의 ${event.move}`, "이/가")} 빗나갔습니다.`,
       move: event.move,
       sourceEntityId: event.actorId,
       targetEntityId: event.targetId,
@@ -937,7 +972,7 @@ function toFrameBattleReplayEvent(event: BattleReplayEvent): FrameBattleReplayEv
       sequence: event.sequence,
       turn: event.turn,
       type: event.type,
-      label: `${event.entityId}은(는) 움직일 수 없습니다: ${event.reason}`,
+      label: `${withJosa(event.entityId, "은/는")} 움직일 수 없습니다: ${event.reason}`,
       entityId: event.entityId,
       status: event.status,
     };
@@ -963,7 +998,7 @@ function toFrameBattleReplayEvent(event: BattleReplayEvent): FrameBattleReplayEv
       sequence: event.sequence,
       turn: event.turn,
       type: event.type,
-      label: `${event.targetId}이(가) ${localizeBattleStatus(event.status)} 상태가 되었습니다.`,
+      label: `${withJosa(event.targetId, "이/가")} ${localizeBattleStatus(event.status)} 상태가 되었습니다.`,
       move: event.move,
       sourceEntityId: event.actorId,
       targetEntityId: event.targetId,
@@ -976,7 +1011,7 @@ function toFrameBattleReplayEvent(event: BattleReplayEvent): FrameBattleReplayEv
       sequence: event.sequence,
       turn: event.turn,
       type: event.type,
-      label: `${event.targetId}이(가) ${localizeBattleStatus(event.status)}에 면역입니다.`,
+      label: `${withJosa(event.targetId, "은/는")} ${localizeBattleStatus(event.status)}에 면역입니다.`,
       move: event.move,
       sourceEntityId: event.actorId,
       targetEntityId: event.targetId,
@@ -989,7 +1024,7 @@ function toFrameBattleReplayEvent(event: BattleReplayEvent): FrameBattleReplayEv
       sequence: event.sequence,
       turn: event.turn,
       type: event.type,
-      label: `${event.entityId}이(가) ${localizeBattleStatus(event.status)} 피해 ${event.damage}를 받았습니다.`,
+      label: `${withJosa(event.entityId, "이/가")} ${localizeBattleStatus(event.status)} 피해 ${withJosa(String(event.damage), "을/를")} 받았습니다.`,
       entityId: event.entityId,
       damage: event.damage,
       status: event.status,
@@ -1012,7 +1047,7 @@ function toFrameBattleReplayEvent(event: BattleReplayEvent): FrameBattleReplayEv
       sequence: event.sequence,
       turn: event.turn,
       type: event.type,
-      label: `${event.entityId}이(가) 쓰러졌습니다.`,
+      label: `${withJosa(event.entityId, "이/가")} 쓰러졌습니다.`,
       entityId: event.entityId,
     };
   }
@@ -1037,7 +1072,7 @@ function battleReplayEventToCue(event: BattleReplayEvent): FrameVisualCue | unde
       turn: event.turn,
       sourceEntityId: event.actorId,
       targetEntityId: event.targetId,
-      label: `${event.actorId}의 ${event.move}이(가) 빗나갔습니다.`,
+      label: `${withJosa(`${event.actorId}의 ${event.move}`, "이/가")} 빗나갔습니다.`,
       damage: 0,
       effectiveness: 1,
       critical: false,
@@ -1070,7 +1105,7 @@ function battleReplayEventToCue(event: BattleReplayEvent): FrameVisualCue | unde
       soundKey: "sfx.creature.faint",
       turn: event.turn,
       entityId: event.entityId,
-      label: `${event.entityId}이(가) 쓰러졌습니다.`,
+      label: `${withJosa(event.entityId, "이/가")} 쓰러졌습니다.`,
     };
   }
 
@@ -1091,11 +1126,15 @@ function createSceneTitle(state: GameState): string {
 
 function createSceneSubtitle(state: GameState): string {
   if (state.pendingCapture) {
-    return `포획한 ${state.pendingCapture.speciesName}을(를) 팀과 비교하세요`;
+    return `포획한 ${withJosa(state.pendingCapture.speciesName, "을/를")} 팀과 비교하세요`;
   }
 
   if (state.pendingEncounter) {
     return state.pendingEncounter.opponentName;
+  }
+
+  if (state.phase === "ready") {
+    return `${routeActionName(getSelectedRouteId(state))}을 준비하세요`;
   }
 
   return "다음 만남을 준비하세요";
@@ -1107,6 +1146,7 @@ function createStateKey(state: GameState): string {
     state.rngState,
     state.phase,
     state.currentWave,
+    state.selectedRoute?.id ?? "normal",
     state.money,
     state.team.map((creature) => `${creature.instanceId}:${creature.currentHp}`).join("|"),
     state.events.at(-1)?.id ?? 0,
@@ -1127,4 +1167,52 @@ function toneForEvent(type: string): FrameTimelineEntry["tone"] {
   }
 
   return "neutral";
+}
+
+function getSelectedRouteId(state: GameState): RouteId {
+  return state.selectedRoute?.wave === state.currentWave ? state.selectedRoute.id : "normal";
+}
+
+function routeAction(
+  routeId: RouteId,
+  selectedRoute: RouteId,
+  state: GameState,
+  balance: GameBalance,
+): FrameAction {
+  const selected = routeId === selectedRoute;
+  const supplyUsed = routeId === "supply" && state.supplyUsedAtWave === state.currentWave;
+  const supplyAffordable = routeId !== "supply" || state.money >= balance.supplyRouteCost;
+  const enabled = !selected && !supplyUsed && supplyAffordable;
+
+  return {
+    id: `route:${routeId}`,
+    label:
+      routeId === "supply" && !selected
+        ? `${routeActionName(routeId)} ${formatMoney(balance.supplyRouteCost)}`
+        : selected
+          ? `${routeActionName(routeId)} 선택됨`
+          : routeActionName(routeId),
+    role: selected ? "primary" : "secondary",
+    enabled,
+    action: { type: "CHOOSE_ROUTE", routeId },
+    cost: routeId === "supply" ? balance.supplyRouteCost : undefined,
+    reason: selected
+      ? "이미 선택된 길입니다"
+      : supplyUsed
+        ? "보급은 웨이브마다 한 번만 받을 수 있습니다"
+        : supplyAffordable
+          ? undefined
+          : "코인이 부족합니다",
+  };
+}
+
+function routeActionName(routeId: RouteId): string {
+  switch (routeId) {
+    case "normal":
+      return "일반 탐험";
+    case "elite":
+      return "강적 탐험";
+    case "supply":
+      return "보급";
+  }
 }

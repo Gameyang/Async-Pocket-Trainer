@@ -109,11 +109,16 @@ describe("HeadlessGameClient", () => {
     const shopClient = startFromFrameAction("input-shop");
     const shopFrame = shopClient.getFrame();
     expect(shopFrame.actions.map((action) => action.id)).toEqual([
+      "route:normal",
+      "route:elite",
+      "route:supply",
       "encounter:next",
       "shop:rest",
       "shop:pokeball",
       "shop:greatball",
     ]);
+    dispatchFrameAction(shopClient, "route:elite");
+    expect(shopClient.getSnapshot().selectedRoute).toMatchObject({ id: "elite", wave: 1 });
     dispatchFrameAction(shopClient, "shop:rest");
     dispatchFrameAction(shopClient, "shop:pokeball");
     expect(shopClient.getSnapshot().events.map((event) => event.type)).toContain("team_rested");
@@ -150,6 +155,55 @@ describe("HeadlessGameClient", () => {
       currentWave: 1,
     });
     expect(restored.getSnapshot().team[0].speciesId).toBe(4);
+  });
+
+  it("limits supply route value to once per wave", () => {
+    const client = startFromFrameAction("supply-limit");
+    const damaged = client.saveSnapshot();
+    damaged.state.money = 50;
+    damaged.state.team = damaged.state.team.map((creature) => ({
+      ...creature,
+      currentHp: 1,
+    }));
+    client.loadSnapshot(damaged);
+
+    dispatchFrameAction(client, "route:supply");
+    dispatchFrameAction(client, "encounter:next");
+    const afterFirst = client.getSnapshot();
+    const supplyCost = client.getBalance().supplyRouteCost;
+    expect(afterFirst.money).toBe(50 - supplyCost);
+    expect(afterFirst.team[0].currentHp).toBeGreaterThan(1);
+    expect(afterFirst.supplyUsedAtWave).toBe(afterFirst.currentWave);
+
+    const redamaged = client.saveSnapshot();
+    redamaged.state.team[0] = {
+      ...redamaged.state.team[0],
+      currentHp: 1,
+    };
+    redamaged.state.selectedRoute = {
+      id: "supply",
+      wave: afterFirst.currentWave,
+    };
+    client.loadSnapshot(redamaged);
+    client.dispatch({ type: "RESOLVE_NEXT_ENCOUNTER" });
+
+    expect(client.getSnapshot().money).toBe(afterFirst.money);
+    expect(client.getSnapshot().team[0].currentHp).toBe(1);
+    expect(client.getSnapshot().events.at(-1)?.type).toBe("supply_denied");
+  });
+
+  it("ignores stale saved route choices from older waves", () => {
+    const client = startFromFrameAction("stale-route");
+    const saved = client.saveSnapshot();
+    saved.state.selectedRoute = {
+      id: "elite",
+      wave: 0,
+    };
+    const restored = HeadlessGameClient.fromSnapshot(saved);
+
+    restored.dispatch({ type: "RESOLVE_NEXT_ENCOUNTER" });
+
+    expect(restored.getSnapshot().lastBattle?.encounterRoute).toBe("normal");
   });
 });
 

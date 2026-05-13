@@ -14,11 +14,12 @@ import type { SyncSettings } from "../browser/syncSettings";
 import {
   formatMoney,
   formatWave,
-  localizeBallShort,
+  localizeBall,
   localizeBattleStatus,
+  withJosa,
 } from "../game/localization";
 
-const BATTLE_REPLAY_STEP_MS = 260;
+const BATTLE_REPLAY_STEP_MS = 540;
 const AUDIO_MUTED_STORAGE_KEY = "apt:audio-muted:v1";
 
 const pokemonAssetUrls = import.meta.glob<string>("../resources/pokemon/*.webp", {
@@ -178,6 +179,10 @@ function bindSettings(root: HTMLElement, options: HtmlRendererOptions, render: (
   root
     .querySelector<HTMLButtonElement>("[data-clear-save]")
     ?.addEventListener("click", async () => {
+      if (!window.confirm("저장 데이터를 삭제할까요? 이 작업은 되돌릴 수 없습니다.")) {
+        return;
+      }
+
       await options.onClearSave?.();
       render();
     });
@@ -281,15 +286,15 @@ function renderFrame(
           <span>${formatWave(frame.hud.wave)}</span>
           <span>${renderPhaseLabel(frame.phase)}</span>
           <span>${formatMoney(frame.hud.money)}</span>
-          <span>${localizeBallShort("pokeBall")} ${frame.hud.balls.pokeBall}</span>
-          <span>${localizeBallShort("greatBall")} ${frame.hud.balls.greatBall}</span>
+          <span>${localizeBall("pokeBall")} ${frame.hud.balls.pokeBall}</span>
+          <span>${localizeBall("greatBall")} ${frame.hud.balls.greatBall}</span>
         </div>
         ${renderAudioButton(audioState)}
       </header>
 
       ${screen}
 
-      ${renderCommandBand(frame.actions, playback.isPlaying)}
+      ${frame.phase === "starterChoice" ? "" : renderCommandBand(frame.actions, playback.isPlaying)}
 
       <section class="drawer-stack">
         ${renderTeamPanel(frame, playerEntities, pendingCapture)}
@@ -320,7 +325,7 @@ function renderScreen(context: ScreenRenderContext): string {
   }
 
   if (frame.phase === "starterChoice") {
-    return renderStarterScreen(frame.scene.starterOptions);
+    return renderStarterScreen(frame.scene.starterOptions, frame.actions);
   }
 
   if (frame.phase === "teamDecision") {
@@ -371,32 +376,47 @@ function renderBattleScreen({
   `;
 }
 
-function renderStarterScreen(options: readonly FrameStarterOption[]): string {
+function renderStarterScreen(
+  options: readonly FrameStarterOption[],
+  actions: readonly FrameAction[],
+): string {
   return `
     <section class="screen starter-screen" data-screen="starterChoice" aria-label="스타터 선택">
       <div class="starter-stage" aria-hidden="true"></div>
+      <h2 class="starter-prompt">함께 시작할 포켓몬을 선택하세요</h2>
       <div class="starter-choice-row">
-        ${options.map(renderStarterOption).join("")}
+        ${options.map((option) => renderStarterOption(option, actions)).join("")}
       </div>
     </section>
   `;
 }
 
-function renderStarterOption(option: FrameStarterOption): string {
+function renderStarterOption(option: FrameStarterOption, actions: readonly FrameAction[]): string {
   const statTotal =
     option.stats.hp +
     option.stats.attack +
     option.stats.defense +
     option.stats.special +
     option.stats.speed;
+  const action = actions.find((candidate) => candidate.id === `start:${option.speciesId}`);
+  const actionAttribute = action ? ` data-action-id="${escapeHtml(action.id)}"` : "";
+  const moves = option.moves
+    .slice(0, 2)
+    .map(
+      (move) =>
+        `<li>${escapeHtml(move.name)} <span>${move.power > 0 ? `위력 ${move.power}` : "변화"}</span></li>`,
+    )
+    .join("");
 
   return `
-    <article class="starter-option" data-starter-id="${option.speciesId}">
-      <img src="${resolveAssetPath(option.assetPath)}" alt="" />
+    <button type="button" class="starter-option" data-starter-id="${option.speciesId}"${actionAttribute}>
+      <img src="${resolveAssetPath(option.assetPath)}" alt="${escapeHtml(`${option.name} 포켓몬`)}" />
       <h2>${escapeHtml(option.name)}</h2>
       <p>${escapeHtml(option.typeLabels.join(" / "))}</p>
+      <span>전투력 ${option.power}</span>
       <span>종합 ${statTotal}</span>
-    </article>
+      ${moves ? `<ul class="starter-moves">${moves}</ul>` : ""}
+    </button>
   `;
 }
 
@@ -415,8 +435,8 @@ function renderReadyScreen({ frame, playerEntities, activePlayer }: ScreenRender
       </div>
       <div class="camp-inventory">
         <span>${formatMoney(frame.hud.money)}</span>
-        <span>${localizeBallShort("pokeBall")} ${frame.hud.balls.pokeBall}</span>
-        <span>${localizeBallShort("greatBall")} ${frame.hud.balls.greatBall}</span>
+        <span>${localizeBall("pokeBall")} ${frame.hud.balls.pokeBall}</span>
+        <span>${localizeBall("greatBall")} ${frame.hud.balls.greatBall}</span>
       </div>
     </section>
   `;
@@ -425,7 +445,7 @@ function renderReadyScreen({ frame, playerEntities, activePlayer }: ScreenRender
 function renderCampLead(entity: FrameEntity): string {
   return `
     <div class="camp-lead">
-      <img src="${resolveAssetPath(entity.assetPath)}" alt="" />
+      <img src="${resolveAssetPath(entity.assetPath)}" alt="${escapeHtml(`${entity.name} 포켓몬`)}" />
       <div>
         <h2>${escapeHtml(entity.name)}</h2>
         <p>HP ${entity.hp.current}/${entity.hp.max} / 전투력 ${entity.scores.power}</p>
@@ -455,7 +475,7 @@ function renderTeamDecisionScreen({
 function renderCandidateCard(entity: FrameEntity): string {
   return `
     <article class="candidate-card">
-      <img src="${resolveAssetPath(entity.assetPath)}" alt="" />
+      <img src="${resolveAssetPath(entity.assetPath)}" alt="${escapeHtml(`${entity.name} 포켓몬`)}" />
       <div>
         <h2>${escapeHtml(entity.name)}</h2>
         <p>${escapeHtml(entity.typeLabels.join(" / "))}</p>
@@ -516,7 +536,7 @@ function renderTrainerBadge(trainer: FrameTrainerScene | undefined): string {
 
   return `
     <div class="trainer-badge" data-trainer-source="${trainer.source}">
-      <img src="${resolveTrainerAssetPath(trainer.portraitPath)}" alt="" />
+      <img src="${resolveTrainerAssetPath(trainer.portraitPath)}" alt="${escapeHtml(`${trainer.trainerName} 트레이너 초상`)}" />
       <div>
         <span>${escapeHtml(trainer.label)}</span>
         <strong>${escapeHtml(trainer.trainerName)}</strong>
@@ -604,7 +624,7 @@ function renderTeamSlot(
   return `
     <article class="team-slot" data-slot-state="${state}" data-entity-id="${escapeHtml(entity.id)}">
       <span class="slot-icon" aria-hidden="true"></span>
-      <img src="${resolveAssetPath(entity.assetPath)}" alt="" loading="lazy" />
+      <img src="${resolveAssetPath(entity.assetPath)}" alt="${escapeHtml(`${entity.name} 포켓몬`)}" loading="lazy" />
       <div>
         <h3>${escapeHtml(entity.name)}</h3>
         <p>HP ${entity.hp.current}/${entity.hp.max} / 전투력 ${entity.scores.power}</p>
@@ -689,7 +709,7 @@ function renderBattleMonster(
 
   return `
     <div class="screen-monster ${className}" data-entity-id="${escapeHtml(entity.id)}"${effectAttribute}>
-      <img src="${resolveAssetPath(entity.assetPath)}" alt="" />
+      <img src="${resolveAssetPath(entity.assetPath)}" alt="${escapeHtml(`${entity.name} 포켓몬`)}" />
     </div>
   `;
 }
@@ -733,12 +753,14 @@ function renderReplayMeter(playback: BattlePlaybackView): string {
   const current = playback.activeEvent?.sequence ?? 0;
   const total = playback.visibleEvents.at(-1)?.sequence ?? current;
   const button = playback.isPlaying
-    ? '<button type="button" class="replay-skip" data-replay-skip aria-label="전투 리플레이 빠르게 넘기기">&gt;&gt;</button>'
+    ? '<button type="button" class="replay-skip" data-replay-skip aria-label="전투 리플레이 빠르게 넘기기"><span aria-hidden="true">&gt;&gt;</span><span>빠르게 넘기기</span></button>'
     : "";
+  const state = playback.isPlaying ? '<span class="replay-state">전투 재생 중</span>' : "";
 
   return `
     <div class="replay-row" data-replay-current="${current}" data-replay-total="${total}">
       <span>${current}/${total}</span>
+      ${state}
       ${button}
     </div>
   `;
@@ -813,11 +835,11 @@ function formatBattleEventLabel(
   }
 
   if (activeEvent.type === "move.select") {
-    return `${source}이(가) ${activeEvent.move ?? "기술"}을(를) 준비했습니다.`;
+    return `${withJosa(source, "이/가")} ${withJosa(activeEvent.move ?? "기술", "을/를")} 준비했습니다.`;
   }
 
   if (activeEvent.type === "move.miss") {
-    return `${source}의 ${activeEvent.move ?? "기술"}이(가) ${target}에게 빗나갔습니다.`;
+    return `${withJosa(`${source}의 ${activeEvent.move ?? "기술"}`, "이/가")} ${target}에게 빗나갔습니다.`;
   }
 
   if (activeEvent.type === "damage.apply") {
@@ -826,19 +848,22 @@ function formatBattleEventLabel(
   }
 
   if (activeEvent.type === "turn.skip") {
-    return `${entity}은(는) 움직일 수 없습니다.`;
+    return `${withJosa(entity, "은/는")} 움직일 수 없습니다.`;
   }
 
   if (activeEvent.type === "status.apply") {
-    return `${target}이(가) ${localizeBattleStatus(activeEvent.status)} 상태가 되었습니다.`;
+    return `${withJosa(target, "이/가")} ${localizeBattleStatus(activeEvent.status)} 상태가 되었습니다.`;
   }
 
   if (activeEvent.type === "status.immune") {
-    return `${target}은(는) ${localizeBattleStatus(activeEvent.status)}에 면역입니다.`;
+    return `${withJosa(target, "은/는")} ${localizeBattleStatus(activeEvent.status)}에 면역입니다.`;
   }
 
   if (activeEvent.type === "status.tick") {
-    return `${entity}이(가) ${localizeBattleStatus(activeEvent.status)} 피해 ${activeEvent.damage ?? 0}를 받았습니다.`;
+    return `${withJosa(entity, "이/가")} ${localizeBattleStatus(activeEvent.status)} 피해 ${withJosa(
+      String(activeEvent.damage ?? 0),
+      "을/를",
+    )} 받았습니다.`;
   }
 
   if (activeEvent.type === "status.clear") {
@@ -846,7 +871,7 @@ function formatBattleEventLabel(
   }
 
   if (activeEvent.type === "creature.faint") {
-    return `${entity}이(가) 쓰러졌습니다.`;
+    return `${withJosa(entity, "이/가")} 쓰러졌습니다.`;
   }
 
   return activeEvent.winner === "player" ? "우리 팀이 승리했습니다." : "상대가 승리했습니다.";
@@ -1079,6 +1104,10 @@ function renderSyncPanel(statusView: HtmlRendererStatusView): string {
   const checked = settings.enabled ? " checked" : "";
   const publicSelected = settings.mode === "publicCsv" ? " selected" : "";
   const googleSelected = settings.mode === "googleApi" ? " selected" : "";
+  const lastError =
+    status.state === "error" && status.lastError
+      ? `<p class="sync-error-detail">상세 오류: ${escapeHtml(status.lastError)}</p>`
+      : "";
 
   return `
     <details class="drawer sync-panel" data-sync-state="${status.state}">
@@ -1098,30 +1127,34 @@ function renderSyncPanel(statusView: HtmlRendererStatusView): string {
             <option value="googleApi"${googleSelected}>Google API</option>
           </select>
         </label>
-        <label>
-          <span>시트 URL/ID</span>
-          <input name="spreadsheetId" value="${escapeHtml(settings.spreadsheetId)}" autocomplete="off" />
-        </label>
-        <label>
-          <span>탭/범위</span>
-          <input name="range" value="${escapeHtml(settings.range)}" autocomplete="off" />
-        </label>
-        <label>
-          <span>CSV URL</span>
-          <input name="publicCsvUrl" value="${escapeHtml(settings.publicCsvUrl ?? "")}" autocomplete="off" />
-        </label>
-        <label>
-          <span>제출 URL</span>
-          <input name="appsScriptSubmitUrl" value="${escapeHtml(settings.appsScriptSubmitUrl ?? "")}" autocomplete="off" />
-        </label>
-        <label>
-          <span>API 키</span>
-          <input name="apiKey" type="password" value="${escapeHtml(settings.apiKey ?? "")}" autocomplete="off" />
-        </label>
-        <label>
-          <span>토큰</span>
-          <input name="accessToken" type="password" value="${escapeHtml(settings.accessToken ?? "")}" autocomplete="off" />
-        </label>
+        <details class="advanced-settings">
+          <summary>고급 설정</summary>
+          <label>
+            <span>시트 URL/ID</span>
+            <input name="spreadsheetId" value="${escapeHtml(settings.spreadsheetId)}" autocomplete="off" />
+          </label>
+          <label>
+            <span>탭/범위</span>
+            <input name="range" value="${escapeHtml(settings.range)}" autocomplete="off" />
+          </label>
+          <label>
+            <span>CSV URL</span>
+            <input name="publicCsvUrl" value="${escapeHtml(settings.publicCsvUrl ?? "")}" autocomplete="off" />
+          </label>
+          <label>
+            <span>제출 URL</span>
+            <input name="appsScriptSubmitUrl" value="${escapeHtml(settings.appsScriptSubmitUrl ?? "")}" autocomplete="off" />
+          </label>
+          <label>
+            <span>API 키</span>
+            <input name="apiKey" type="password" value="${escapeHtml(settings.apiKey ?? "")}" autocomplete="off" />
+          </label>
+          <label>
+            <span>토큰</span>
+            <input name="accessToken" type="password" value="${escapeHtml(settings.accessToken ?? "")}" autocomplete="off" />
+          </label>
+          ${lastError}
+        </details>
         <div class="sync-actions">
           <button type="submit">동기화 저장</button>
         </div>

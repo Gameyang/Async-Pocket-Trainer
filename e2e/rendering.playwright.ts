@@ -50,7 +50,7 @@ test("confirms battle replay, capture feedback, and ball count rendering", async
   await expect.poll(() => page.locator("#app").getAttribute("data-busy")).toBeNull();
   await expect.poll(async () => (await readShellState(page)).pokeBalls).toBe(before.pokeBalls - 1);
   const after = await readShellState(page);
-  await expect(page.locator(".run-status")).toContainText(`몬볼 ${after.pokeBalls}`);
+  await expect(page.locator(".run-status")).toContainText(`몬스터볼 ${after.pokeBalls}`);
 
   if (after.phase === "teamDecision") {
     await expect(page.locator('.capture-overlay[data-capture-result="success"]')).toBeVisible();
@@ -134,6 +134,7 @@ test("reads public CSV and submits Apps Script without credentials during checkp
   await openSync(page);
   await page.locator('input[name="enabled"]').check();
   await page.locator('select[name="mode"]').selectOption("publicCsv");
+  await openAdvancedSync(page);
   await page
     .locator('input[name="spreadsheetId"]')
     .fill("14ra0Y0zLORpru3nmT-obu3yD1UuO2kAJP4aJ5IIA0M4");
@@ -245,7 +246,15 @@ async function openSync(page: Page): Promise<void> {
   const sync = page.locator(".sync-panel");
 
   if ((await sync.getAttribute("open")) === null) {
-    await sync.locator("summary").click();
+    await sync.locator(":scope > summary").click();
+  }
+}
+
+async function openAdvancedSync(page: Page): Promise<void> {
+  const advanced = page.locator(".advanced-settings");
+
+  if ((await advanced.getAttribute("open")) === null) {
+    await advanced.locator(":scope > summary").click();
   }
 }
 

@@ -331,7 +331,7 @@ function toErrorStatus(error: unknown, fallback: string): BrowserSyncStatus {
 
   return {
     state: "error",
-    message: `${fallback}: ${message}`,
+    message: `${fallback}. 설정을 확인하세요.`,
     lastError: message,
   };
 }

@@ -7,12 +7,14 @@ import {
   formatWave,
   localizeBall,
   localizeWinner,
+  withJosa,
 } from "./localization";
 import { SeededRng } from "./rng";
 import { chooseReplacementIndex, getTeamHealthRatio, scoreTeam } from "./scoring";
 import { createGameFrame, type GameFrame } from "./view/frame";
 import {
   calculateReward,
+  calculateRestCost,
   createEncounter,
   createTrainerEncounterFromSnapshot,
   replaceTeamAfterCapture,
@@ -26,6 +28,7 @@ import type {
   GameBalance,
   GameEvent,
   GameState,
+  RouteId,
   RunSummary,
 } from "./types";
 
@@ -55,7 +58,7 @@ export class HeadlessGameClient {
 
   constructor(options: HeadlessClientOptions = {}) {
     const seed = options.seed ?? "apt-headless-default";
-    this.balance = { ...defaultBalance, ...options.balance };
+    this.balance = normalizeBalance(options.balance);
     this.rng = new SeededRng(seed);
     this.trainerSnapshots = (options.trainerSnapshots ?? []).map(cloneTrainerSnapshot);
     this.state = {
@@ -104,7 +107,7 @@ export class HeadlessGameClient {
   loadSnapshot(snapshot: HeadlessClientSnapshot): GameState {
     assertValidClientSnapshot(snapshot);
 
-    this.balance = { ...snapshot.balance };
+    this.balance = normalizeBalance(snapshot.balance);
     this.trainerSnapshots = snapshot.trainerSnapshots.map(cloneTrainerSnapshot);
     this.state = cloneState(snapshot.state);
     this.rng.setState(this.state.rngState);
@@ -130,6 +133,9 @@ export class HeadlessGameClient {
     switch (action.type) {
       case "START_RUN":
         this.startRun(action.starterSpeciesId, action.trainerName);
+        break;
+      case "CHOOSE_ROUTE":
+        this.chooseRoute(action.routeId);
         break;
       case "RESOLVE_NEXT_ENCOUNTER":
         this.resolveNextEncounter();
@@ -163,6 +169,7 @@ export class HeadlessGameClient {
       this.startRun(this.rng.pick(starterSpeciesIds));
     } else if (this.state.phase === "ready") {
       this.prepareForEncounter(strategy);
+      this.chooseRoute(this.chooseAutoRoute(strategy));
       this.resolveNextEncounter();
     } else if (this.state.phase === "captureDecision") {
       const ball = this.chooseBall(strategy);
@@ -245,6 +252,7 @@ export class HeadlessGameClient {
         greatBall: this.balance.startingGreatBalls,
       },
       team: [starter],
+      selectedRoute: undefined,
       events: [],
     };
     this.nextEventId = 1;
@@ -258,13 +266,45 @@ export class HeadlessGameClient {
     );
   }
 
+  private chooseRoute(routeId: RouteId): void {
+    if (this.state.phase !== "ready") {
+      this.addEvent("route_ignored", "준비 상태에서만 길을 선택할 수 있습니다.");
+      return;
+    }
+
+    if (routeId === "supply" && this.state.supplyUsedAtWave === this.state.currentWave) {
+      this.addEvent("route_denied", "보급은 웨이브마다 한 번만 받을 수 있습니다.");
+      return;
+    }
+
+    if (routeId === "supply" && this.state.money < this.balance.supplyRouteCost) {
+      this.addEvent("route_denied", "보급에 필요한 코인이 부족합니다.");
+      return;
+    }
+
+    this.state.selectedRoute = {
+      id: routeId,
+      wave: this.state.currentWave,
+    };
+    this.addEvent("route_chosen", `선택한 길: ${routeName(routeId)}.`, {
+      routeId,
+    });
+  }
+
   private resolveNextEncounter(): void {
     if (this.state.phase !== "ready") {
       this.addEvent("encounter_ignored", "준비 상태에서만 다음 만남을 시작할 수 있습니다.");
       return;
     }
 
-    const encounter = this.createEncounter();
+    const routeId = this.consumeSelectedRoute();
+
+    if (routeId === "supply") {
+      this.resolveSupplyRoute();
+      return;
+    }
+
+    const encounter = this.createEncounter(routeId);
     const battle = {
       ...runAutoBattle({
         kind: encounter.kind,
@@ -274,19 +314,21 @@ export class HeadlessGameClient {
         damageScale: this.balance.battleDamageScale,
       }),
       encounterSource: encounter.source,
+      encounterRoute: encounter.routeId,
       opponentName: encounter.opponentName,
     };
 
     this.state.team = battle.playerTeam;
     this.state.pendingEncounter = encounter;
     this.state.lastBattle = battle;
-    const reward = calculateReward(this.state.currentWave, encounter.kind, this.balance);
+    const reward = calculateReward(this.state.currentWave, encounter.kind, this.balance, routeId);
 
     this.addEvent(
       "battle_resolved",
-      `${encounter.opponentName}와의 전투에서 ${localizeWinner(battle.winner)}했습니다.`,
+      `${withJosa(encounter.opponentName, "와/과")}의 전투에서 ${localizeWinner(battle.winner)}했습니다.`,
       {
         kind: encounter.kind,
+        routeId,
         winner: battle.winner,
         opponentName: encounter.opponentName,
         turns: battle.turns,
@@ -338,7 +380,11 @@ export class HeadlessGameClient {
     this.state.balls[ball] -= 1;
 
     const target = this.state.pendingEncounter.enemyTeam[0];
-    const result = attemptCapture(target, this.state.currentWave, ball, this.rng);
+    const routeId = this.state.pendingEncounter.routeId ?? "normal";
+    const result = attemptCapture(target, this.state.currentWave, ball, this.rng, {
+      hpRatioFloor: this.balance.defeatedCaptureHpRatioFloor,
+      chanceBonus: routeId === "elite" ? this.balance.eliteCaptureChanceBonus : 0,
+    });
 
     this.addEvent(
       "capture_attempted",
@@ -348,6 +394,7 @@ export class HeadlessGameClient {
         chance: Number(result.chance.toFixed(4)),
         success: result.success,
         target: target.speciesName,
+        routeId,
       },
     );
 
@@ -411,7 +458,7 @@ export class HeadlessGameClient {
     const name =
       this.state.pendingCapture?.speciesName ??
       this.state.pendingEncounter?.enemyTeam[0]?.speciesName;
-    this.addEvent("capture_skipped", `${name ?? "만남"}을(를) 보냈습니다.`);
+    this.addEvent("capture_skipped", `보낸 만남: ${name ?? "만남"}.`);
     this.advanceWave();
   }
 
@@ -421,15 +468,17 @@ export class HeadlessGameClient {
       return;
     }
 
-    if (this.state.money < this.balance.teamRestCost) {
+    const cost = calculateRestCost(this.state.currentWave, this.balance);
+
+    if (this.state.money < cost) {
       this.addEvent("rest_denied", "팀 휴식에 필요한 코인이 부족합니다.");
       return;
     }
 
-    this.state.money -= this.balance.teamRestCost;
+    this.state.money -= cost;
     this.state.team = healTeam(this.state.team);
     this.addEvent("team_rested", "팀의 HP가 모두 회복되었습니다.", {
-      cost: this.balance.teamRestCost,
+      cost,
     });
   }
 
@@ -443,7 +492,7 @@ export class HeadlessGameClient {
     const affordableQuantity = Math.max(0, Math.min(quantity, Math.floor(this.state.money / cost)));
 
     if (affordableQuantity === 0) {
-      this.addEvent("buy_denied", `${localizeBall(ball)}을(를) 살 코인이 부족합니다.`);
+      this.addEvent("buy_denied", `${localizeBall(ball)} 구입에 필요한 코인이 부족합니다.`);
       return;
     }
 
@@ -458,10 +507,10 @@ export class HeadlessGameClient {
 
   private prepareForEncounter(strategy: AutoPlayOptions["strategy"]): void {
     const healthRatio = getTeamHealthRatio(this.state.team);
-
     const hasFaintedMember = this.state.team.some((creature) => creature.currentHp <= 0);
+    const restCost = calculateRestCost(this.state.currentWave, this.balance);
 
-    if ((healthRatio < 0.98 || hasFaintedMember) && this.state.money >= this.balance.teamRestCost) {
+    if ((healthRatio < 0.98 || hasFaintedMember) && this.state.money >= restCost) {
       this.restTeam();
     }
 
@@ -477,6 +526,34 @@ export class HeadlessGameClient {
     ) {
       this.buyBall("greatBall", 1);
     }
+  }
+
+  private chooseAutoRoute(strategy: AutoPlayOptions["strategy"]): RouteId {
+    const healthRatio = getTeamHealthRatio(this.state.team);
+    const hasFaintedMember = this.state.team.some((creature) => creature.currentHp <= 0);
+    const totalBalls = this.state.balls.pokeBall + this.state.balls.greatBall;
+    const restCost = calculateRestCost(this.state.currentWave, this.balance);
+    const isCheckpoint = this.state.currentWave % this.balance.checkpointInterval === 0;
+
+    if (strategy === "conserveBalls") {
+      return (healthRatio < 0.5 || hasFaintedMember) &&
+        this.state.supplyUsedAtWave !== this.state.currentWave &&
+        this.state.money >= this.balance.supplyRouteCost
+        ? "supply"
+        : "normal";
+    }
+
+    if (
+      healthRatio >= 0.9 &&
+      !hasFaintedMember &&
+      totalBalls >= 4 &&
+      this.state.money >= restCost &&
+      !isCheckpoint
+    ) {
+      return "elite";
+    }
+
+    return "normal";
   }
 
   private chooseBall(strategy: AutoPlayOptions["strategy"]): BallType | undefined {
@@ -495,14 +572,63 @@ export class HeadlessGameClient {
     return this.state.balls.greatBall > 0 ? "greatBall" : undefined;
   }
 
-  private createEncounter(): EncounterSnapshot {
+  private createEncounter(routeId: RouteId): EncounterSnapshot {
     const snapshot = this.pickTrainerSnapshot(this.state.currentWave);
 
     if (snapshot) {
-      return createTrainerEncounterFromSnapshot(snapshot);
+      return createTrainerEncounterFromSnapshot(snapshot, this.balance, routeId);
     }
 
-    return createEncounter(this.state.currentWave, this.rng, this.balance);
+    return createEncounter(this.state.currentWave, this.rng, this.balance, routeId);
+  }
+
+  private resolveSupplyRoute(): void {
+    if (this.state.supplyUsedAtWave === this.state.currentWave) {
+      this.addEvent("supply_denied", "보급은 웨이브마다 한 번만 받을 수 있습니다.");
+      return;
+    }
+
+    if (this.state.money < this.balance.supplyRouteCost) {
+      this.addEvent("supply_denied", "보급에 필요한 코인이 부족합니다.");
+      return;
+    }
+
+    const beforeHp = totalCurrentHp(this.state.team);
+    this.state.money -= this.balance.supplyRouteCost;
+    this.state.supplyUsedAtWave = this.state.currentWave;
+    this.state.team = this.state.team.map((creature) => {
+      const triageHp = Math.ceil(creature.stats.hp * 0.5);
+
+      return {
+        ...creature,
+        currentHp: Math.min(creature.stats.hp, Math.max(creature.currentHp, triageHp)),
+      };
+    });
+    const healedHp = totalCurrentHp(this.state.team) - beforeHp;
+    this.state.phase = "ready";
+    this.state.pendingEncounter = undefined;
+    this.state.pendingCapture = undefined;
+    this.addEvent(
+      "supply_resolved",
+      healedHp > 0
+        ? `보급로에서 팀을 응급 처치했습니다. 회복량: ${healedHp} HP.`
+        : "보급로를 확인했습니다. 팀은 이미 충분히 버틸 수 있습니다.",
+      {
+        healedHp,
+        cost: this.balance.supplyRouteCost,
+      },
+    );
+  }
+
+  private consumeSelectedRoute(): RouteId {
+    const selectedRouteId =
+      this.state.selectedRoute?.wave === this.state.currentWave
+        ? this.state.selectedRoute.id
+        : undefined;
+    const routeId =
+      selectedRouteId === "elite" || selectedRouteId === "supply" ? selectedRouteId : "normal";
+    this.state.selectedRoute = undefined;
+    return routeId;
   }
 
   private pickTrainerSnapshot(wave: number): TrainerSnapshot | undefined {
@@ -518,6 +644,7 @@ export class HeadlessGameClient {
   private advanceWave(): void {
     this.state.currentWave += 1;
     this.state.phase = "ready";
+    this.state.selectedRoute = undefined;
     this.state.pendingEncounter = undefined;
     this.state.pendingCapture = undefined;
   }
@@ -549,6 +676,25 @@ export function cloneClientSnapshot(snapshot: HeadlessClientSnapshot): HeadlessC
 
 function cloneTrainerSnapshot(snapshot: TrainerSnapshot): TrainerSnapshot {
   return JSON.parse(JSON.stringify(snapshot)) as TrainerSnapshot;
+}
+
+function normalizeBalance(balance?: Partial<GameBalance>): GameBalance {
+  return { ...defaultBalance, ...balance };
+}
+
+function totalCurrentHp(team: GameState["team"]): number {
+  return team.reduce((total, creature) => total + Math.max(0, creature.currentHp), 0);
+}
+
+function routeName(routeId: RouteId): string {
+  switch (routeId) {
+    case "normal":
+      return "일반로";
+    case "elite":
+      return "정예로";
+    case "supply":
+      return "보급로";
+  }
 }
 
 function assertValidClientSnapshot(snapshot: HeadlessClientSnapshot): void {
