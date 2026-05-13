@@ -3,7 +3,8 @@ import type { StorageLike } from "./clientStorage";
 export const SYNC_SETTINGS_STORAGE_KEY = "apt:sync-settings:v1";
 export const DEFAULT_PUBLIC_SPREADSHEET_ID = "14ra0Y0zLORpru3nmT-obu3yD1UuO2kAJP4aJ5IIA0M4";
 export const DEFAULT_PUBLIC_SHEET_NAME = "APT_WAVE_TEAMS";
-export const CODE_APPS_SCRIPT_SUBMIT_URL: string = "";
+export const CODE_APPS_SCRIPT_SUBMIT_URL: string =
+  "https://script.google.com/macros/s/AKfycbzHULATi4RpggbJ5BJGKdmcUEf3ZPMB6-zhhl1BRV5KQTKnnw9Ym0VHQGAM5hmisxpl/exec";
 
 export type SyncMode = "publicCsv" | "googleApi";
 
