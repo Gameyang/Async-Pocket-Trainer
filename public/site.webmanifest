@@ -3,7 +3,7 @@
   "short_name": "포켓 트레이너",
   "description": "한국어 브라우저 몬스터 배틀 로그라이크.",
   "start_url": "./",
-  "display": "standalone",
+  "display": "browser",
   "background_color": "#26384f",
   "theme_color": "#26384f",
   "icons": [

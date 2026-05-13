@@ -31,6 +31,12 @@ describe("renderer contract boundaries", () => {
     expect(source).toContain("resolveAssetPath(option.assetPath)");
     expect(source).toContain("resolveTrainerAssetPath(trainer.portraitPath)");
   });
+
+  it("does not advertise an installable PWA shell on static GitHub Pages", () => {
+    const index = readFileSync(new URL("../../index.html", import.meta.url), "utf8");
+
+    expect(index).not.toContain('rel="manifest"');
+  });
 });
 
 function readSource(fileName: string): string {
