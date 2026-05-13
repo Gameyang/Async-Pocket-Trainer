@@ -3,6 +3,27 @@ import { describe, expect, it } from "vitest";
 
 import pokemonRuntimeData from "../game/data/pokemonBattleRuntimeData.json" with { type: "json" };
 
+const battleTypes = [
+  "normal",
+  "fire",
+  "water",
+  "grass",
+  "electric",
+  "poison",
+  "ground",
+  "flying",
+  "bug",
+  "fighting",
+  "psychic",
+  "rock",
+  "ghost",
+  "ice",
+  "dragon",
+  "dark",
+  "steel",
+  "fairy",
+];
+
 const trainerPortraits = [
   "trainers/field-scout.webp",
   "trainers/checkpoint-captain.webp",
@@ -10,20 +31,25 @@ const trainerPortraits = [
 ];
 
 const sfx = [
-  "audio/sfx/battle-hit.wav",
-  "audio/sfx/battle-critical-hit.wav",
-  "audio/sfx/battle-miss.wav",
-  "audio/sfx/creature-faint.wav",
-  "audio/sfx/phase-change.wav",
-  "audio/sfx/capture-success.wav",
-  "audio/sfx/capture-fail.wav",
+  "audio/sfx/battle-hit.m4a",
+  "audio/sfx/battle-critical-hit.m4a",
+  "audio/sfx/battle-miss.m4a",
+  "audio/sfx/creature-faint.m4a",
+  "audio/sfx/phase-change.m4a",
+  "audio/sfx/capture-success.m4a",
+  "audio/sfx/capture-fail.m4a",
+  ...battleTypes.flatMap((type) => [
+    `audio/sfx/battle-type-${type}.m4a`,
+    `audio/sfx/battle-type-${type}-critical.m4a`,
+    `audio/sfx/battle-support-type-${type}.m4a`,
+  ]),
 ];
 
 const bgm = [
-  "audio/bgm/starter-ready.wav",
-  "audio/bgm/battle-capture.wav",
-  "audio/bgm/team-decision.wav",
-  "audio/bgm/game-over.wav",
+  "audio/bgm/starter-ready.m4a",
+  "audio/bgm/battle-capture.m4a",
+  "audio/bgm/team-decision.m4a",
+  "audio/bgm/game-over.m4a",
 ];
 
 describe("local generated assets", () => {
@@ -36,13 +62,12 @@ describe("local generated assets", () => {
     }
   });
 
-  it("keeps BGM and SFX files as browser-playable PCM WAV assets", () => {
+  it("keeps BGM and SFX files as browser-playable compressed M4A assets", () => {
     for (const asset of [...sfx, ...bgm]) {
       const bytes = readAsset(asset);
 
-      expect(bytes.byteLength).toBeGreaterThan(1024);
-      expect(bytes.toString("ascii", 0, 4)).toBe("RIFF");
-      expect(bytes.toString("ascii", 8, 12)).toBe("WAVE");
+      expect(bytes.byteLength).toBeGreaterThan(512);
+      expect(bytes.toString("ascii", 4, 8)).toBe("ftyp");
     }
   });
 

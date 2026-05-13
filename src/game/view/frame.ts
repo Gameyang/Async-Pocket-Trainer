@@ -28,10 +28,12 @@ import {
 import { getTeamHealthRatio, scoreCreature, scoreTeam } from "../scoring";
 import { ballTypes } from "../types";
 import type {
+  BattleStat,
   BattleStatus,
   BattleReplayEvent,
   BallType,
   Creature,
+  ElementType,
   EncounterSource,
   GameAction,
   GameBalance,
@@ -39,6 +41,8 @@ import type {
   GamePhase,
   GameState,
   HealScope,
+  MoveCategory,
+  MoveDefinition,
   RouteId,
   SpeciesDefinition,
   VolatileBattleStatus,
@@ -91,13 +95,7 @@ export interface FrameStarterOption {
   assetKey: string;
   assetPath: string;
   power: number;
-  moves: Array<{
-    id: string;
-    name: string;
-    type: string;
-    power: number;
-    accuracy: number;
-  }>;
+  moves: FrameMoveSummary[];
   stats: {
     hp: number;
     attack: number;
@@ -105,6 +103,19 @@ export interface FrameStarterOption {
     special: number;
     speed: number;
   };
+}
+
+export interface FrameMoveSummary {
+  id: string;
+  name: string;
+  type: string;
+  power: number;
+  accuracy: number;
+  accuracyLabel: string;
+  pp?: number;
+  category: MoveCategory;
+  priority: number;
+  effect: string;
 }
 
 export interface FrameCaptureScene {
@@ -154,13 +165,7 @@ export interface FrameEntity {
     special: number;
     speed: number;
   };
-  moves: Array<{
-    id: string;
-    name: string;
-    type: string;
-    power: number;
-    accuracy: number;
-  }>;
+  moves: FrameMoveSummary[];
   scores: {
     power: number;
     rarity: number;
@@ -205,6 +210,8 @@ export interface FrameBattleReplayEvent {
   type: BattleReplayEvent["type"];
   label: string;
   move?: string;
+  moveType?: ElementType;
+  moveCategory?: MoveCategory;
   sourceSide?: "player" | "enemy";
   targetSide?: "player" | "enemy";
   side?: "player" | "enemy";
@@ -240,6 +247,20 @@ export type FrameVisualCue =
       damage: number;
       effectiveness: number;
       critical: boolean;
+      moveType?: ElementType;
+    }
+  | {
+      id: string;
+      type: "battle.support";
+      sequence: number;
+      effectKey: string;
+      soundKey: string;
+      turn: number;
+      sourceEntityId?: string;
+      targetEntityId?: string;
+      entityId?: string;
+      label: string;
+      moveType: ElementType;
     }
   | {
       id: string;
@@ -461,17 +482,23 @@ export function validateFrameContract(frame: GameFrame): string[] {
     }
 
     if (
-      (cue.type === "battle.hit" || cue.type === "battle.miss") &&
+      (cue.type === "battle.hit" || cue.type === "battle.miss" || cue.type === "battle.support") &&
+      cue.sourceEntityId &&
       !entityIds.has(cue.sourceEntityId)
     ) {
       errors.push(`cue references missing source entity ${cue.sourceEntityId}`);
     }
 
     if (
-      (cue.type === "battle.hit" || cue.type === "battle.miss") &&
+      (cue.type === "battle.hit" || cue.type === "battle.miss" || cue.type === "battle.support") &&
+      cue.targetEntityId &&
       !entityIds.has(cue.targetEntityId)
     ) {
       errors.push(`cue references missing target entity ${cue.targetEntityId}`);
+    }
+
+    if (cue.type === "battle.support" && cue.entityId && !entityIds.has(cue.entityId)) {
+      errors.push(`cue references missing support entity ${cue.entityId}`);
     }
 
     if (
@@ -545,13 +572,7 @@ export function speciesToStarterOption(species: SpeciesDefinition): FrameStarter
     assetKey: `monster:${species.id}`,
     assetPath: `resources/pokemon/${species.id.toString().padStart(4, "0")}.webp`,
     power: scoreCreature({ stats: species.baseStats, moves, types: species.types }),
-    moves: moves.map((move) => ({
-      id: move.id,
-      name: move.name,
-      type: localizeType(move.type),
-      power: move.power,
-      accuracy: move.accuracy,
-    })),
+    moves: moves.map(toFrameMoveSummary),
     stats: { ...species.baseStats },
   };
 }
@@ -693,13 +714,7 @@ function toFrameEntity(creature: Creature, owner: FrameEntityOwner, slot: number
         creature.stats.hp === 0 ? 0 : Number((creature.currentHp / creature.stats.hp).toFixed(4)),
     },
     stats: { ...creature.stats },
-    moves: creature.moves.map((move) => ({
-      id: move.id,
-      name: move.name,
-      type: localizeType(move.type),
-      power: move.power,
-      accuracy: move.accuracy,
-    })),
+    moves: creature.moves.map(toFrameMoveSummary),
     scores: {
       power: creature.powerScore,
       rarity: creature.rarityScore,
@@ -709,6 +724,84 @@ function toFrameEntity(creature: Creature, owner: FrameEntityOwner, slot: number
       ...(creature.status ? [`status:${creature.status.type}`] : []),
     ],
   };
+}
+
+function toFrameMoveSummary(move: MoveDefinition): FrameMoveSummary {
+  return {
+    id: move.id,
+    name: move.name,
+    type: localizeType(move.type),
+    power: move.power,
+    accuracy: move.accuracy,
+    accuracyLabel:
+      move.accuracyPercent === undefined ? "-" : `${Math.round(move.accuracyPercent)}%`,
+    pp: move.pp,
+    category: move.category,
+    priority: move.priority,
+    effect: createMoveEffectText(move),
+  };
+}
+
+function createMoveEffectText(move: MoveDefinition): string {
+  if (move.shortEffect) {
+    return move.shortEffect;
+  }
+
+  const effects: string[] = [];
+
+  if (move.statusEffect) {
+    effects.push(
+      `${localizeBattleStatus(move.statusEffect.status)} ${Math.round(move.statusEffect.chance * 100)}%`,
+    );
+  }
+
+  if (move.statChanges.length > 0) {
+    effects.push(`능력 변화: ${move.statChanges.map(formatMoveStatChange).join(", ")}`);
+  }
+
+  if (move.meta.drain > 0) {
+    effects.push(`피해량 ${move.meta.drain}% 회복`);
+  }
+
+  if (move.meta.healing > 0) {
+    effects.push(`HP ${move.meta.healing}% 회복`);
+  }
+
+  if (move.meta.flinchChance > 0) {
+    effects.push(`풀죽음 ${move.meta.flinchChance}%`);
+  }
+
+  if (move.meta.critRate > 0) {
+    effects.push("급소율 상승");
+  }
+
+  if (effects.length > 0) {
+    return effects.join(" · ");
+  }
+
+  return move.category === "status" ? "상태 변화 기술" : "추가 효과 없음";
+}
+
+function formatMoveStatChange(change: MoveDefinition["statChanges"][number]): string {
+  const sign = change.change > 0 ? "+" : "";
+  return `${localizeBattleStat(change.stat)} ${sign}${change.change}`;
+}
+
+function localizeBattleStat(stat: BattleStat): string {
+  switch (stat) {
+    case "attack":
+      return "공격";
+    case "defense":
+      return "방어";
+    case "special":
+      return "특수";
+    case "speed":
+      return "스피드";
+    case "accuracy":
+      return "명중";
+    case "evasion":
+      return "회피";
+  }
 }
 
 function createEntityLayout(owner: FrameEntityOwner, slot: number): FrameEntityLayout {
@@ -1000,6 +1093,7 @@ function createVisualCues(state: GameState): FrameVisualCue[] {
       (event) =>
         event.type === "damage.apply" ||
         event.type === "move.miss" ||
+        isSupportCueEvent(event) ||
         event.type === "creature.faint",
     )
     .slice(-12)
@@ -1148,6 +1242,8 @@ function toFrameBattleReplayEvent(
       type: event.type,
       label: event.label,
       move: event.move,
+      moveType: event.moveType,
+      moveCategory: event.moveCategory,
       sourceSide: event.actorSide ?? lookup.side(event.actorId),
       targetSide: event.targetSide ?? lookup.side(event.targetId),
       side: event.side,
@@ -1182,6 +1278,7 @@ function toFrameBattleReplayEvent(
         event.critical,
       )}`,
       move: event.move,
+      moveType: event.moveType,
       sourceSide: lookup.side(event.actorId),
       targetSide: lookup.side(event.targetId),
       sourceEntityId: event.actorId,
@@ -1206,6 +1303,8 @@ function toFrameBattleReplayEvent(
       targetSide: lookup.side(event.targetId),
       sourceEntityId: event.actorId,
       targetEntityId: event.targetId,
+      moveType: event.moveType,
+      moveCategory: event.moveCategory,
       status: event.status,
     };
   }
@@ -1222,6 +1321,8 @@ function toFrameBattleReplayEvent(
       targetSide: lookup.side(event.targetId),
       sourceEntityId: event.actorId,
       targetEntityId: event.targetId,
+      moveType: event.moveType,
+      moveCategory: event.moveCategory,
       status: event.status,
     };
   }
@@ -1304,6 +1405,44 @@ function battleHitEffectKey(effectiveness: number, critical: boolean): string {
   return "battle.hit";
 }
 
+function battleHitSoundKey(moveType: ElementType | undefined, critical: boolean): string {
+  if (!moveType) {
+    return critical ? "sfx.battle.criticalHit" : "sfx.battle.hit";
+  }
+
+  return critical ? `sfx.battle.type.${moveType}.critical` : `sfx.battle.type.${moveType}`;
+}
+
+function battleSupportSoundKey(moveType: ElementType): string {
+  return `sfx.battle.support.type.${moveType}`;
+}
+
+function isSupportCueEvent(
+  event: BattleReplayEvent,
+): event is Extract<
+  BattleReplayEvent,
+  { type: "move.effect" | "status.apply" | "status.immune" }
+> & { moveType: ElementType; moveCategory: "status" } {
+  return (
+    (event.type === "move.effect" ||
+      event.type === "status.apply" ||
+      event.type === "status.immune") &&
+    event.moveCategory === "status" &&
+    Boolean(event.moveType)
+  );
+}
+
+function battleSupportLabel(
+  event: Extract<BattleReplayEvent, { type: "move.effect" | "status.apply" | "status.immune" }>,
+  lookup: BattleEntityLookup,
+): string {
+  if (event.type === "move.effect") {
+    return event.label;
+  }
+
+  return `${lookup.name(event.targetId)}: ${localizeBattleStatus(event.status)}`;
+}
+
 function battleReplayEventToCue(
   event: BattleReplayEvent,
   lookup: BattleEntityLookup,
@@ -1335,7 +1474,7 @@ function battleReplayEventToCue(
       type: "battle.hit",
       sequence: event.sequence,
       effectKey: battleHitEffectKey(event.effectiveness, event.critical),
-      soundKey: event.critical ? "sfx.battle.criticalHit" : "sfx.battle.hit",
+      soundKey: battleHitSoundKey(event.moveType, event.critical),
       turn: event.turn,
       sourceEntityId: event.actorId,
       targetEntityId: event.targetId,
@@ -1346,6 +1485,23 @@ function battleReplayEventToCue(
       damage: event.damage,
       effectiveness: event.effectiveness,
       critical: event.critical,
+      moveType: event.moveType,
+    };
+  }
+
+  if (isSupportCueEvent(event)) {
+    return {
+      id: `battle:${event.sequence}:support`,
+      type: "battle.support",
+      sequence: event.sequence,
+      effectKey: "battle.support",
+      soundKey: battleSupportSoundKey(event.moveType),
+      turn: event.turn,
+      sourceEntityId: event.actorId,
+      targetEntityId: event.targetId,
+      entityId: event.entityId,
+      label: battleSupportLabel(event, lookup),
+      moveType: event.moveType,
     };
   }
 

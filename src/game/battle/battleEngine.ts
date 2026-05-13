@@ -522,6 +522,7 @@ function executeMove(options: ExecuteMoveOptions): MoveOutcome {
       actorId: actor.instanceId,
       targetId: target.instanceId,
       move: move.name,
+      moveType: move.type,
       damage,
       effectiveness: result.effectiveness,
       critical: result.critical,
@@ -905,6 +906,8 @@ function applyMoveAilment(
         actorId: actor.instanceId,
         targetId: target.instanceId,
         move: move.name,
+        moveType: move.type,
+        moveCategory: move.category,
         status: "poison",
       });
       return;
@@ -987,6 +990,8 @@ function applyMajorStatus(
       actorId: actor.instanceId,
       targetId: target.instanceId,
       move: move.name,
+      moveType: move.type,
+      moveCategory: move.category,
       status,
     });
     return;
@@ -999,6 +1004,8 @@ function applyMajorStatus(
     actorId: actor.instanceId,
     targetId: target.instanceId,
     move: move.name,
+    moveType: move.type,
+    moveCategory: move.category,
     status: target.status.type,
     turnsRemaining: target.status.turnsRemaining,
   });
@@ -1216,6 +1223,8 @@ function applyUniqueMoveEffect(options: UniqueMoveOptions): void {
         actorId: actor.instanceId,
         targetId: actor.instanceId,
         move: move.name,
+        moveType: move.type,
+        moveCategory: move.category,
         status: "sleep",
         turnsRemaining: 2,
       });
@@ -1358,6 +1367,7 @@ function executeBide(
     actorId: actor.instanceId,
     targetId: target.instanceId,
     move: move.name,
+    moveType: move.type,
     damage,
     effectiveness: 1,
     critical: false,
@@ -1794,12 +1804,14 @@ function applyYawn(
     pushReplay({
       type: "status.apply",
       turn,
-      actorId: creature.instanceId,
-      targetId: creature.instanceId,
-      move: "Yawn",
-      status: "sleep",
-      turnsRemaining: 2,
-    });
+    actorId: creature.instanceId,
+    targetId: creature.instanceId,
+    move: "Yawn",
+    moveType: "normal",
+    moveCategory: "status",
+    status: "sleep",
+    turnsRemaining: 2,
+  });
   }
 }
 
@@ -2093,6 +2105,8 @@ function pushMoveEffect(
     entityId: options.entityId,
     side: options.side,
     move: options.move?.name,
+    moveType: options.move?.type,
+    moveCategory: options.move?.category,
     label: options.label,
   });
 }

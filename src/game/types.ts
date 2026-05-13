@@ -104,10 +104,13 @@ export interface MoveDefinition {
   type: ElementType;
   power: number;
   accuracy: number;
+  accuracyPercent?: number;
+  pp?: number;
   category: MoveCategory;
   priority: number;
   target?: string;
   effectId?: number;
+  shortEffect?: string;
   flags: string[];
   statChanges: MoveStatChange[];
   meta: MoveMeta;
@@ -239,6 +242,8 @@ export type BattleReplayEvent =
       entityId?: string;
       side?: "player" | "enemy";
       move?: string;
+      moveType?: ElementType;
+      moveCategory?: MoveCategory;
       label: string;
     }
   | {
@@ -257,6 +262,7 @@ export type BattleReplayEvent =
       actorId: string;
       targetId: string;
       move: string;
+      moveType: ElementType;
       damage: number;
       effectiveness: number;
       critical: boolean;
@@ -270,6 +276,8 @@ export type BattleReplayEvent =
       actorId: string;
       targetId: string;
       move: string;
+      moveType: ElementType;
+      moveCategory: MoveCategory;
       status: BattleStatus;
       turnsRemaining?: number;
     }
@@ -280,6 +288,8 @@ export type BattleReplayEvent =
       actorId: string;
       targetId: string;
       move: string;
+      moveType: ElementType;
+      moveCategory: MoveCategory;
       status: BattleStatus;
     }
   | {

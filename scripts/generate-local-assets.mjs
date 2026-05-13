@@ -1,11 +1,19 @@
 import { Buffer } from "node:buffer";
-import { mkdir, writeFile } from "node:fs/promises";
-import { URL } from "node:url";
+import { execFile } from "node:child_process";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { URL, fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import { deflateSync } from "node:zlib";
 
 const trainerDir = new URL("../src/resources/trainers/", import.meta.url);
 const bgmDir = new URL("../src/resources/audio/bgm/", import.meta.url);
 const sfxDir = new URL("../src/resources/audio/sfx/", import.meta.url);
+const execFileAsync = promisify(execFile);
+const audioSampleRate = 22050;
+const sfxBitrate = "24k";
+const bgmBitrate = "40k";
 
 await mkdir(trainerDir, { recursive: true });
 await mkdir(bgmDir, { recursive: true });
@@ -88,7 +96,7 @@ function createPortraitPng(portrait) {
 async function generateAudio() {
   const sfx = [
     [
-      "battle-hit.wav",
+      "battle-hit.m4a",
       [
         [196, 0.08],
         [146, 0.07],
@@ -96,7 +104,7 @@ async function generateAudio() {
       0.38,
     ],
     [
-      "battle-critical-hit.wav",
+      "battle-critical-hit.m4a",
       [
         [294, 0.05],
         [392, 0.05],
@@ -105,7 +113,7 @@ async function generateAudio() {
       0.42,
     ],
     [
-      "battle-miss.wav",
+      "battle-miss.m4a",
       [
         [440, 0.05],
         [330, 0.08],
@@ -113,7 +121,7 @@ async function generateAudio() {
       0.28,
     ],
     [
-      "creature-faint.wav",
+      "creature-faint.m4a",
       [
         [220, 0.12],
         [165, 0.14],
@@ -122,7 +130,7 @@ async function generateAudio() {
       0.36,
     ],
     [
-      "phase-change.wav",
+      "phase-change.m4a",
       [
         [262, 0.08],
         [330, 0.08],
@@ -131,7 +139,7 @@ async function generateAudio() {
       0.26,
     ],
     [
-      "capture-success.wav",
+      "capture-success.m4a",
       [
         [392, 0.08],
         [523, 0.08],
@@ -140,7 +148,7 @@ async function generateAudio() {
       0.36,
     ],
     [
-      "capture-fail.wav",
+      "capture-fail.m4a",
       [
         [294, 0.08],
         [220, 0.14],
@@ -148,20 +156,58 @@ async function generateAudio() {
       0.32,
     ],
   ];
+  const typeSfx = [
+    ["normal", [196, 147, 220], 0.3],
+    ["fire", [330, 494, 659], 0.34],
+    ["water", [220, 294, 392], 0.31],
+    ["grass", [262, 330, 262], 0.3],
+    ["electric", [659, 880, 740], 0.32],
+    ["poison", [185, 165, 220], 0.3],
+    ["ground", [130, 98, 146], 0.34],
+    ["flying", [523, 659, 784], 0.28],
+    ["bug", [349, 294, 349], 0.26],
+    ["fighting", [220, 330, 220], 0.36],
+    ["psychic", [392, 523, 740], 0.27],
+    ["rock", [110, 147, 196], 0.36],
+    ["ghost", [247, 185, 123], 0.28],
+    ["ice", [740, 659, 523], 0.26],
+    ["dragon", [196, 294, 440], 0.38],
+    ["dark", [165, 123, 196], 0.32],
+    ["steel", [440, 330, 247], 0.34],
+    ["fairy", [659, 784, 988], 0.24],
+  ];
 
   const bgm = [
-    ["starter-ready.wav", [262, 330, 392, 330, 294, 349, 440, 349]],
-    ["battle-capture.wav", [220, 277, 330, 277, 196, 247, 294, 247]],
-    ["team-decision.wav", [330, 392, 494, 392, 349, 440, 523, 440]],
-    ["game-over.wav", [262, 247, 220, 196, 175, 165, 147, 131]],
+    ["starter-ready.m4a", [262, 330, 392, 330, 294, 349, 440, 349]],
+    ["battle-capture.m4a", [220, 277, 330, 277, 196, 247, 294, 247]],
+    ["team-decision.m4a", [330, 392, 494, 392, 349, 440, 523, 440]],
+    ["game-over.m4a", [262, 247, 220, 196, 175, 165, 147, 131]],
   ];
 
   for (const [file, notes, volume] of sfx) {
-    await writeFile(new URL(file, sfxDir), createWav(sequenceSamples(notes, volume)));
+    await writeM4a(new URL(file, sfxDir), sequenceSamples(notes, volume), sfxBitrate);
+  }
+
+  for (const [type, notes, volume] of typeSfx) {
+    await writeM4a(
+      new URL(`battle-type-${type}.m4a`, sfxDir),
+      typeImpactSamples(notes, volume, false),
+      sfxBitrate,
+    );
+    await writeM4a(
+      new URL(`battle-type-${type}-critical.m4a`, sfxDir),
+      typeImpactSamples(notes, volume, true),
+      sfxBitrate,
+    );
+    await writeM4a(
+      new URL(`battle-support-type-${type}.m4a`, sfxDir),
+      supportTypeSamples(notes, volume),
+      sfxBitrate,
+    );
   }
 
   for (const [file, notes] of bgm) {
-    await writeFile(new URL(file, bgmDir), createWav(loopSamples(notes)));
+    await writeM4a(new URL(file, bgmDir), loopSamples(notes), bgmBitrate);
   }
 }
 
@@ -178,6 +224,29 @@ function sequenceSamples(notes, volume) {
   }
 
   return samples;
+}
+
+function typeImpactSamples(notes, volume, critical) {
+  const shapedNotes = notes.map((frequency, index) => [
+    critical && index === notes.length - 1 ? frequency * 1.5 : frequency,
+    critical ? 0.055 : 0.045,
+  ]);
+  const tail = critical
+    ? [
+        [notes.at(-1) * 2, 0.045],
+        [notes[0] * 0.75, 0.07],
+      ]
+    : [[notes[0] * 0.5, 0.05]];
+
+  return sequenceSamples([...shapedNotes, ...tail], critical ? volume * 1.22 : volume);
+}
+
+function supportTypeSamples(notes, volume) {
+  const arpeggio = notes.map((frequency, index) => [
+    index % 2 === 0 ? frequency * 1.25 : frequency * 0.75,
+    0.07,
+  ]);
+  return sequenceSamples([...arpeggio, [notes[0], 0.1]], volume * 0.72);
 }
 
 function loopSamples(notes) {
@@ -198,7 +267,7 @@ function loopSamples(notes) {
 }
 
 function createWav(samples) {
-  const sampleRate = 22050;
+  const sampleRate = audioSampleRate;
   const bytesPerSample = 2;
   const dataSize = samples.length * bytesPerSample;
   const buffer = Buffer.alloc(44 + dataSize);
@@ -223,6 +292,42 @@ function createWav(samples) {
   });
 
   return buffer;
+}
+
+async function writeM4a(destination, samples, bitrate) {
+  const tempDir = await mkdtemp(join(tmpdir(), "async-pocket-audio-"));
+  const inputPath = join(tempDir, "source.wav");
+  const outputPath = fileURLToPath(destination);
+
+  try {
+    await writeFile(inputPath, createWav(samples));
+    await execFileAsync("ffmpeg", [
+      "-y",
+      "-hide_banner",
+      "-loglevel",
+      "error",
+      "-i",
+      inputPath,
+      "-ac",
+      "1",
+      "-ar",
+      String(audioSampleRate),
+      "-c:a",
+      "aac",
+      "-b:a",
+      bitrate,
+      "-movflags",
+      "+faststart",
+      outputPath,
+    ]);
+  } catch (error) {
+    if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
+      throw new Error("ffmpeg is required to generate compressed .m4a audio assets.");
+    }
+    throw error;
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
 }
 
 function mix(left, right, amount) {

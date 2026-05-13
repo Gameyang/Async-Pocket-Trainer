@@ -143,11 +143,7 @@ function formatBallInventory(frame: GameFrame): string {
 }
 
 function shouldDrawBattleScreen(frame: GameFrame): boolean {
-  return (
-    frame.phase === "captureDecision" ||
-    frame.scene.capture?.result === "failure" ||
-    frame.battleReplay.events.length > 1
-  );
+  return frame.phase === "captureDecision" || frame.battleReplay.events.length > 1;
 }
 
 function screenBounds(draw: DrawContext) {

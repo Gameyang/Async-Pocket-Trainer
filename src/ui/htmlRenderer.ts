@@ -40,12 +40,12 @@ const trainerAssetUrls = import.meta.glob<string>("../resources/trainers/*.webp"
   import: "default",
   query: "?url",
 });
-const sfxAssetUrls = import.meta.glob<string>("../resources/audio/sfx/*.wav", {
+const sfxAssetUrls = import.meta.glob<string>("../resources/audio/sfx/*.m4a", {
   eager: true,
   import: "default",
   query: "?url",
 });
-const bgmAssetUrls = import.meta.glob<string>("../resources/audio/bgm/*.wav", {
+const bgmAssetUrls = import.meta.glob<string>("../resources/audio/bgm/*.m4a", {
   eager: true,
   import: "default",
   query: "?url",
@@ -130,6 +130,7 @@ export function mountHtmlRenderer(
     );
     bindActions(root, client, frame, playbackView, audioState, shopTarget, render);
     bindShopTargetSelection(root, client, shopTarget, render);
+    bindTeamDetailPopup(root);
     bindTeamRecord(root, options, render);
     bindStarterReroll(root, options, render);
     bindStarterDexSelection(root);
@@ -224,6 +225,44 @@ function bindShopTargetSelection(
 
 function requiresShopTarget(action: FrameAction): boolean {
   return action.action.type === "BUY_HEAL" && action.action.scope === "single";
+}
+
+function bindTeamDetailPopup(root: HTMLElement): void {
+  const closeAll = () => {
+    root.querySelectorAll<HTMLElement>(".team-detail-popup[data-open]").forEach((popup) => {
+      delete popup.dataset.open;
+    });
+  };
+
+  root.querySelectorAll<HTMLButtonElement>("[data-team-detail-id]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const entityId = button.dataset.teamDetailId;
+      const popup = entityId
+        ? root.querySelector<HTMLElement>(
+            `.team-detail-popup[data-entity-id="${cssEscape(entityId)}"]`,
+          )
+        : undefined;
+
+      if (!popup) {
+        return;
+      }
+
+      closeAll();
+      popup.dataset.open = "true";
+    });
+  });
+
+  root.querySelectorAll<HTMLButtonElement>("[data-team-detail-close]").forEach((button) => {
+    button.addEventListener("click", closeAll);
+  });
+
+  root.querySelectorAll<HTMLElement>(".team-detail-popup").forEach((popup) => {
+    popup.addEventListener("click", (event) => {
+      if (event.target === popup) {
+        closeAll();
+      }
+    });
+  });
 }
 
 function bindTeamRecord(root: HTMLElement, options: HtmlRendererOptions, render: () => void): void {
@@ -359,16 +398,13 @@ function renderFrame(
     canRerollStarter,
     shopTargetAction,
   });
-  const showReadyFailureCommands =
-    frame.phase === "ready" && frame.scene.capture?.result === "failure";
-
   return `
     <main class="app-shell" data-frame-id="${frame.frameId}" data-protocol="${frame.protocolVersion}" data-phase="${frame.phase}" data-wave="${frame.hud.wave}" data-money="${frame.hud.money}" ${renderBallDataAttributes(frame)} data-team-size="${playerEntities.length}" data-team-hp-ratio="${frame.hud.teamHpRatio}" data-timeline-count="${frame.timeline.length}" data-battle-playback="${playback.isPlaying ? "playing" : "idle"}" data-battle-sequence="${playback.activeEvent?.sequence ?? 0}" data-battle-event-type="${escapeHtml(playback.activeEvent?.type ?? "")}">
       ${screen}
       ${playback.isPlaying ? "" : renderTeamRecordPanel(statusView.teamRecord, playerEntities)}
 
       ${
-        frame.phase === "starterChoice" || (frame.phase === "ready" && !showReadyFailureCommands)
+        frame.phase === "starterChoice" || frame.phase === "ready"
           ? ""
           : renderCommandBand(frame, playback.isPlaying, playerEntities, pendingCapture)
       }
@@ -436,7 +472,6 @@ function renderScreen(context: ScreenRenderContext): string {
 function shouldRenderBattleScreen(frame: GameFrame, playback: BattlePlaybackView): boolean {
   return (
     frame.phase === "captureDecision" ||
-    frame.scene.capture?.result === "failure" ||
     (frame.battleReplay.events.length > 1 && playback.isPlaying)
   );
 }
@@ -631,6 +666,10 @@ function renderReadyScreen({
   shopTargetAction,
 }: ScreenRenderContext): string {
   const shopActions = selectReadyShopActions(frame, playerEntities);
+  const captureFeedback =
+    frame.scene.capture?.result === "failure" || frame.scene.capture?.result === "success"
+      ? frame.scene.capture
+      : undefined;
 
   return `
     <section class="screen ready-screen shop-screen" data-screen="ready" data-shop-actions="${shopActions.length}" data-shop-targeting="${shopTargetAction ? "true" : "false"}" aria-label="관리 단계">
@@ -650,6 +689,8 @@ function renderReadyScreen({
       <div class="shop-card-grid" data-shop-card-count="${shopActions.length}">
         ${shopActions.map((action) => renderShopActionCard(action, frame)).join("")}
       </div>
+      ${captureFeedback ? renderCaptureOverlay(captureFeedback) : ""}
+      ${renderTeamDetailPopups(playerEntities)}
     </section>
   `;
 }
@@ -687,21 +728,105 @@ function renderShopTeamSlot(
   const hpState = resolveHpState(entity.hp.ratio);
   const selectable = Boolean(targetAction) && entity.hp.current < entity.hp.max;
   const disabled = targetAction && !selectable ? " disabled" : "";
-  const tag = targetAction ? "button" : "div";
-  const typeAttribute = targetAction ? ' type="button"' : "";
+  const tag = "button";
+  const typeAttribute = ' type="button"';
   const targetAttribute = targetAction ? ` data-shop-target-id="${escapeHtml(entity.id)}"` : "";
+  const detailAttribute = targetAction ? "" : ` data-team-detail-id="${escapeHtml(entity.id)}"`;
+  const moves = entity.moves.map((move) => `<span>${escapeHtml(move.name)}</span>`).join("");
 
   return `
-    <${tag}${typeAttribute} class="shop-team-slot" data-team-slot="${index + 1}" data-slot-state="${hpState}"${targetAttribute}${disabled}>
+    <${tag}${typeAttribute} class="shop-team-slot" data-team-slot="${index + 1}" data-slot-state="${hpState}"${targetAttribute}${detailAttribute}${disabled}>
       <span class="shop-slot-number">${index + 1}</span>
       <img src="${resolveAssetPath(entity.assetPath)}" alt="${escapeHtml(`${entity.name} 포켓몬`)}" />
-      <div>
+      <div class="shop-slot-main">
         <strong>${escapeHtml(entity.name)}</strong>
-        <p>${entity.hp.current}/${entity.hp.max} · ${entity.scores.power}</p>
+        <p>${escapeHtml(entity.typeLabels.join(" / "))}</p>
       </div>
+      <dl class="shop-slot-stats">
+        <div><dt>HP</dt><dd>${entity.hp.current}/${entity.hp.max}</dd></div>
+        <div><dt>공</dt><dd>${entity.stats.attack}</dd></div>
+        <div><dt>방</dt><dd>${entity.stats.defense}</dd></div>
+        <div><dt>특</dt><dd>${entity.stats.special}</dd></div>
+        <div><dt>스</dt><dd>${entity.stats.speed}</dd></div>
+      </dl>
+      <div class="shop-slot-moves">${moves}</div>
       <span class="slot-meter" data-hp-state="${hpState}"><span style="width: ${Math.round(entity.hp.ratio * 100)}%"></span></span>
     </${tag}>
   `;
+}
+
+function renderTeamDetailPopups(playerEntities: readonly FrameEntity[]): string {
+  return playerEntities.map(renderTeamDetailPopup).join("");
+}
+
+function renderTeamDetailPopup(entity: FrameEntity): string {
+  const moves = entity.moves.map(renderTeamDetailMove).join("");
+
+  return `
+    <div class="team-detail-popup" data-entity-id="${escapeHtml(entity.id)}" role="dialog" aria-modal="true" aria-label="${escapeHtml(`${entity.name} 상세 보기`)}">
+      <article class="team-detail-card">
+        <button type="button" class="team-detail-close" data-team-detail-close aria-label="상세 보기 닫기">✕</button>
+        <header>
+          <img src="${resolveAssetPath(entity.assetPath)}" alt="${escapeHtml(`${entity.name} 포켓몬`)}" />
+          <div>
+            <span>${escapeHtml(entity.typeLabels.join(" / "))}</span>
+            <h2>${escapeHtml(entity.name)}</h2>
+            <p>HP ${entity.hp.current}/${entity.hp.max}</p>
+          </div>
+        </header>
+        <dl class="team-detail-stats">
+          <div><dt>HP</dt><dd>${entity.hp.max}</dd></div>
+          <div><dt>공격</dt><dd>${entity.stats.attack}</dd></div>
+          <div><dt>방어</dt><dd>${entity.stats.defense}</dd></div>
+          <div><dt>특수</dt><dd>${entity.stats.special}</dd></div>
+          <div><dt>스피드</dt><dd>${entity.stats.speed}</dd></div>
+          <div><dt>전투력</dt><dd>${entity.scores.power}</dd></div>
+        </dl>
+        <section class="team-detail-moves" aria-label="스킬">
+          <h3>스킬</h3>
+          <ul>${moves}</ul>
+        </section>
+      </article>
+    </div>
+  `;
+}
+
+function renderTeamDetailMove(move: FrameEntity["moves"][number]): string {
+  return `
+    <li class="team-detail-move-card">
+      <div class="move-detail-head">
+        <strong>${escapeHtml(move.name)}</strong>
+        <span class="move-detail-type">${escapeHtml(move.type)}</span>
+      </div>
+      <dl class="move-detail-grid">
+        <div class="move-detail-category"><dt>분류</dt><dd>${escapeHtml(localizeMoveCategory(move.category))}</dd></div>
+        <div class="move-detail-power"><dt>위력</dt><dd>${escapeHtml(formatMovePower(move))}</dd></div>
+        <div class="move-detail-accuracy"><dt>명중</dt><dd>${escapeHtml(move.accuracyLabel)}</dd></div>
+        <div class="move-detail-pp"><dt>PP</dt><dd>${move.pp ?? "-"}</dd></div>
+        <div class="move-detail-priority"><dt>우선도</dt><dd>${escapeHtml(formatMovePriority(move.priority))}</dd></div>
+      </dl>
+      <p class="move-detail-effect"><span>효과</span>${escapeHtml(move.effect)}</p>
+    </li>
+  `;
+}
+
+function localizeMoveCategory(category: FrameEntity["moves"][number]["category"]): string {
+  switch (category) {
+    case "physical":
+      return "물리";
+    case "special":
+      return "특수";
+    case "status":
+      return "변화";
+  }
+}
+
+function formatMovePower(move: FrameEntity["moves"][number]): string {
+  return move.category === "status" || move.power <= 0 ? "-" : String(move.power);
+}
+
+function formatMovePriority(priority: number): string {
+  return priority > 0 ? `+${priority}` : String(priority);
 }
 
 function renderShopActionCard(action: FrameAction, frame: GameFrame): string {
@@ -1192,6 +1317,39 @@ function renderBallSvg(ball: string): string {
   </svg>`;
 }
 
+const HEAL_TIER_EMOJI: Record<1 | 2 | 3 | 4 | 5, string> = {
+  1: "🩹",
+  2: "💊",
+  3: "🧪",
+  4: "💉",
+  5: "🛡️",
+};
+
+const RARITY_BOOST_EMOJI: Record<1 | 2 | 3, string> = {
+  1: "⭐",
+  2: "🌟",
+  3: "💎",
+};
+
+const LEVEL_BOOST_EMOJI: Record<1 | 2 | 3 | 4, string> = {
+  1: "⬆️",
+  2: "⏫",
+  3: "🚀",
+  4: "🔥",
+};
+
+const SCOUT_RARITY_EMOJI: Record<1 | 2 | 3, string> = {
+  1: "🔎",
+  2: "🔬",
+  3: "🪄",
+};
+
+const SCOUT_POWER_EMOJI: Record<1 | 2 | 3, string> = {
+  1: "📡",
+  2: "📊",
+  3: "🎯",
+};
+
 function actionEmoji(action: FrameAction): string {
   switch (action.action.type) {
     case "START_RUN":
@@ -1199,9 +1357,6 @@ function actionEmoji(action: FrameAction): string {
     case "RETURN_TO_STARTER_CHOICE":
       return "🎲";
     case "CHOOSE_ROUTE":
-      if (action.action.routeId === "elite") {
-        return "🔥";
-      }
       return action.action.routeId === "supply" ? "🎁" : "🧭";
     case "RESOLVE_NEXT_ENCOUNTER":
       return "⚔️";
@@ -1213,14 +1368,17 @@ function actionEmoji(action: FrameAction): string {
     case "DISCARD_CAPTURE":
       return "🚪";
     case "REST_TEAM":
+      return "🛌";
     case "BUY_HEAL":
-      return "💊";
+      return HEAL_TIER_EMOJI[action.action.tier];
     case "BUY_SCOUT":
-      return action.action.kind === "rarity" ? "🔎" : "📡";
+      return action.action.kind === "rarity"
+        ? SCOUT_RARITY_EMOJI[action.action.tier]
+        : SCOUT_POWER_EMOJI[action.action.tier];
     case "BUY_RARITY_BOOST":
-      return "⭐";
+      return RARITY_BOOST_EMOJI[action.action.tier];
     case "BUY_LEVEL_BOOST":
-      return "⬆️";
+      return LEVEL_BOOST_EMOJI[action.action.tier];
     case "SET_TRAINER_NAME":
       return "💾";
   }
@@ -1476,7 +1634,10 @@ function syncAudio(audioState: AudioState, frame: GameFrame, playback: BattlePla
   for (const cue of frame.visualCues) {
     if (
       playback.isPlaying &&
-      (cue.type === "battle.hit" || cue.type === "battle.miss" || cue.type === "creature.faint") &&
+      (cue.type === "battle.hit" ||
+        cue.type === "battle.miss" ||
+        cue.type === "battle.support" ||
+        cue.type === "creature.faint") &&
       cue.sequence !== activeSequence
     ) {
       continue;
@@ -1535,6 +1696,10 @@ function escapeHtml(value: string): string {
     .replaceAll("'", "&#039;");
 }
 
+function cssEscape(value: string): string {
+  return value.replaceAll("\\", "\\\\").replaceAll('"', '\\"');
+}
+
 function resolveAssetPath(assetPath: string): string {
   return pokemonAssetUrls[`../${assetPath}`] ?? assetPath;
 }
@@ -1544,7 +1709,7 @@ function resolveTrainerAssetPath(assetPath: string): string {
 }
 
 function resolveSfxUrl(soundKey: string): string | undefined {
-  const fileName = `${soundKey.replace("sfx.", "").replaceAll(".", "-")}.wav`;
+  const fileName = `${soundKey.replace("sfx.", "").replaceAll(".", "-")}.m4a`;
   return sfxAssetUrls[`../resources/audio/sfx/${fileName}`];
 }
 
@@ -1552,6 +1717,6 @@ function resolveBgmUrl(bgmKey: FrameBgmKey): string | undefined {
   const fileName = `${bgmKey
     .replace("bgm.", "")
     .replaceAll(/([A-Z])/g, "-$1")
-    .toLowerCase()}.wav`;
+    .toLowerCase()}.m4a`;
   return bgmAssetUrls[`../resources/audio/bgm/${fileName}`];
 }

@@ -149,10 +149,13 @@ function toMoveDefinition(record: MoveRecord): MoveDefinition | undefined {
     type: record.type as ElementType,
     power: record.power ?? 0,
     accuracy: (record.accuracy ?? 100) / 100,
+    accuracyPercent: record.accuracy ?? undefined,
+    pp: record.pp ?? undefined,
     category: record.damageClass,
     priority: record.priority,
     target: record.target ?? undefined,
     effectId: record.effectId ?? undefined,
+    shortEffect: toShortEffect(record),
     flags: [...record.flags],
     statChanges: record.statChanges
       .map((change) => toMoveStatChange(change.stat, change.change))
@@ -160,6 +163,23 @@ function toMoveDefinition(record: MoveRecord): MoveDefinition | undefined {
     meta: toMoveMeta(record),
     statusEffect: toStatusEffect(record),
   };
+}
+
+function toShortEffect(record: MoveRecord): string | undefined {
+  const effectChance =
+    record.effectChance ??
+    record.meta?.ailmentChance ??
+    record.meta?.flinchChance ??
+    record.meta?.statChance;
+  const chanceText = effectChance === null || effectChance === undefined ? "" : String(effectChance);
+  const effect = record.shortEffect
+    .replaceAll("$effect_chance", chanceText)
+    .replace(/\[\]\{[^:}]+:([^}]+)\}/g, (_match, identifier: string) => toTitleCase(identifier))
+    .replace(/\[([^\]]+)\]\{[^}]+\}/g, "$1")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return effect.length > 0 ? effect : undefined;
 }
 
 function toStatusEffect(record: MoveRecord): MoveDefinition["statusEffect"] {

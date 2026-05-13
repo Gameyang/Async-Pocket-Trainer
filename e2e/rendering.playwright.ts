@@ -48,8 +48,20 @@ test("renders phase-specific screens with stable responsive layout", async ({ pa
   expect(shopCardCount).toBeGreaterThan(3);
   expect(shopCardCount).toBeLessThanOrEqual(12);
   await expect(page.locator(".shop-team-slot")).toHaveCount(6);
+  await expect(page.locator(".shop-slot-stats").first()).toBeVisible();
+  await expect(page.locator(".shop-slot-moves span").first()).toBeVisible();
   await expect(page.locator(".command-band")).toHaveCount(0);
   await assertLoadedImage(page.locator(".shop-team-slot img").first());
+  await page.locator("[data-team-detail-id]").first().click();
+  await expect(page.locator('.team-detail-popup[data-open="true"]')).toBeVisible();
+  await expect(page.locator(".team-detail-stats")).toBeVisible();
+  await expect(page.locator(".team-detail-move-card").first()).toBeVisible();
+  await expect(page.locator(".move-detail-type").first()).toBeVisible();
+  await expect(page.locator(".move-detail-power").first()).toBeVisible();
+  await expect(page.locator(".move-detail-accuracy").first()).toBeVisible();
+  await expect(page.locator(".move-detail-effect").first()).toBeVisible();
+  await page.locator("[data-team-detail-close]").click();
+  await expect(page.locator('.team-detail-popup[data-open="true"]')).toHaveCount(0);
 
   await openSnapshot(page, shopTargetSelectionSnapshot());
   await assertPhaseScreen(page, "ready", ".ready-screen");
@@ -77,9 +89,10 @@ test("renders phase-specific screens with stable responsive layout", async ({ pa
   await expect(page.locator(".command-band button")).toHaveCount(2);
 
   await openSnapshot(page, failedCaptureReadySnapshot());
-  await assertPhaseScreen(page, "ready", ".encounter-panel");
+  await assertPhaseScreen(page, "ready", ".ready-screen");
   await expect(page.locator('.capture-overlay[data-capture-result="failure"]')).toBeVisible();
-  await expect(page.locator('.command-band [data-action-id="encounter:next"]')).toBeVisible();
+  await expect(page.locator(".command-band")).toHaveCount(0);
+  await expect(page.locator('.shop-card[data-action-id="encounter:next"]')).toBeVisible();
   await clickAction(page, '[data-action-id="encounter:next"]');
 
   await openSnapshot(page, gameOverSnapshot());
@@ -116,7 +129,7 @@ test("confirms battle replay, capture feedback, and ball count rendering", async
     await expect(page.locator('.capture-overlay[data-capture-result="success"]')).toBeVisible();
   } else {
     await expect(page.locator('.capture-overlay[data-capture-result="failure"]')).toBeVisible();
-    await expect(page.locator(".enemy-mon img")).toBeVisible();
+    await expect(page.locator(".ready-screen")).toBeVisible();
   }
 
   await openFresh(page);

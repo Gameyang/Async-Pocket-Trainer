@@ -85,10 +85,15 @@ describe("game frame contract", () => {
   it("classifies replay cues with readable names and effect tiers", () => {
     const superEffective = findBattleFrameWithCue("battle.superEffective", 7);
     const resisted = findBattleFrameWithCue("battle.resisted", 1);
+    const critical = findBattleFrameWithCue("battle.criticalHit", 4);
     const missed = findBattleFrameWithCue("battle.miss", 1);
     const superEffectiveEvent = superEffective.battleReplay.events.find(
       (event) => event.type === "damage.apply" && (event.effectiveness ?? 1) > 1,
     );
+    const typedHitCue = superEffective.visualCues.find(
+      (cue) => cue.type === "battle.hit" && cue.sequence === superEffectiveEvent?.sequence,
+    );
+    const criticalCue = critical.visualCues.find((cue) => cue.effectKey === "battle.criticalHit");
 
     expect(superEffective.visualCues).toContainEqual(
       expect.objectContaining({
@@ -109,6 +114,14 @@ describe("game frame contract", () => {
         effectKey: "battle.miss",
       }),
     );
+    expect(typedHitCue).toMatchObject({
+      soundKey: `sfx.battle.type.${superEffectiveEvent?.moveType}`,
+      moveType: superEffectiveEvent?.moveType,
+    });
+    expect(criticalCue).toMatchObject({
+      soundKey: expect.stringMatching(/^sfx\.battle\.type\.[a-z-]+\.critical$/),
+      critical: true,
+    });
     expect(superEffectiveEvent?.label).not.toMatch(/\d+-\d+-[0-9a-f]+/);
   });
 

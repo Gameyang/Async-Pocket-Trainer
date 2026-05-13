@@ -123,6 +123,11 @@ function entity(id: string, owner: FrameEntity["owner"], slot: number, power: nu
         type: "노말",
         power: 40,
         accuracy: 1,
+        accuracyLabel: "100%",
+        pp: 35,
+        category: "physical",
+        priority: 0,
+        effect: "Inflicts regular damage with no additional effect.",
       },
     ],
     scores: {
