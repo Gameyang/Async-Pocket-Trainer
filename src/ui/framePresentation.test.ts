@@ -11,8 +11,8 @@ describe("frame presentation command selection", () => {
     const playerEntities = frame.scene.playerSlots
       .map((id) => frame.entities.find((entity) => entity.id === id))
       .filter((entity): entity is FrameEntity => Boolean(entity));
-    const commandIds = selectCommandItems(frame, playerEntities, undefined).map((item) =>
-      item.type === "action" ? item.action.id : item.id,
+    const commandIds = selectCommandItems(frame, playerEntities, undefined).map(
+      (item) => item.action.id,
     );
 
     expect(frame.phase).toBe("ready");

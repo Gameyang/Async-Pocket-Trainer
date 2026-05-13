@@ -750,7 +750,7 @@ function drawCommandPanel(
 }
 
 function commandLabel(command: CommandItem): string {
-  return command.type === "action" ? command.action.label : command.label;
+  return command.action.label;
 }
 
 function entityPosition(entity: FrameEntity, draw: DrawContext) {

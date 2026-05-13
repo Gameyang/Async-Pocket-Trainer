@@ -10,7 +10,7 @@ import type {
   FrameVisualCue,
   GameFrame,
 } from "../game/view/frame";
-import { formatMoney, formatWave, localizeBall, localizeBattleStatus } from "../game/localization";
+import { formatMoney, formatWave, localizeBattleStatus } from "../game/localization";
 import {
   createBattleCueText,
   createBattleEventSummary,
@@ -29,7 +29,6 @@ import {
 } from "./framePresentation";
 
 const BATTLE_REPLAY_STEP_MS = 540;
-const AUDIO_MUTED_STORAGE_KEY = "apt:audio-muted:v1";
 
 const pokemonAssetUrls = import.meta.glob<string>("../resources/pokemon/*.webp", {
   eager: true,
@@ -89,7 +88,6 @@ interface BattlePlaybackView {
 
 interface AudioState {
   unlocked: boolean;
-  muted: boolean;
   currentBgmKey?: FrameBgmKey;
   bgm?: HTMLAudioElement;
   playedCueIds: Set<string>;
@@ -107,7 +105,6 @@ export function mountHtmlRenderer(
   };
   const audioState: AudioState = {
     unlocked: false,
-    muted: loadMutedPreference(),
     playedCueIds: new Set(),
   };
 
@@ -115,12 +112,10 @@ export function mountHtmlRenderer(
     const frame = client.getFrame();
     updateBattlePlayback(battlePlayback, frame);
     const playbackView = createBattlePlaybackView(battlePlayback, frame);
-    root.innerHTML = renderFrame(frame, options.getStatusView?.() ?? {}, playbackView, audioState);
+    root.innerHTML = renderFrame(frame, options.getStatusView?.() ?? {}, playbackView);
     bindActions(root, client, frame, playbackView, audioState, render);
     bindTeamRecord(root, options, render);
-    bindAudio(root, audioState, frame, playbackView, render);
     bindBattlePlayback(root, battlePlayback, frame, render);
-    bindPanelToggles(root);
     syncAudio(audioState, frame, playbackView);
     scheduleBattlePlayback(battlePlayback, frame, render);
   };
@@ -192,42 +187,10 @@ function bindBattlePlayback(
   });
 }
 
-function bindAudio(
-  root: HTMLElement,
-  audioState: AudioState,
-  frame: GameFrame,
-  playback: BattlePlaybackView,
-  render: () => void,
-): void {
-  root.querySelector<HTMLButtonElement>("[data-audio-toggle]")?.addEventListener("click", () => {
-    unlockAudio(audioState);
-    audioState.muted = !audioState.muted;
-    saveMutedPreference(audioState.muted);
-    syncAudio(audioState, frame, playback);
-    render();
-  });
-}
-
-function bindPanelToggles(root: HTMLElement): void {
-  root.querySelectorAll<HTMLButtonElement>("[data-team-details-toggle]").forEach((button) => {
-    button.addEventListener("click", () => {
-      const panel = root.querySelector<HTMLDetailsElement>("[data-team-panel]");
-
-      if (!panel) {
-        return;
-      }
-
-      panel.open = true;
-      panel.scrollIntoView({ block: "nearest", behavior: "smooth" });
-    });
-  });
-}
-
 function renderFrame(
   frame: GameFrame,
   statusView: HtmlRendererStatusView,
   playback: BattlePlaybackView,
-  audioState: AudioState,
 ): string {
   const entityView = createEntityPlaybackView(frame, playback);
   const playerEntities = frame.scene.playerSlots
@@ -276,27 +239,7 @@ function renderFrame(
     frame.phase === "ready" && frame.scene.capture?.result === "failure";
 
   return `
-    <main class="app-shell" data-frame-id="${frame.frameId}" data-protocol="${frame.protocolVersion}" data-phase="${frame.phase}" data-wave="${frame.hud.wave}" data-money="${frame.hud.money}" data-poke-balls="${frame.hud.balls.pokeBall}" data-great-balls="${frame.hud.balls.greatBall}" data-team-size="${playerEntities.length}" data-timeline-count="${frame.timeline.length}" data-battle-playback="${playback.isPlaying ? "playing" : "idle"}" data-battle-sequence="${playback.activeEvent?.sequence ?? 0}" data-battle-event-type="${escapeHtml(playback.activeEvent?.type ?? "")}" data-audio-muted="${audioState.muted ? "true" : "false"}">
-      <header class="topbar">
-        <div class="brand">
-          <span class="mark" aria-hidden="true"></span>
-          <div>
-            <h1>${escapeHtml(frame.hud.title)}</h1>
-            <p>${escapeHtml(frame.hud.trainerName)}</p>
-          </div>
-        </div>
-        <div class="run-status">
-          <span>${formatWave(frame.hud.wave)}</span>
-          <span class="team-hp-chip">
-            <span>팀 HP ${Math.round(frame.hud.teamHpRatio * 100)}%</span>
-            <span class="mini-meter"><span style="width: ${Math.round(frame.hud.teamHpRatio * 100)}%"></span></span>
-          </span>
-          <span>${formatMoney(frame.hud.money)}</span>
-          <span>${localizeBall("pokeBall")} ${frame.hud.balls.pokeBall} / ${localizeBall("greatBall")} ${frame.hud.balls.greatBall}</span>
-        </div>
-        ${renderAudioButton(audioState)}
-      </header>
-
+    <main class="app-shell" data-frame-id="${frame.frameId}" data-protocol="${frame.protocolVersion}" data-phase="${frame.phase}" data-wave="${frame.hud.wave}" data-money="${frame.hud.money}" data-poke-balls="${frame.hud.balls.pokeBall}" data-great-balls="${frame.hud.balls.greatBall}" data-team-size="${playerEntities.length}" data-team-hp-ratio="${frame.hud.teamHpRatio}" data-timeline-count="${frame.timeline.length}" data-battle-playback="${playback.isPlaying ? "playing" : "idle"}" data-battle-sequence="${playback.activeEvent?.sequence ?? 0}" data-battle-event-type="${escapeHtml(playback.activeEvent?.type ?? "")}">
       ${screen}
       ${playback.isPlaying ? "" : renderTeamRecordPanel(statusView.teamRecord, playerEntities)}
 
@@ -305,10 +248,6 @@ function renderFrame(
           ? ""
           : renderCommandBand(frame, playback.isPlaying, playerEntities, pendingCapture)
       }
-
-      <section class="drawer-stack" aria-label="보조 정보">
-        ${renderTeamPanel(frame, playerEntities, pendingCapture)}
-      </section>
     </main>
   `;
 }
@@ -470,7 +409,7 @@ function renderBattleScreen({
         ${renderBattleEventSummary(playback.activeEvent, activeCue, battleEntities)}
         <p class="log-line">${escapeHtml(logLine)}</p>
         ${renderReplayMeter(playback)}
-        ${renderTeamDots(playerEntities)}
+        ${playback.isPlaying ? "" : renderTeamDots(playerEntities)}
       </div>
     </section>
   `;
@@ -658,11 +597,6 @@ function renderCommandBand(
   `;
 }
 
-function renderAudioButton(audioState: AudioState): string {
-  const label = audioState.muted ? "소리 켜기" : "음소거";
-  return `<button type="button" class="audio-toggle" data-audio-toggle aria-label="${label}">${label}</button>`;
-}
-
 function renderTrainerBadge(trainer: FrameTrainerScene | undefined): string {
   if (!trainer) {
     return "";
@@ -697,27 +631,6 @@ function renderCaptureOverlay(capture: FrameCaptureScene | undefined): string {
   `;
 }
 
-function renderTeamPanel(
-  frame: GameFrame,
-  playerEntities: readonly FrameEntity[],
-  pendingCapture: FrameEntity | undefined,
-): string {
-  return `
-    <details class="drawer team-panel" data-team-panel>
-      <summary>
-        <span>팀 상세</span>
-        <span>전투력 ${frame.hud.teamPower}</span>
-      </summary>
-      <div class="meter" aria-label="팀 HP">
-        <span style="width: ${Math.round(frame.hud.teamHpRatio * 100)}%"></span>
-      </div>
-      <div class="team-slot-list">
-        ${renderTeamSlots(playerEntities, pendingCapture, frame.actions)}
-      </div>
-    </details>
-  `;
-}
-
 function renderTeamRecordPanel(
   record: HtmlRendererTeamRecordView | undefined,
   playerEntities: readonly FrameEntity[],
@@ -747,58 +660,6 @@ function renderTeamRecordPanel(
   `;
 }
 
-function renderTeamSlots(
-  playerEntities: readonly FrameEntity[],
-  pendingCapture: FrameEntity | undefined,
-  actions: readonly FrameAction[] = [],
-): string {
-  return Array.from({ length: 6 }, (_, index) => {
-    const entity = playerEntities[index];
-    const action = actions.find((candidate) => candidate.id === `team:replace:${index}`);
-    return renderTeamSlot(index, entity, pendingCapture, action);
-  }).join("");
-}
-
-function renderTeamSlot(
-  index: number,
-  entity: FrameEntity | undefined,
-  pendingCapture: FrameEntity | undefined,
-  action: FrameAction | undefined,
-): string {
-  const state = entity ? (entity.hp.current <= 0 ? "fainted" : "filled") : "empty";
-  const delta = entity && pendingCapture ? pendingCapture.scores.power - entity.scores.power : 0;
-  const deltaText = pendingCapture && entity ? `${delta >= 0 ? "+" : ""}${delta}` : "";
-  const actionButton = action
-    ? `<button type="button" data-action-id="${escapeHtml(action.id)}" data-role="${action.role}">교체</button>`
-    : "";
-
-  if (!entity) {
-    return `
-      <article class="team-slot" data-slot-state="empty">
-        <span class="slot-icon" aria-hidden="true"></span>
-        <div>
-          <h3>${index + 1}번 슬롯</h3>
-          <p>비어 있음</p>
-        </div>
-      </article>
-    `;
-  }
-
-  return `
-    <article class="team-slot" data-slot-state="${state}" data-entity-id="${escapeHtml(entity.id)}">
-      <span class="slot-icon" aria-hidden="true"></span>
-      <img src="${resolveAssetPath(entity.assetPath)}" alt="${escapeHtml(`${entity.name} 포켓몬`)}" loading="lazy" />
-      <div>
-        <h3>${escapeHtml(entity.name)}</h3>
-        <p>HP ${entity.hp.current}/${entity.hp.max} / 전투력 ${entity.scores.power}</p>
-      </div>
-      <div class="slot-meter hp-line"><span style="width: ${Math.round(entity.hp.ratio * 100)}%"></span></div>
-      ${pendingCapture ? `<span class="slot-delta" data-delta="${delta >= 0 ? "up" : "down"}">${deltaText}</span>` : ""}
-      ${actionButton}
-    </article>
-  `;
-}
-
 function renderAction(action: FrameAction, locked = false): string {
   const disabled = action.enabled && !locked ? "" : " disabled";
   const reason = locked
@@ -813,13 +674,7 @@ function renderAction(action: FrameAction, locked = false): string {
 }
 
 function renderCommandItem(command: CommandItem, locked: boolean): string {
-  if (command.type === "action") {
-    return renderAction(command.action, locked);
-  }
-
-  const disabled = locked ? " disabled" : "";
-  const reason = locked ? ' title="전투 리플레이 재생 중입니다."' : "";
-  return `<button type="button" data-panel-command-id="${escapeHtml(command.id)}" data-team-details-toggle data-role="${command.role}"${disabled}${reason}>${escapeHtml(command.label)}</button>`;
+  return renderAction(command.action, locked);
 }
 
 function renderBattleMonster(
@@ -1057,7 +912,7 @@ function unlockAudio(audioState: AudioState): void {
 }
 
 function syncAudio(audioState: AudioState, frame: GameFrame, playback: BattlePlaybackView): void {
-  if (!audioState.unlocked || audioState.muted) {
+  if (!audioState.unlocked) {
     audioState.bgm?.pause();
     return;
   }
@@ -1116,22 +971,6 @@ function playSfx(soundKey: string): void {
   const audio = new Audio(url);
   audio.volume = 0.34;
   void audio.play().catch(() => undefined);
-}
-
-function loadMutedPreference(): boolean {
-  try {
-    return window.localStorage.getItem(AUDIO_MUTED_STORAGE_KEY) === "1";
-  } catch {
-    return true;
-  }
-}
-
-function saveMutedPreference(muted: boolean): void {
-  try {
-    window.localStorage.setItem(AUDIO_MUTED_STORAGE_KEY, muted ? "1" : "0");
-  } catch {
-    return;
-  }
 }
 
 function escapeHtml(value: string): string {

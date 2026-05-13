@@ -44,9 +44,7 @@ export interface BattleCueText {
   text: string;
 }
 
-export type CommandItem =
-  | { type: "action"; action: FrameAction }
-  | { type: "panel"; id: string; label: string; role: FrameAction["role"] };
+export type CommandItem = { type: "action"; action: FrameAction };
 
 export interface ShopActionProfile {
   kind: string;
@@ -669,13 +667,7 @@ export function selectCommandItems(
     return [
       ...(replace ? [{ type: "action" as const, action: replace }] : []),
       ...(release ? [{ type: "action" as const, action: release }] : []),
-      {
-        type: "panel" as const,
-        id: "team:direct",
-        label: "팀 직접 선택",
-        role: "secondary" as const,
-      },
-    ].slice(0, 3);
+    ];
   }
 
   return frame.actions.slice(0, 3).map((action) => ({ type: "action", action }));

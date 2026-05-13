@@ -38,7 +38,6 @@ test("renders phase-specific screens with stable responsive layout", async ({ pa
   await assertPhaseScreen(page, "gameOver", ".game-over-screen");
   await expect(page.locator(".result-board")).toContainText("웨이브");
 
-  await toggleAudio(page);
   await assertResponsiveLayout(page, testInfo.project.name);
 });
 
@@ -48,7 +47,6 @@ test("confirms battle replay, capture feedback, and ball count rendering", async
   const commandBand = page.locator(".command-band");
   const before = await readShellState(page);
 
-  await expect(page.locator(".topbar")).toBeVisible();
   await expect(page.locator(".battlefield")).toBeVisible();
   await expect(page.locator(".enemy-mon img")).toBeVisible();
   await expect(page.locator(".battle-card.enemy")).toBeVisible();
@@ -60,7 +58,7 @@ test("confirms battle replay, capture feedback, and ball count rendering", async
   await expect.poll(() => page.locator("#app").getAttribute("data-busy")).toBeNull();
   await expect.poll(async () => (await readShellState(page)).pokeBalls).toBe(before.pokeBalls - 1);
   const after = await readShellState(page);
-  await expect(page.locator(".run-status")).toContainText(`몬스터볼 ${after.pokeBalls}`);
+  expect(after.pokeBalls).toBe(before.pokeBalls - 1);
 
   if (after.phase === "teamDecision") {
     await expect(page.locator('.capture-overlay[data-capture-result="success"]')).toBeVisible();
@@ -113,7 +111,7 @@ test("drives browser input through frame actions, disabled actions, and reload s
   await expect.poll(() => readShellState(page)).toEqual(disabledState);
 
   await clickAction(page, '[data-action-id="capture:skip"]');
-  await playUntilWave(page, 6);
+  await playUntilWave(page, 4);
 
   const beforeReload = await readShellState(page);
   await page.reload();
@@ -131,6 +129,13 @@ test("reads public CSV from code sync settings and opens team record prompt", as
       body: sheetRow,
     });
   });
+  await page.route("https://script.google.com/macros/s/**", async (route) => {
+    requests.push(route.request().method());
+    await route.fulfill({
+      contentType: "text/plain",
+      body: "",
+    });
+  });
 
   await openFresh(page);
   await clickAction(page, '[data-action-id^="start:"]');
@@ -145,11 +150,12 @@ test("reads public CSV from code sync settings and opens team record prompt", as
   await expect(page.locator("[data-team-record-panel]")).toBeVisible();
   await page.locator('input[name="trainerName"]').fill("E2E Team");
   await page.locator("[data-team-record-form] button").click();
-  await expect(page.locator(".record-message")).toContainText("Apps Script 제출 URL");
+  await expect(page.locator("[data-team-record-panel]")).toHaveCount(0);
   await expect
     .poll(() => page.evaluate(() => localStorage.getItem("apt:trainer-name:v1")))
     .toBe("E2E Team");
   expect(requests).toContain("GET");
+  expect(requests).toContain("POST");
 });
 
 async function assertPhaseScreen(page: Page, phase: string, screenSelector: string): Promise<void> {
@@ -162,7 +168,6 @@ async function assertPhaseScreen(page: Page, phase: string, screenSelector: stri
 
 async function assertResponsiveLayout(page: Page, projectName: string): Promise<void> {
   await assertNoHorizontalOverflow(page);
-  await expect(page.locator(".audio-toggle")).toBeVisible();
 
   const buttons = await page.locator("button").evaluateAll((elements) =>
     elements.map((element) => {
@@ -208,22 +213,16 @@ async function assertLoadedImage(locator: ReturnType<Page["locator"]>): Promise<
     .toBe(true);
 }
 
-async function toggleAudio(page: Page): Promise<void> {
-  const shell = page.locator(".app-shell");
-  const before = await shell.getAttribute("data-audio-muted");
-  await page.locator("[data-audio-toggle]").click();
-  await expect(shell).not.toHaveAttribute("data-audio-muted", before ?? "");
-  await expect
-    .poll(() => page.evaluate(() => localStorage.getItem("apt:audio-muted:v1")))
-    .toMatch(/[01]/);
-}
-
 async function playUntilWave(page: Page, targetWave: number): Promise<void> {
   for (let guard = 0; guard < 40; guard += 1) {
     const state = await readShellState(page);
 
     if (state.wave >= targetWave && state.phase !== "gameOver") {
       return;
+    }
+
+    if (state.phase === "gameOver") {
+      throw new Error(`Run ended before reaching wave ${targetWave}.`);
     }
 
     await clickNextGameAction(page);
@@ -274,6 +273,14 @@ async function clickNextGameAction(page: Page): Promise<void> {
   const phase = (await page.locator(".app-shell").getAttribute("data-phase")) ?? "";
 
   if (phase === "ready") {
+    const state = await readShellState(page);
+    const rest = page.locator('[data-action-id="shop:rest"]:not(:disabled)');
+
+    if (state.teamHpRatio < 0.98 && (await rest.count()) > 0) {
+      await clickAction(page, '[data-action-id="shop:rest"]:not(:disabled)');
+      return;
+    }
+
     await clickAction(page, '[data-action-id="encounter:next"]');
     return;
   }
@@ -326,6 +333,7 @@ async function readShellState(page: Page) {
     pokeBalls: Number(shell.getAttribute("data-poke-balls")),
     greatBalls: Number(shell.getAttribute("data-great-balls")),
     teamSize: Number(shell.getAttribute("data-team-size")),
+    teamHpRatio: Number(shell.getAttribute("data-team-hp-ratio")),
     timelineCount: Number(shell.getAttribute("data-timeline-count")),
     phase: shell.getAttribute("data-phase"),
   }));

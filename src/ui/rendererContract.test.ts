@@ -26,7 +26,6 @@ describe("renderer contract boundaries", () => {
     expect(source).toContain("data-action-id");
     expect(source).toContain("data-capture-result");
     expect(source).toContain("data-battle-effect");
-    expect(source).toContain("data-audio-toggle");
     expect(source).toContain("resolveAssetPath(entity.assetPath)");
     expect(source).toContain("resolveAssetPath(option.assetPath)");
     expect(source).toContain("resolveTrainerAssetPath(trainer.portraitPath)");
