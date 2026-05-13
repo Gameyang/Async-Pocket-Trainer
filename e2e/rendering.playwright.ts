@@ -1,21 +1,68 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import { CLIENT_SNAPSHOT_STORAGE_KEY } from "../src/browser/clientStorage";
+import { STARTER_SPECIES_CACHE_STORAGE_KEY } from "../src/browser/starterSpeciesCache";
+import { speciesCatalog } from "../src/game/data/catalog";
 import { HeadlessGameClient, type HeadlessClientSnapshot } from "../src/game/headlessClient";
 import { createTrainerSnapshot, serializeTrainerSnapshot } from "../src/game/sync/trainerSnapshot";
 
 test("renders phase-specific screens with stable responsive layout", async ({ page }, testInfo) => {
   await openFresh(page);
   await assertPhaseScreen(page, "starterChoice", ".starter-screen");
-  await expect(page.locator(".starter-option")).toHaveCount(3);
+  await expect(page.locator(".starter-option")).toHaveCount(speciesCatalog.length);
+  await expect(page.locator('.starter-option[data-starter-state="unlocked"]')).toHaveCount(3);
+  await expect(page.locator('.starter-option[data-starter-state="locked"]')).toHaveCount(
+    speciesCatalog.length - 3,
+  );
+  await expectStarterDexScrollContainment(page);
+  await expect(page.locator("[data-starter-reroll]")).toHaveCount(0);
   await expect(page.locator(".drawer[open]")).toHaveCount(0);
 
-  await clickAction(page, '[data-action-id^="start:"]');
+  await seedStarterSpeciesCache(page, [1, 4, 7, 10, 16, 19, 25, 35, 39, 52]);
+  await assertPhaseScreen(page, "starterChoice", ".starter-screen");
+  await expect(page.locator(".starter-option")).toHaveCount(speciesCatalog.length);
+  await expect(page.locator('.starter-option[data-starter-state="unlocked"]')).toHaveCount(10);
+  await expect(page.locator(".starter-choice-row")).toHaveAttribute(
+    "data-starter-density",
+    "dex",
+  );
+
+  const firstStarter = page.locator('.starter-option[data-starter-state="unlocked"]').first();
+  await firstStarter.locator("[data-starter-pick]").click();
+  await expect(page.locator(".starter-choice-row")).toHaveAttribute(
+    "data-selection-active",
+    "true",
+  );
+  await expect(firstStarter).toHaveAttribute("data-starter-selected", "true");
+  await expect(firstStarter.locator(".starter-confirm")).toBeVisible();
+  await expect(firstStarter.locator(".starter-cancel")).toBeVisible();
+  await firstStarter.locator("[data-starter-cancel]").click();
+  await expect(page.locator(".starter-choice-row")).not.toHaveAttribute(
+    "data-selection-active",
+    "true",
+  );
+  await selectStarterAndConfirm(page);
   await assertPhaseScreen(page, "ready", ".ready-screen");
   await expect(page.locator(".shop-screen")).toBeVisible();
-  await expect(page.locator(".shop-card[data-action-id]")).toHaveCount(3);
+  const shopCardCount = await page.locator(".shop-card[data-action-id]").count();
+  expect(shopCardCount).toBeGreaterThan(3);
+  expect(shopCardCount).toBeLessThanOrEqual(12);
+  await expect(page.locator(".shop-team-slot")).toHaveCount(6);
   await expect(page.locator(".command-band")).toHaveCount(0);
-  await assertLoadedImage(page.locator(".camp-lead img"));
+  await assertLoadedImage(page.locator(".shop-team-slot img").first());
+
+  await openSnapshot(page, shopTargetSelectionSnapshot());
+  await assertPhaseScreen(page, "ready", ".ready-screen");
+  await expect(page.locator(".shop-team-slot")).toHaveCount(6);
+  const beforeTargetHeal = await readShellState(page);
+  await page.locator('[data-action-id="shop:heal:single:1"]').click();
+  await expect(page.locator(".shop-screen")).toHaveAttribute("data-shop-targeting", "true");
+  await page.locator("[data-shop-target-id]:not(:disabled)").first().click();
+  await expect.poll(() => page.locator("#app").getAttribute("data-busy")).toBeNull();
+  await expect(page.locator(".shop-screen")).toHaveAttribute("data-shop-targeting", "false");
+  await expect.poll(async () => (await readShellState(page)).money).toBeLessThan(
+    beforeTargetHeal.money,
+  );
 
   await openSnapshot(page, captureDecisionSnapshot());
   await assertPhaseScreen(page, "captureDecision", ".encounter-panel");
@@ -25,7 +72,8 @@ test("renders phase-specific screens with stable responsive layout", async ({ pa
   await assertPhaseScreen(page, "teamDecision", ".team-decision-screen");
   await expect(page.locator('.capture-overlay[data-capture-result="success"]')).toBeVisible();
   await expect(page.locator(".candidate-card")).toBeVisible();
-  await expect(page.locator(".reward-board")).toBeVisible();
+  await expect(page.locator(".team-compare-panel")).toBeVisible();
+  await expect(page.locator(".team-compare-slot")).toHaveCount(6);
   await expect(page.locator(".command-band button")).toHaveCount(2);
 
   await openSnapshot(page, failedCaptureReadySnapshot());
@@ -36,6 +84,10 @@ test("renders phase-specific screens with stable responsive layout", async ({ pa
 
   await openSnapshot(page, gameOverSnapshot());
   await assertPhaseScreen(page, "gameOver", ".game-over-screen");
+  await expect(page.locator(".final-team-panel")).toBeVisible();
+  await expect(page.locator(".final-team-slot")).toHaveCount(6);
+  await expect(page.locator('[data-action-id="restart:team:0"]')).toBeVisible();
+  await expect(page.locator('[data-action-id="restart:starter-choice"]')).toBeVisible();
   await expect(page.locator(".result-board")).toContainText("웨이브");
 
   await assertResponsiveLayout(page, testInfo.project.name);
@@ -68,18 +120,25 @@ test("confirms battle replay, capture feedback, and ball count rendering", async
   }
 
   await openFresh(page);
-  await clickAction(page, '[data-action-id^="start:"]');
+  await selectStarterAndConfirm(page);
   await page.locator('[data-action-id="encounter:next"]').first().click();
   await expect.poll(() => page.locator("#app").getAttribute("data-busy")).toBeNull();
   await expect(shell).toHaveAttribute("data-battle-playback", "playing");
+  await expect(page.locator(".capture-overlay")).toHaveCount(0);
   await expect(page.locator("[data-replay-skip]")).toBeVisible();
-  const firstSequence = Number(await shell.getAttribute("data-battle-sequence"));
+  await expect
+    .poll(() => shell.getAttribute("data-battle-event-type"))
+    .toMatch(/^(damage\.apply|move\.miss|creature\.faint)$/);
   await expect(page.locator(".battle-float").first()).toBeVisible();
+  const firstSequence = Number(await shell.getAttribute("data-battle-sequence"));
   await expect
     .poll(async () => Number(await shell.getAttribute("data-battle-sequence")))
     .toBeGreaterThan(firstSequence);
   await expect(page.locator(".screen-monster[data-battle-effect]").first()).toBeVisible();
   await skipBattleReplay(page);
+  if ((await readShellState(page)).phase === "captureDecision") {
+    await expect(page.locator('.capture-overlay[data-capture-result="choosing"]')).toBeVisible();
+  }
 
   const screenBox = await page.locator(".screen").boundingBox();
   const commandBox = (await commandBand.count()) > 0 ? await commandBand.boundingBox() : null;
@@ -94,7 +153,7 @@ test("drives browser input through frame actions, disabled actions, and reload s
 }) => {
   await openFresh(page);
 
-  await clickAction(page, '[data-action-id^="start:"]');
+  await selectStarterAndConfirm(page);
   const started = await readShellState(page);
   expect(started.frameId).toBe(1);
   expect(started.teamSize).toBe(1);
@@ -138,7 +197,7 @@ test("reads public CSV from code sync settings and opens team record prompt", as
   });
 
   await openFresh(page);
-  await clickAction(page, '[data-action-id^="start:"]');
+  await selectStarterAndConfirm(page);
   await playUntilWave(page, 5);
 
   await page.locator('[data-action-id="encounter:next"]').first().click();
@@ -231,9 +290,46 @@ async function playUntilWave(page: Page, targetWave: number): Promise<void> {
   throw new Error(`Could not reach wave ${targetWave}.`);
 }
 
+async function expectStarterDexScrollContainment(page: Page): Promise<void> {
+  const metrics = await page.locator(".starter-screen").evaluate((screen) => {
+    const row = screen.querySelector<HTMLElement>(".starter-choice-row");
+    const shell = screen.closest<HTMLElement>(".app-shell");
+
+    if (!row || !shell) {
+      throw new Error("Starter dex scroll elements were not found.");
+    }
+
+    return {
+      rowCanScroll: row.scrollHeight > row.clientHeight + 1,
+      screenCanScroll: screen.scrollHeight > screen.clientHeight + 1,
+      shellCanScroll: shell.scrollHeight > shell.clientHeight + 1,
+    };
+  });
+
+  expect(metrics).toEqual({
+    rowCanScroll: true,
+    screenCanScroll: false,
+    shellCanScroll: false,
+  });
+}
+
 async function openFresh(page: Page): Promise<void> {
   await page.goto("/");
   await page.evaluate(() => localStorage.clear());
+  await page.reload();
+  await expect(page.locator(".app-shell")).toBeVisible();
+}
+
+async function seedStarterSpeciesCache(page: Page, speciesIds: number[]): Promise<void> {
+  await page.evaluate(
+    ({ key, value }) => {
+      localStorage.setItem(key, value);
+    },
+    {
+      key: STARTER_SPECIES_CACHE_STORAGE_KEY,
+      value: JSON.stringify(speciesIds),
+    },
+  );
   await page.reload();
   await expect(page.locator(".app-shell")).toBeVisible();
 }
@@ -301,8 +397,13 @@ async function clickNextGameAction(page: Page): Promise<void> {
     return;
   }
 
-  if (phase === "gameOver" || phase === "starterChoice") {
-    await clickAction(page, '[data-action-id^="start:"]');
+  if (phase === "starterChoice") {
+    await selectStarterAndConfirm(page);
+    return;
+  }
+
+  if (phase === "gameOver") {
+    await clickAction(page, '[data-action-id^="restart:team:"]');
     return;
   }
 
@@ -314,6 +415,18 @@ async function clickAction(page: Page, selector: string): Promise<void> {
   await expect.poll(() => page.locator("#app").getAttribute("data-busy")).toBeNull();
   await expect(page.locator(".app-shell")).toBeVisible();
   await skipBattleReplay(page);
+}
+
+async function selectStarterAndConfirm(page: Page): Promise<void> {
+  const starter = page.locator('.starter-option[data-starter-state="unlocked"]').first();
+
+  await starter.locator("[data-starter-pick]").click();
+  await expect(starter).toHaveAttribute("data-starter-selected", "true");
+  await expect(page.locator(".starter-choice-row")).toHaveAttribute(
+    "data-selection-active",
+    "true",
+  );
+  await clickAction(page, '.starter-option[data-starter-selected="true"] [data-action-id^="start:"]');
 }
 
 async function skipBattleReplay(page: Page): Promise<void> {
@@ -344,6 +457,18 @@ function captureDecisionSnapshot(): HeadlessClientSnapshot {
   client.dispatch({ type: "START_RUN", starterSpeciesId: 1 });
   client.dispatch({ type: "RESOLVE_NEXT_ENCOUNTER" });
   return client.saveSnapshot();
+}
+
+function shopTargetSelectionSnapshot(): HeadlessClientSnapshot {
+  const client = new HeadlessGameClient({ seed: "e2e-shop-target" });
+  client.dispatch({ type: "START_RUN", starterSpeciesId: 1 });
+  const snapshot = client.saveSnapshot();
+  snapshot.state.money = 12;
+  snapshot.state.team = snapshot.state.team.map((creature, index) => ({
+    ...creature,
+    currentHp: index === 0 ? 1 : creature.currentHp,
+  }));
+  return snapshot;
 }
 
 function teamDecisionSnapshot(): HeadlessClientSnapshot {

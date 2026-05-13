@@ -7,7 +7,8 @@ import type {
   FrameVisualCue,
   GameFrame,
 } from "../game/view/frame";
-import { formatMoney, formatWave, localizeBall } from "../game/localization";
+import { formatMoney, formatWave, localizeBallShort } from "../game/localization";
+import { ballTypes } from "../game/types";
 import {
   createBattleCueText,
   createBattleEventSummary,
@@ -130,12 +131,15 @@ function drawDevice(context: CanvasRenderingContext2D, frame: GameFrame, draw: D
     draw.width - 24,
     35,
   );
-  context.fillText(
-    `${localizeBall("pokeBall")} ${frame.hud.balls.pokeBall}  ${localizeBall("greatBall")} ${frame.hud.balls.greatBall}`,
-    draw.width - 24,
-    53,
-  );
+  context.fillText(formatBallInventory(frame), draw.width - 24, 53);
   context.textAlign = "left";
+}
+
+function formatBallInventory(frame: GameFrame): string {
+  return ballTypes
+    .filter((ball) => frame.hud.balls[ball] > 0 || ball === "pokeBall" || ball === "greatBall")
+    .map((ball) => `${localizeBallShort(ball)} ${frame.hud.balls[ball]}`)
+    .join("  ");
 }
 
 function shouldDrawBattleScreen(frame: GameFrame): boolean {
@@ -251,8 +255,7 @@ function drawStarterCard(
   context.font = "700 9px sans-serif";
   context.fillStyle = "#34413c";
   context.fillText(option.typeLabels.join("/").slice(0, 14), x + width / 2, y + 112);
-  context.fillText(`전투력 ${option.power}`, x + width / 2, y + 130);
-  context.fillText(option.moves[0]?.name.slice(0, 12) ?? "기술", x + width / 2, y + 148);
+  context.fillText("시작 시 개체 수치 결정", x + width / 2, y + 136);
   context.textAlign = "left";
 }
 
@@ -296,11 +299,23 @@ function drawReadyScreen(
     context.fillText(`전투력 ${lead.scores.power}`, rect.x + 154, rect.y + 188);
   }
 
-  const actions = selectReadyShopActions(frame, screenEntities.players);
-  const cardWidth = (rect.width - 48) / Math.max(1, actions.length);
+  const actions = selectReadyShopActions(frame, screenEntities.players).slice(0, 12);
+  const columns = 3;
+  const rows = 4;
+  const gap = 8;
+  const gridX = rect.x + 16;
+  const gridY = rect.y + rect.height * 0.5;
+  const gridWidth = rect.width - 32;
+  const gridHeight = rect.height * 0.5 - 16;
+  const cardWidth = (gridWidth - gap * (columns - 1)) / columns;
+  const cardHeight = (gridHeight - gap * (rows - 1)) / rows;
+
   actions.forEach((action, index) => {
-    const x = rect.x + 16 + index * (cardWidth + 8);
-    drawShopCard(context, action, frame, x, rect.y + rect.height - 116, cardWidth, 96);
+    const column = index % columns;
+    const row = Math.floor(index / columns);
+    const x = gridX + column * (cardWidth + gap);
+    const y = gridY + row * (cardHeight + gap);
+    drawShopCard(context, action, frame, x, y, cardWidth, cardHeight);
   });
 }
 
@@ -321,16 +336,18 @@ function drawShopCard(
         ? "#94d9a1"
         : profile.kind === "item"
           ? "#94c8dd"
-          : "#d6b05e";
+          : profile.kind === "scout"
+            ? "#d9c2ff"
+            : "#d6b05e";
   drawPanel(context, x, y, width, height, fill);
   context.fillStyle = "#17202a";
   context.font = "700 9px sans-serif";
-  context.fillText(profile.kicker.slice(0, 9), x + 8, y + 18);
+  context.fillText(profile.kicker.slice(0, 9), x + 8, y + height * 0.25);
   context.font = "700 12px sans-serif";
-  context.fillText(profile.title.slice(0, 11), x + 8, y + 40);
+  context.fillText(profile.title.slice(0, 11), x + 8, y + height * 0.5);
   context.font = "700 9px sans-serif";
-  context.fillText(profile.detail.slice(0, 13), x + 8, y + 61);
-  context.fillText(profile.meta.slice(0, 13), x + 8, y + 79);
+  context.fillText(profile.detail.slice(0, 13), x + 8, y + height * 0.72);
+  context.fillText(profile.meta.slice(0, 13), x + 8, y + height - 8);
 }
 
 function drawTeamDecisionScreen(

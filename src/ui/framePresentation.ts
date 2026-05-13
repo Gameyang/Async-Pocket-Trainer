@@ -54,6 +54,8 @@ export interface ShopActionProfile {
   meta: string;
 }
 
+const MAX_READY_SHOP_ACTIONS = 12;
+
 export function getLatestVisualCue(frame: GameFrame): FrameVisualCue | undefined {
   return [...frame.visualCues].reverse().find((cue) => cue.type !== "phase.change");
 }
@@ -311,6 +313,16 @@ export function createBattleEventSummary(
     };
   }
 
+  if (activeEvent.type === "move.effect") {
+    return {
+      kind: "status",
+      turn,
+      title: source !== "???" ? source : entity,
+      result: activeEvent.move ?? "?④낵",
+      detail: activeEvent.label,
+    };
+  }
+
   if (activeEvent.type === "damage.apply") {
     const kind = resolveDamageCueKind(activeEvent, activeCue);
     return {
@@ -427,6 +439,10 @@ export function createBattleCueText(
     return { kind: "status", text: localizeBattleStatus(activeEvent.status) };
   }
 
+  if (activeEvent.type === "move.effect") {
+    return { kind: "status", text: activeEvent.move ?? "?④낵" };
+  }
+
   return activeCue ? createVisualCueText(activeCue) : undefined;
 }
 
@@ -533,6 +549,10 @@ export function formatBattleEventLabel(
     return `${withJosa(`${source}의 ${activeEvent.move ?? "기술"}`, "이/가")} ${target}에게 빗나갔습니다.`;
   }
 
+  if (activeEvent.type === "move.effect") {
+    return activeEvent.label;
+  }
+
   if (activeEvent.type === "damage.apply") {
     const notes = formatDamageSummaryNotes(activeEvent).replace(" / ", "");
     return `${source}의 ${activeEvent.move ?? "기술"}! ${target}에게 ${activeEvent.damage ?? 0} 피해.${
@@ -600,16 +620,26 @@ export function selectReadyShopActions(
 ): FrameAction[] {
   const next = findAction(frame.actions, "encounter:next");
   const rest = findAction(frame.actions, "shop:rest");
-  const pokeBall = findAction(frame.actions, "shop:pokeball");
-  const greatBall = findAction(frame.actions, "shop:greatball");
   const routeActions = ["route:elite", "route:supply", "route:normal"]
     .map((id) => findAction(frame.actions, id))
     .filter((action): action is FrameAction => action !== undefined && action.enabled);
   const needsRest =
     frame.hud.teamHpRatio < 0.75 || playerEntities.some((entity) => entity.hp.current <= 0);
+  const totalBalls = Object.values(frame.hud.balls).reduce((total, count) => total + count, 0);
+  const shopActions = frame.actions
+    .filter((action) => action.id.startsWith("shop:"))
+    .sort((left, right) => {
+      const leftScore = scoreReadyShopAction(left, frame.hud.money, needsRest, totalBalls);
+      const rightScore = scoreReadyShopAction(right, frame.hud.money, needsRest, totalBalls);
+      return rightScore - leftScore;
+    });
   const picks: FrameAction[] = [];
-  const add = (action: FrameAction | undefined) => {
-    if (!action || !action.enabled || picks.some((existing) => existing.id === action.id)) {
+  const add = (action: FrameAction | undefined, allowDisabled = false) => {
+    if (
+      !action ||
+      (!allowDisabled && !action.enabled) ||
+      picks.some((existing) => existing.id === action.id)
+    ) {
       return;
     }
 
@@ -617,28 +647,57 @@ export function selectReadyShopActions(
   };
 
   add(next);
+  add(rest, true);
 
-  if (needsRest) {
-    add(rest);
-  }
-
-  if (frame.hud.balls.pokeBall < 2) {
-    add(pokeBall);
-  }
-
-  if (frame.hud.balls.greatBall < 1) {
-    add(greatBall);
-  }
-
-  for (const action of [...routeActions, rest, pokeBall, greatBall]) {
-    if (picks.length >= 3) {
+  for (const action of [...routeActions, ...shopActions]) {
+    if (picks.length >= MAX_READY_SHOP_ACTIONS) {
       break;
     }
 
-    add(action);
+    add(action, true);
   }
 
-  return picks.slice(0, 3);
+  return picks.slice(0, MAX_READY_SHOP_ACTIONS);
+}
+
+function scoreReadyShopAction(
+  action: FrameAction,
+  money: number,
+  needsRest: boolean,
+  totalBalls: number,
+): number {
+  const cost = action.cost ?? 0;
+  const overBudget = Math.max(0, cost - money);
+  const budgetFit = cost <= money ? cost : money - overBudget * 0.65 - 24;
+  const availability = action.enabled ? 40 : 0;
+
+  if (action.action.type === "REST_TEAM") {
+    return budgetFit + availability + (needsRest ? 140 : 30);
+  }
+
+  if (action.action.type === "BUY_HEAL") {
+    const scopeBonus = action.action.scope === "team" ? 18 : 10;
+    return budgetFit + availability + (needsRest ? 110 : 20) + scopeBonus;
+  }
+
+  if (action.action.type === "BUY_BALL") {
+    return budgetFit + availability + (totalBalls <= 2 ? 100 : 45);
+  }
+
+  if (action.action.type === "BUY_SCOUT") {
+    const kindBonus = action.action.kind === "power" ? 8 : 12;
+    return budgetFit + availability + 25 + kindBonus;
+  }
+
+  if (action.action.type === "BUY_RARITY_BOOST") {
+    return budgetFit + availability + 15 + action.action.tier * 4;
+  }
+
+  if (action.action.type === "BUY_LEVEL_BOOST") {
+    return budgetFit + availability + 12 + action.action.tier * 4;
+  }
+
+  return budgetFit;
 }
 
 export function selectCommandItems(
@@ -668,6 +727,14 @@ export function selectCommandItems(
       ...(replace ? [{ type: "action" as const, action: replace }] : []),
       ...(release ? [{ type: "action" as const, action: release }] : []),
     ];
+  }
+
+  if (frame.phase === "captureDecision") {
+    return frame.actions.map((action) => ({ type: "action", action }));
+  }
+
+  if (frame.phase === "gameOver") {
+    return frame.actions.map((action) => ({ type: "action", action }));
   }
 
   return frame.actions.slice(0, 3).map((action) => ({ type: "action", action }));
@@ -712,26 +779,67 @@ export function createShopActionProfile(action: FrameAction, frame: GameFrame): 
     };
   }
 
-  if (action.id === "shop:rest") {
+  if (action.action.type === "REST_TEAM") {
     return {
       kind: "rest",
       kicker: "정비",
-      title: "전원 회복",
+      title: "전체 회복 5단계",
       detail: `팀 HP ${Math.round(frame.hud.teamHpRatio * 100)}%`,
       meta: action.cost === undefined ? action.label : formatMoney(action.cost),
     };
   }
 
-  if (action.id === "shop:pokeball" || action.id === "shop:greatball") {
+  if (action.action.type === "BUY_HEAL") {
+    return {
+      kind: "rest",
+      kicker: action.action.scope === "team" ? "전체" : "단일",
+      title: `회복 ${action.action.tier}단계`,
+      detail:
+        action.action.scope === "team"
+          ? `팀 HP ${Math.round(frame.hud.teamHpRatio * 100)}%`
+          : "가장 다친 포켓몬",
+      meta: action.cost === undefined ? action.label : formatMoney(action.cost),
+    };
+  }
+
+  if (action.action.type === "BUY_BALL") {
+    const ball = action.action.ball;
     return {
       kind: "item",
-      kicker: "상점",
-      title: action.id === "shop:greatball" ? localizeBall("greatBall") : localizeBall("pokeBall"),
-      detail:
-        action.id === "shop:greatball"
-          ? `보유 ${frame.hud.balls.greatBall}`
-          : `보유 ${frame.hud.balls.pokeBall}`,
+      kicker: "볼",
+      title: localizeBall(ball),
+      detail: `보유 ${frame.hud.balls[ball]}`,
       meta: action.cost === undefined ? action.label : formatMoney(action.cost),
+    };
+  }
+
+  if (action.action.type === "BUY_SCOUT") {
+    return {
+      kind: "scout",
+      kicker: action.action.kind === "rarity" ? "희귀" : "강도",
+      title: `탐지 ${action.action.tier}단계`,
+      detail: action.action.kind === "rarity" ? "희귀도 리포트" : "전투력 리포트",
+      meta: action.cost === undefined ? action.label : formatMoney(action.cost),
+    };
+  }
+
+  if (action.action.type === "BUY_RARITY_BOOST") {
+    return {
+      kind: "rarity-boost",
+      kicker: "희귀도",
+      title: "희귀도 보정",
+      detail: "다음 만남 종족값 상승",
+      meta: action.cost === undefined ? "선택" : formatMoney(action.cost),
+    };
+  }
+
+  if (action.action.type === "BUY_LEVEL_BOOST") {
+    return {
+      kind: "level-boost",
+      kicker: "숙련도",
+      title: "숙련도 보정",
+      detail: "다음 만남 레벨 상승",
+      meta: action.cost === undefined ? "선택" : formatMoney(action.cost),
     };
   }
 

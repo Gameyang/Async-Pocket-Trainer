@@ -46,6 +46,17 @@ const tackle: MoveDefinition = {
   power: 40,
   accuracy: 1,
   category: "physical",
+  priority: 0,
+  flags: [],
+  statChanges: [],
+  meta: {
+    drain: 0,
+    healing: 0,
+    critRate: 0,
+    ailmentChance: 0,
+    flinchChance: 0,
+    statChance: 0,
+  },
 };
 
 function creature(

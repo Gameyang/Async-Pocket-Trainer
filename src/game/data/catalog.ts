@@ -2,10 +2,13 @@ import rawBattleData from "./pokemonBattleRuntimeData.json" with { type: "json" 
 import type { MoveRecord, PokemonBattleData, PokemonRecord } from "./pokemonBattleData";
 import { clamp } from "../rng";
 import type {
+  BattleStat,
   BattleStatus,
   ElementType,
   GameBalance,
   MoveDefinition,
+  MoveMeta,
+  SpeciesLevelUpMove,
   SpeciesDefinition,
   Stats,
 } from "../types";
@@ -37,9 +40,15 @@ export const defaultBalance: GameBalance = {
   teamRestCost: 20,
   pokeBallCost: 9,
   greatBallCost: 22,
+  ultraBallCost: 45,
+  hyperBallCost: 80,
+  masterBallCost: 160,
   startingMoney: 50,
   startingPokeBalls: 5,
   startingGreatBalls: 1,
+  startingUltraBalls: 0,
+  startingHyperBalls: 0,
+  startingMasterBalls: 0,
 };
 
 export const movesById: Record<string, MoveDefinition> = Object.fromEntries(
@@ -78,10 +87,23 @@ export function getMove(moveId: string): MoveDefinition {
   return found;
 }
 
+export function getUnlockedLevelUpMoveIds(speciesId: number, level: number): string[] {
+  const normalizedLevel = clamp(Math.floor(level), 1, 100);
+
+  return getSpecies(speciesId).levelUpMoves
+    .filter((entry) => entry.level <= normalizedLevel)
+    .map((entry) => entry.moveId);
+}
+
+export function getLevelUpMoveIds(speciesId: number): string[] {
+  return getSpecies(speciesId).levelUpMoves.map((entry) => entry.moveId);
+}
+
 function toSpeciesDefinition(record: PokemonRecord): SpeciesDefinition {
   const baseStats = toStats(record);
   const fallbackMove = movesById.tackle ? ["tackle"] : Object.keys(movesById).slice(0, 1);
   const movePool = buildMovePool(record);
+  const levelUpMoves = buildLevelUpMoves(record);
   const baseStatTotal =
     baseStats.hp + baseStats.attack + baseStats.defense + baseStats.special + baseStats.speed;
   const legendaryBonus = record.species.legendary || record.species.mythical ? 2 : 0;
@@ -93,6 +115,8 @@ function toSpeciesDefinition(record: PokemonRecord): SpeciesDefinition {
     types: record.types as ElementType[],
     baseStats,
     movePool: movePool.length > 0 ? movePool : fallbackMove,
+    levelUpMoves,
+    weightHg: record.weightHg,
     captureRate: clamp(record.species.captureRate / 255, 0.08, 0.78),
     rarity,
   };
@@ -111,11 +135,11 @@ function toStats(record: PokemonRecord): Stats {
 }
 
 function toMoveDefinition(record: MoveRecord): MoveDefinition | undefined {
-  if (!record.power || record.power <= 0) {
-    return undefined;
-  }
-
-  if (record.damageClass !== "physical" && record.damageClass !== "special") {
+  if (
+    record.damageClass !== "physical" &&
+    record.damageClass !== "special" &&
+    record.damageClass !== "status"
+  ) {
     return undefined;
   }
 
@@ -123,9 +147,17 @@ function toMoveDefinition(record: MoveRecord): MoveDefinition | undefined {
     id: record.identifier,
     name: record.names.ko ?? toTitleCase(record.identifier),
     type: record.type as ElementType,
-    power: record.power,
+    power: record.power ?? 0,
     accuracy: (record.accuracy ?? 100) / 100,
     category: record.damageClass,
+    priority: record.priority,
+    target: record.target ?? undefined,
+    effectId: record.effectId ?? undefined,
+    flags: [...record.flags],
+    statChanges: record.statChanges
+      .map((change) => toMoveStatChange(change.stat, change.change))
+      .filter((change): change is NonNullable<typeof change> => Boolean(change)),
+    meta: toMoveMeta(record),
     statusEffect: toStatusEffect(record),
   };
 }
@@ -137,7 +169,10 @@ function toStatusEffect(record: MoveRecord): MoveDefinition["statusEffect"] {
     return undefined;
   }
 
-  const chancePercent = record.meta?.ailmentChance || record.effectChance || 0;
+  const chancePercent =
+    record.meta?.ailmentChance ||
+    record.effectChance ||
+    (record.meta?.category === "ailment" ? 100 : 0);
 
   if (chancePercent <= 0) {
     return undefined;
@@ -147,6 +182,39 @@ function toStatusEffect(record: MoveRecord): MoveDefinition["statusEffect"] {
     status: ailment,
     chance: clamp(chancePercent / 100, 0, 1),
   };
+}
+
+function toMoveMeta(record: MoveRecord): MoveMeta {
+  return {
+    category: record.meta?.category ?? undefined,
+    ailment: record.meta?.ailment ?? undefined,
+    minHits: record.meta?.minHits ?? undefined,
+    maxHits: record.meta?.maxHits ?? undefined,
+    minTurns: record.meta?.minTurns ?? undefined,
+    maxTurns: record.meta?.maxTurns ?? undefined,
+    drain: record.meta?.drain ?? 0,
+    healing: record.meta?.healing ?? 0,
+    critRate: record.meta?.critRate ?? 0,
+    ailmentChance: record.meta?.ailmentChance ?? 0,
+    flinchChance: record.meta?.flinchChance ?? 0,
+    statChance: record.meta?.statChance ?? 0,
+  };
+}
+
+function toMoveStatChange(stat: string, change: number): { stat: BattleStat; change: number } | undefined {
+  switch (stat) {
+    case "attack":
+    case "defense":
+    case "speed":
+    case "accuracy":
+    case "evasion":
+      return { stat, change };
+    case "special-attack":
+    case "special-defense":
+      return { stat: "special", change };
+    default:
+      return undefined;
+  }
 }
 
 function isSupportedBattleStatus(value: string | null | undefined): value is BattleStatus {
@@ -172,7 +240,44 @@ function buildMovePool(record: PokemonRecord): string[] {
     .map((move) => move.identifier)
     .filter((identifier) => Boolean(movesById[identifier]));
 
-  return [...new Set(candidates)].slice(0, 12);
+  return [...new Set(candidates)];
+}
+
+function buildLevelUpMoves(record: PokemonRecord): SpeciesLevelUpMove[] {
+  const learnset = record.learnsets[defaultLearnsetGroup]?.["level-up"] ?? [];
+  const entries = learnset
+    .slice()
+    .sort(compareLearnsetEntries)
+    .map(([moveId, level, order]) => {
+      const move = rawMovesByNumericId.get(moveId);
+
+      return move && movesById[move.identifier]
+        ? {
+            moveId: move.identifier,
+            level,
+            order,
+          }
+        : undefined;
+    })
+    .filter((entry): entry is SpeciesLevelUpMove => Boolean(entry));
+  const seen = new Set<string>();
+
+  return entries.filter((entry) => {
+    if (seen.has(entry.moveId)) {
+      return false;
+    }
+
+    seen.add(entry.moveId);
+    return true;
+  });
+}
+
+function compareLearnsetEntries(
+  left: [moveId: number, level: number, order: number | null],
+  right: [moveId: number, level: number, order: number | null],
+): number {
+  const levelDiff = left[1] - right[1];
+  return levelDiff === 0 ? (left[2] ?? 0) - (right[2] ?? 0) : levelDiff;
 }
 
 function toTitleCase(identifier: string): string {

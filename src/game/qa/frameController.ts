@@ -73,17 +73,15 @@ function chooseCaptureAction(
     return actions.find((action) => action.id === "capture:skip");
   }
 
-  if (frame.hud.wave >= 7) {
-    const greatBall = actions.find((action) => action.id === "capture:greatball");
-
-    if (greatBall) {
-      return greatBall;
-    }
-  }
+  const preferredIds =
+    frame.hud.wave >= 10
+      ? ["capture:masterball", "capture:hyperball", "capture:ultraball", "capture:greatball"]
+      : frame.hud.wave >= 7
+        ? ["capture:hyperball", "capture:ultraball", "capture:greatball", "capture:pokeball"]
+        : ["capture:pokeball", "capture:greatball", "capture:ultraball"];
 
   return (
-    actions.find((action) => action.id === "capture:pokeball") ??
-    actions.find((action) => action.id === "capture:greatball") ??
+    preferredIds.map((id) => actions.find((action) => action.id === id)).find(Boolean) ??
     actions.find((action) => action.id === "capture:skip")
   );
 }

@@ -1,4 +1,11 @@
-import type { BallType, BattleStatus, ElementType, EncounterKind, GamePhase } from "./types";
+import type {
+  BallType,
+  BattleStatus,
+  ElementType,
+  EncounterKind,
+  GamePhase,
+  VolatileBattleStatus,
+} from "./types";
 
 export type KoreanJosaPair = "이/가" | "을/를" | "은/는" | "와/과" | "으로/로";
 
@@ -27,13 +34,23 @@ const typeLabels: Record<ElementType, string> = {
   fairy: "페어리",
 };
 
-const statusLabels: Record<BattleStatus, string> = {
+const statusLabels: Record<string, string> = {
   burn: "화상",
   poison: "독",
   paralysis: "마비",
   sleep: "잠듦",
   freeze: "얼음",
 };
+
+const volatileStatusLabels: Record<VolatileBattleStatus, string> = {
+  confusion: "confusion",
+  trap: "trap",
+  "leech-seed": "leech seed",
+  disable: "disable",
+  yawn: "yawn",
+  "stealth-rock": "stealth rock",
+};
+Object.assign(statusLabels, volatileStatusLabels);
 
 export function formatWave(wave: number): string {
   return `${wave}웨이브`;
@@ -44,11 +61,33 @@ export function formatMoney(money: number): string {
 }
 
 export function localizeBall(ball: BallType): string {
-  return ball === "greatBall" ? "슈퍼볼" : "몬스터볼";
+  switch (ball) {
+    case "pokeBall":
+      return "몬스터볼";
+    case "greatBall":
+      return "슈퍼볼";
+    case "ultraBall":
+      return "하이퍼볼";
+    case "hyperBall":
+      return "레전드볼";
+    case "masterBall":
+      return "마스터볼";
+  }
 }
 
 export function localizeBallShort(ball: BallType): string {
-  return ball === "greatBall" ? "슈퍼" : "몬볼";
+  switch (ball) {
+    case "pokeBall":
+      return "몬볼";
+    case "greatBall":
+      return "슈퍼";
+    case "ultraBall":
+      return "하이퍼";
+    case "hyperBall":
+      return "레전드";
+    case "masterBall":
+      return "마스터";
+  }
 }
 
 export function withJosa(value: string, pair: KoreanJosaPair): string {
@@ -77,7 +116,9 @@ export function selectJosa(value: string, pair: KoreanJosaPair): string {
   }
 }
 
-export function localizeBattleStatus(status: BattleStatus | undefined): string {
+export function localizeBattleStatus(
+  status: BattleStatus | VolatileBattleStatus | undefined,
+): string {
   return status ? statusLabels[status] : "상태 이상";
 }
 

@@ -37,6 +37,9 @@ function teamDecisionFrame(capturedPower: number): GameFrame {
       balls: {
         pokeBall: 0,
         greatBall: 0,
+        ultraBall: 0,
+        hyperBall: 0,
+        masterBall: 0,
       },
       teamPower: 300,
       teamHpRatio: 1,

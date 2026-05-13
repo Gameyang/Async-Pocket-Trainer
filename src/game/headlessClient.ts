@@ -1,6 +1,6 @@
 import { runAutoBattle } from "./battle/battleEngine";
 import { attemptCapture } from "./capture/captureSystem";
-import { createCreature, healTeam } from "./creatureFactory";
+import { createCreature, healTeam, normalizeCreatureBattleLoadout } from "./creatureFactory";
 import { defaultBalance, starterSpeciesIds } from "./data/catalog";
 import {
   DEFAULT_HEADLESS_TRAINER_NAME,
@@ -11,6 +11,14 @@ import {
 } from "./localization";
 import { SeededRng } from "./rng";
 import { chooseReplacementIndex, getTeamHealthRatio, scoreTeam } from "./scoring";
+import {
+  getBallCost,
+  getHealProduct,
+  getLevelBoostProduct,
+  getRarityBoostProduct,
+  getScoutProduct,
+} from "./shopCatalog";
+import { ballTypes } from "./types";
 import { createGameFrame, type GameFrame } from "./view/frame";
 import {
   calculateReward,
@@ -23,13 +31,20 @@ import type { TrainerSnapshot } from "./sync/trainerSnapshot";
 import type {
   AutoPlayOptions,
   BallType,
+  EncounterBoost,
   EncounterSnapshot,
   GameAction,
   GameBalance,
   GameEvent,
   GameState,
+  HealScope,
+  HealTier,
+  LevelBoostTier,
+  RarityBoostTier,
   RouteId,
   RunSummary,
+  ScoutKind,
+  ScoutTier,
 } from "./types";
 
 export interface HeadlessClientOptions {
@@ -69,10 +84,7 @@ export class HeadlessGameClient {
       phase: "starterChoice",
       currentWave: 1,
       money: this.balance.startingMoney,
-      balls: {
-        pokeBall: this.balance.startingPokeBalls,
-        greatBall: this.balance.startingGreatBalls,
-      },
+      balls: createStartingBalls(this.balance),
       team: [],
       events: [],
     };
@@ -109,7 +121,7 @@ export class HeadlessGameClient {
 
     this.balance = normalizeBalance(snapshot.balance);
     this.trainerSnapshots = snapshot.trainerSnapshots.map(cloneTrainerSnapshot);
-    this.state = cloneState(snapshot.state);
+    this.state = normalizeStateBattleLoadouts(cloneState(snapshot.state));
     this.rng.setState(this.state.rngState);
     this.frameId = snapshot.frameId;
     this.nextEventId = snapshot.nextEventId;
@@ -134,6 +146,9 @@ export class HeadlessGameClient {
       case "START_RUN":
         this.startRun(action.starterSpeciesId, action.trainerName);
         break;
+      case "RETURN_TO_STARTER_CHOICE":
+        this.returnToStarterChoice(action.trainerName);
+        break;
       case "SET_TRAINER_NAME":
         this.setTrainerName(action.trainerName);
         break;
@@ -155,8 +170,20 @@ export class HeadlessGameClient {
       case "REST_TEAM":
         this.restTeam();
         break;
+      case "BUY_HEAL":
+        this.buyHeal(action.scope, action.tier, action.targetEntityId);
+        break;
       case "BUY_BALL":
         this.buyBall(action.ball, action.quantity ?? 1);
+        break;
+      case "BUY_SCOUT":
+        this.buyScout(action.kind, action.tier);
+        break;
+      case "BUY_RARITY_BOOST":
+        this.buyRarityBoost(action.tier);
+        break;
+      case "BUY_LEVEL_BOOST":
+        this.buyLevelBoost(action.tier);
         break;
     }
 
@@ -250,10 +277,7 @@ export class HeadlessGameClient {
       phase: "ready",
       currentWave: 1,
       money: this.balance.startingMoney,
-      balls: {
-        pokeBall: this.balance.startingPokeBalls,
-        greatBall: this.balance.startingGreatBalls,
-      },
+      balls: createStartingBalls(this.balance),
       team: [starter],
       selectedRoute: undefined,
       events: [],
@@ -267,6 +291,27 @@ export class HeadlessGameClient {
         starterPower: starter.powerScore,
       },
     );
+  }
+
+  private returnToStarterChoice(trainerName?: string): void {
+    if (this.state.phase !== "gameOver") {
+      this.addEvent("restart_ignored", "패배 화면에서만 스타터 선택으로 돌아갈 수 있습니다.");
+      return;
+    }
+
+    this.state = {
+      version: 1,
+      seed: this.state.seed,
+      rngState: this.rng.getState(),
+      trainerName: trainerName ?? this.state.trainerName,
+      phase: "starterChoice",
+      currentWave: 1,
+      money: this.balance.startingMoney,
+      balls: createStartingBalls(this.balance),
+      team: [],
+      events: [],
+    };
+    this.nextEventId = 1;
   }
 
   private setTrainerName(trainerName: string): void {
@@ -326,6 +371,7 @@ export class HeadlessGameClient {
         enemyTeam: encounter.enemyTeam,
         rng: this.rng,
         damageScale: this.balance.battleDamageScale,
+        normalizeLoadouts: true,
       }),
       encounterSource: encounter.source,
       encounterRoute: encounter.routeId,
@@ -502,7 +548,7 @@ export class HeadlessGameClient {
       return;
     }
 
-    const cost = ball === "greatBall" ? this.balance.greatBallCost : this.balance.pokeBallCost;
+    const cost = getBallCost(ball, this.balance);
     const affordableQuantity = Math.max(0, Math.min(quantity, Math.floor(this.state.money / cost)));
 
     if (affordableQuantity === 0) {
@@ -516,6 +562,134 @@ export class HeadlessGameClient {
       ball,
       quantity: affordableQuantity,
       cost: affordableQuantity * cost,
+    });
+  }
+
+  private buyHeal(scope: HealScope, tier: HealTier, targetEntityId?: string): void {
+    if (this.state.phase !== "ready") {
+      this.addEvent("heal_ignored", "회복은 다음 만남 준비 상태에서만 사용할 수 있습니다.");
+      return;
+    }
+
+    const product = getHealProduct(scope, tier);
+
+    if (this.state.money < product.cost) {
+      this.addEvent("heal_denied", "회복에 필요한 코인이 부족합니다.");
+      return;
+    }
+
+    const beforeHp = totalCurrentHp(this.state.team);
+    this.state.money -= product.cost;
+    this.state.team =
+      scope === "team"
+        ? healTeamByRatio(this.state.team, product.healRatio)
+        : healSingleByRatio(this.state.team, product.healRatio, targetEntityId);
+    const healedHp = totalCurrentHp(this.state.team) - beforeHp;
+    this.addEvent(
+      scope === "team" ? "team_healed" : "creature_healed",
+      scope === "team"
+        ? `전체 회복 ${tier}단계로 팀 HP를 ${healedHp} 회복했습니다.`
+        : `단일 회복 ${tier}단계로 가장 다친 포켓몬 HP를 ${healedHp} 회복했습니다.`,
+      {
+        scope,
+        tier,
+        cost: product.cost,
+        healedHp,
+      },
+    );
+  }
+
+  private buyRarityBoost(tier: RarityBoostTier): void {
+    if (this.state.phase !== "ready") {
+      this.addEvent("boost_ignored", "준비 상태에서만 보정 아이템을 사용할 수 있습니다.");
+      return;
+    }
+
+    const product = getRarityBoostProduct(tier);
+
+    if (this.state.money < product.cost) {
+      this.addEvent("boost_denied", "보정 아이템에 필요한 코인이 부족합니다.");
+      return;
+    }
+
+    this.state.money -= product.cost;
+    const existing =
+      this.state.encounterBoost?.wave === this.state.currentWave
+        ? this.state.encounterBoost
+        : { wave: this.state.currentWave };
+    this.state.encounterBoost = {
+      ...existing,
+      rarityBonus: Math.max(existing.rarityBonus ?? 0, product.bonus),
+    };
+    this.addEvent(
+      "boost_applied",
+      `희귀도 보정 +${Math.round(product.bonus * 100)}%가 적용되었습니다.`,
+      { kind: "rarity", tier, bonus: product.bonus },
+    );
+  }
+
+  private buyLevelBoost(tier: LevelBoostTier): void {
+    if (this.state.phase !== "ready") {
+      this.addEvent("boost_ignored", "준비 상태에서만 보정 아이템을 사용할 수 있습니다.");
+      return;
+    }
+
+    const product = getLevelBoostProduct(tier);
+
+    if (this.state.money < product.cost) {
+      this.addEvent("boost_denied", "보정 아이템에 필요한 코인이 부족합니다.");
+      return;
+    }
+
+    this.state.money -= product.cost;
+    const existing =
+      this.state.encounterBoost?.wave === this.state.currentWave
+        ? this.state.encounterBoost
+        : { wave: this.state.currentWave };
+    this.state.encounterBoost = {
+      ...existing,
+      levelMin: Math.max(existing.levelMin ?? 0, product.min),
+      levelMax: Math.max(existing.levelMax ?? 0, product.max),
+    };
+    this.addEvent(
+      "boost_applied",
+      `숙련도 보정 +${product.min}~${product.max}이(가) 적용되었습니다.`,
+      { kind: "level", tier, min: product.min, max: product.max },
+    );
+  }
+
+  private buyScout(kind: ScoutKind, tier: ScoutTier): void {
+    if (this.state.phase !== "ready") {
+      this.addEvent("scout_ignored", "탐지는 다음 만남 준비 상태에서만 사용할 수 있습니다.");
+      return;
+    }
+
+    const product = getScoutProduct(kind, tier);
+
+    if (this.state.money < product.cost) {
+      this.addEvent("scout_denied", "탐지에 필요한 코인이 부족합니다.");
+      return;
+    }
+
+    const routeId = getSelectedRouteId(this.state);
+    const previewRng = new SeededRng(this.rng.getState());
+    const preview = this.createEncounterWithRng(routeId, previewRng);
+    const enemyPower = scoreTeam(preview.enemyTeam);
+    const maxRarity = Math.max(...preview.enemyTeam.map((creature) => creature.rarityScore));
+    const report =
+      kind === "rarity"
+        ? createRarityScoutReport(tier, preview.opponentName, maxRarity)
+        : createPowerScoutReport(tier, preview.opponentName, enemyPower, scoreTeam(this.state.team));
+
+    this.state.money -= product.cost;
+    this.addEvent("scout_reported", report, {
+      kind,
+      tier,
+      cost: product.cost,
+      routeId,
+      opponentName: preview.opponentName,
+      enemyPower,
+      maxRarity,
     });
   }
 
@@ -545,7 +719,7 @@ export class HeadlessGameClient {
   private chooseAutoRoute(strategy: AutoPlayOptions["strategy"]): RouteId {
     const healthRatio = getTeamHealthRatio(this.state.team);
     const hasFaintedMember = this.state.team.some((creature) => creature.currentHp <= 0);
-    const totalBalls = this.state.balls.pokeBall + this.state.balls.greatBall;
+    const totalBalls = countBalls(this.state.balls);
     const restCost = calculateRestCost(this.state.currentWave, this.balance);
     const isCheckpoint = this.state.currentWave % this.balance.checkpointInterval === 0;
 
@@ -575,25 +749,38 @@ export class HeadlessGameClient {
       return undefined;
     }
 
-    if (this.state.currentWave >= 7 && this.state.balls.greatBall > 0) {
-      return "greatBall";
-    }
+    const preferredBalls: BallType[] =
+      this.state.currentWave >= 10
+        ? ["masterBall", "hyperBall", "ultraBall", "greatBall", "pokeBall"]
+        : this.state.currentWave >= 7
+          ? ["hyperBall", "ultraBall", "greatBall", "pokeBall", "masterBall"]
+          : this.state.currentWave >= 4
+            ? ["ultraBall", "greatBall", "pokeBall", "hyperBall", "masterBall"]
+            : ["pokeBall", "greatBall", "ultraBall", "hyperBall", "masterBall"];
 
-    if (this.state.balls.pokeBall > 0) {
-      return "pokeBall";
-    }
-
-    return this.state.balls.greatBall > 0 ? "greatBall" : undefined;
+    return preferredBalls.find((ball) => this.state.balls[ball] > 0);
   }
 
   private createEncounter(routeId: RouteId): EncounterSnapshot {
-    const snapshot = this.pickTrainerSnapshot(this.state.currentWave);
+    return this.createEncounterWithRng(routeId, this.rng);
+  }
+
+  private getActiveEncounterBoost(): EncounterBoost | undefined {
+    if (this.state.encounterBoost?.wave === this.state.currentWave) {
+      return this.state.encounterBoost;
+    }
+    return undefined;
+  }
+
+  private createEncounterWithRng(routeId: RouteId, rng: SeededRng): EncounterSnapshot {
+    const snapshot = this.pickTrainerSnapshot(this.state.currentWave, rng);
 
     if (snapshot) {
       return createTrainerEncounterFromSnapshot(snapshot, this.balance, routeId);
     }
 
-    return createEncounter(this.state.currentWave, this.rng, this.balance, routeId);
+    const boost = this.getActiveEncounterBoost();
+    return createEncounter(this.state.currentWave, rng, this.balance, routeId, boost);
   }
 
   private resolveSupplyRoute(): void {
@@ -645,20 +832,21 @@ export class HeadlessGameClient {
     return routeId;
   }
 
-  private pickTrainerSnapshot(wave: number): TrainerSnapshot | undefined {
+  private pickTrainerSnapshot(wave: number, rng: SeededRng): TrainerSnapshot | undefined {
     if (wave % this.balance.checkpointInterval !== 0) {
       return undefined;
     }
 
     const candidates = this.trainerSnapshots.filter((snapshot) => snapshot.wave === wave);
 
-    return candidates.length > 0 ? this.rng.pick(candidates) : undefined;
+    return candidates.length > 0 ? rng.pick(candidates) : undefined;
   }
 
   private advanceWave(): void {
     this.state.currentWave += 1;
     this.state.phase = "ready";
     this.state.selectedRoute = undefined;
+    this.state.encounterBoost = undefined;
     this.state.pendingEncounter = undefined;
     this.state.pendingCapture = undefined;
   }
@@ -681,7 +869,39 @@ export class HeadlessGameClient {
 }
 
 export function cloneState(state: GameState): GameState {
-  return JSON.parse(JSON.stringify(state)) as GameState;
+  const cloned = JSON.parse(JSON.stringify(state)) as GameState;
+  return {
+    ...cloned,
+    balls: normalizeBalls(cloned.balls),
+  };
+}
+
+function normalizeStateBattleLoadouts(state: GameState): GameState {
+  const normalized: GameState = {
+    ...state,
+    team: state.team.map(normalizeCreatureBattleLoadout),
+  };
+
+  if (state.pendingCapture) {
+    normalized.pendingCapture = normalizeCreatureBattleLoadout(state.pendingCapture);
+  }
+
+  if (state.pendingEncounter) {
+    normalized.pendingEncounter = {
+      ...state.pendingEncounter,
+      enemyTeam: state.pendingEncounter.enemyTeam.map(normalizeCreatureBattleLoadout),
+    };
+  }
+
+  if (state.lastBattle) {
+    normalized.lastBattle = {
+      ...state.lastBattle,
+      playerTeam: state.lastBattle.playerTeam.map(normalizeCreatureBattleLoadout),
+      enemyTeam: state.lastBattle.enemyTeam.map(normalizeCreatureBattleLoadout),
+    };
+  }
+
+  return normalized;
 }
 
 export function cloneClientSnapshot(snapshot: HeadlessClientSnapshot): HeadlessClientSnapshot {
@@ -698,6 +918,118 @@ function normalizeBalance(balance?: Partial<GameBalance>): GameBalance {
 
 function totalCurrentHp(team: GameState["team"]): number {
   return team.reduce((total, creature) => total + Math.max(0, creature.currentHp), 0);
+}
+
+function createStartingBalls(balance: GameBalance): GameState["balls"] {
+  return {
+    pokeBall: balance.startingPokeBalls,
+    greatBall: balance.startingGreatBalls,
+    ultraBall: balance.startingUltraBalls,
+    hyperBall: balance.startingHyperBalls,
+    masterBall: balance.startingMasterBalls,
+  };
+}
+
+function normalizeBalls(balls: Partial<Record<BallType, number>> | undefined): GameState["balls"] {
+  return {
+    pokeBall: normalizeBallCount(balls?.pokeBall),
+    greatBall: normalizeBallCount(balls?.greatBall),
+    ultraBall: normalizeBallCount(balls?.ultraBall),
+    hyperBall: normalizeBallCount(balls?.hyperBall),
+    masterBall: normalizeBallCount(balls?.masterBall),
+  };
+}
+
+function normalizeBallCount(value: number | undefined): number {
+  return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : 0;
+}
+
+function countBalls(balls: GameState["balls"]): number {
+  return ballTypes.reduce((total, ball) => total + balls[ball], 0);
+}
+
+function healTeamByRatio(team: GameState["team"], healRatio: number): GameState["team"] {
+  return team.map((creature) => healCreatureByRatio(creature, healRatio));
+}
+
+function healSingleByRatio(
+  team: GameState["team"],
+  healRatio: number,
+  targetEntityId?: string,
+): GameState["team"] {
+  const explicitTarget = targetEntityId
+    ? team.findIndex((creature) => creature.instanceId === targetEntityId)
+    : -1;
+  const target =
+    explicitTarget >= 0
+      ? { index: explicitTarget }
+      : team
+          .map((creature, index) => ({
+            index,
+            missingHp: Math.max(0, creature.stats.hp - creature.currentHp),
+            hpRatio: creature.stats.hp <= 0 ? 1 : creature.currentHp / creature.stats.hp,
+          }))
+          .filter((candidate) => candidate.missingHp > 0)
+          .sort((left, right) => left.hpRatio - right.hpRatio || right.missingHp - left.missingHp)[0];
+
+  if (!target) {
+    return [...team];
+  }
+
+  return team.map((creature, index) =>
+    index === target.index ? healCreatureByRatio(creature, healRatio) : creature,
+  );
+}
+
+function healCreatureByRatio(
+  creature: GameState["team"][number],
+  healRatio: number,
+): GameState["team"][number] {
+  const amount = Math.ceil(creature.stats.hp * healRatio);
+  return {
+    ...creature,
+    currentHp: Math.min(creature.stats.hp, creature.currentHp + amount),
+  };
+}
+
+function getSelectedRouteId(state: GameState): RouteId {
+  return state.selectedRoute?.wave === state.currentWave ? state.selectedRoute.id : "normal";
+}
+
+function createRarityScoutReport(
+  tier: ScoutTier,
+  opponentName: string,
+  maxRarity: number,
+): string {
+  if (tier === 1) {
+    const band = maxRarity >= 8 ? "높음" : maxRarity >= 5 ? "보통" : "낮음";
+    return `희귀 탐지 ${tier}단계: 다음 만남의 희귀도는 ${band}입니다.`;
+  }
+
+  if (tier === 2) {
+    return `희귀 탐지 ${tier}단계: 다음 만남의 최고 희귀도는 약 ${maxRarity}입니다.`;
+  }
+
+  return `희귀 탐지 ${tier}단계: ${opponentName}의 최고 희귀도는 ${maxRarity}입니다.`;
+}
+
+function createPowerScoutReport(
+  tier: ScoutTier,
+  opponentName: string,
+  enemyPower: number,
+  teamPower: number,
+): string {
+  if (tier === 1) {
+    const ratio = teamPower <= 0 ? 1 : enemyPower / teamPower;
+    const band = ratio >= 1.15 ? "위험" : ratio >= 0.85 ? "비슷함" : "유리";
+    return `강도 탐지 ${tier}단계: 다음 전투 강도는 ${band}입니다.`;
+  }
+
+  if (tier === 2) {
+    return `강도 탐지 ${tier}단계: 다음 상대 전투력은 약 ${enemyPower}입니다.`;
+  }
+
+  return `강도 탐지 ${tier}단계: ${opponentName} 전투력 ${enemyPower}입니다.`;
 }
 
 function routeName(routeId: RouteId): string {
@@ -738,5 +1070,11 @@ function assertValidClientSnapshot(snapshot: HeadlessClientSnapshot): void {
 }
 
 function signature(state: GameState): string {
-  return `${state.phase}:${state.currentWave}:${state.money}:${state.balls.pokeBall}:${state.balls.greatBall}:${state.events.length}`;
+  return [
+    state.phase,
+    state.currentWave,
+    state.money,
+    ...ballTypes.map((ball) => state.balls[ball]),
+    state.events.length,
+  ].join(":");
 }

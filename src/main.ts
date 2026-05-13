@@ -3,6 +3,12 @@ import "./style.css";
 import { loadClientSnapshotResult, saveClientSnapshot } from "./browser/clientStorage";
 import type { BrowserSyncStatus } from "./browser/browserSync";
 import { BrowserSyncController } from "./browser/browserSync";
+import {
+  addStarterSpeciesToCache,
+  applyStarterChoicesToFrame,
+  loadStarterSpeciesCache,
+  rollStarterSpeciesIds,
+} from "./browser/starterSpeciesCache";
 import { CODE_SYNC_SETTINGS } from "./browser/syncSettings";
 import { buildMetadata } from "./buildMetadata";
 import { HeadlessGameClient } from "./game/headlessClient";
@@ -33,21 +39,34 @@ if (app) {
   }
 
   let recordPrompt: PendingTeamRecord | undefined;
+  let starterSpeciesPool = loadStarterSpeciesCache(storage);
+  let starterSpeciesChoices = rollStarterSpeciesIds(starterSpeciesPool);
+  const rerollStarterChoices = () => {
+    starterSpeciesPool = loadStarterSpeciesCache(storage);
+    starterSpeciesChoices = rollStarterSpeciesIds(starterSpeciesPool);
+  };
 
   mountHtmlRenderer(
     app,
     {
-      getFrame: () => client.getFrame(),
+      getFrame: () => applyStarterChoicesToFrame(client.getFrame(), starterSpeciesChoices),
       async dispatch(action) {
         const before = client.getSnapshot();
         const resolvedAction =
-          action.type === "START_RUN"
+          action.type === "START_RUN" || action.type === "RETURN_TO_STARTER_CHOICE"
             ? { ...action, trainerName: getBrowserTrainerName(storage) }
             : action;
         await syncController.beforeDispatch(resolvedAction);
         const state = client.dispatch(resolvedAction);
         saveClientSnapshot(client.saveSnapshot(), storage);
         await syncController.afterDispatch(resolvedAction);
+        if (resolvedAction.type === "ACCEPT_CAPTURE" && before.pendingCapture) {
+          starterSpeciesPool = addStarterSpeciesToCache(storage, [before.pendingCapture.speciesId]);
+          starterSpeciesChoices = rollStarterSpeciesIds(starterSpeciesPool);
+        }
+        if (resolvedAction.type === "RETURN_TO_STARTER_CHOICE") {
+          rerollStarterChoices();
+        }
         if (
           shouldOpenTeamRecordPrompt(
             resolvedAction,
@@ -105,6 +124,7 @@ if (app) {
           };
         }
       },
+      onStarterReroll: rerollStarterChoices,
     },
   );
 }

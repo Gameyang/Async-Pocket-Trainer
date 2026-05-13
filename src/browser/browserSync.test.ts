@@ -188,26 +188,16 @@ function readyAtCheckpoint(seed: string): HeadlessGameClient {
   const client = new HeadlessGameClient({ seed, trainerName: "Browser Sync" });
 
   client.dispatch({ type: "START_RUN", starterSpeciesId: 1 });
+  const snapshot = client.saveSnapshot();
+  snapshot.state.phase = "ready";
+  snapshot.state.currentWave = 5;
+  snapshot.state.selectedRoute = undefined;
+  snapshot.state.pendingEncounter = undefined;
+  snapshot.state.pendingCapture = undefined;
+  snapshot.state.lastBattle = undefined;
+  client.loadSnapshot(snapshot);
 
-  for (let guard = 0; guard < 30; guard += 1) {
-    const state = client.getSnapshot();
-
-    if (state.phase === "ready" && state.currentWave === 5) {
-      return client;
-    }
-
-    const action =
-      client.getFrame().actions.find((candidate) => candidate.id === "encounter:next") ??
-      client.getFrame().actions.find((candidate) => candidate.enabled);
-
-    if (!action) {
-      throw new Error(`No action while preparing checkpoint from ${state.phase}.`);
-    }
-
-    client.dispatch(action.action);
-  }
-
-  throw new Error("Could not reach checkpoint wave 5.");
+  return client;
 }
 
 function buildOpponentSnapshot() {

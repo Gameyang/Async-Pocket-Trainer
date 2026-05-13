@@ -18,17 +18,46 @@ export type ElementType =
   | "steel"
   | "fairy";
 
-export type MoveCategory = "physical" | "special";
-export type BallType = "pokeBall" | "greatBall";
+export type MoveCategory = "physical" | "special" | "status";
+export type BattleStat = "attack" | "defense" | "special" | "speed" | "accuracy" | "evasion";
+export const ballTypes = [
+  "pokeBall",
+  "greatBall",
+  "ultraBall",
+  "hyperBall",
+  "masterBall",
+] as const;
+
+export type BallType = (typeof ballTypes)[number];
 export type EncounterKind = "wild" | "trainer";
 export type GamePhase = "starterChoice" | "ready" | "captureDecision" | "teamDecision" | "gameOver";
 export type AutoPlayStrategy = "greedy" | "conserveBalls";
 export type BattleStatus = "burn" | "poison" | "paralysis" | "sleep" | "freeze";
+export type VolatileBattleStatus =
+  | "confusion"
+  | "trap"
+  | "leech-seed"
+  | "disable"
+  | "yawn"
+  | "stealth-rock";
 export type RouteId = "normal" | "elite" | "supply";
+export type HealScope = "single" | "team";
+export type HealTier = 1 | 2 | 3 | 4 | 5;
+export type ScoutKind = "rarity" | "power";
+export type ScoutTier = 1 | 2 | 3;
+export type RarityBoostTier = 1 | 2 | 3;
+export type LevelBoostTier = 1 | 2 | 3 | 4;
 
 export interface SelectedRoute {
   id: RouteId;
   wave: number;
+}
+
+export interface EncounterBoost {
+  wave: number;
+  rarityBonus?: number;
+  levelMin?: number;
+  levelMax?: number;
 }
 
 export interface BattleStatusState {
@@ -39,6 +68,26 @@ export interface BattleStatusState {
 export interface MoveStatusEffect {
   status: BattleStatus;
   chance: number;
+}
+
+export interface MoveStatChange {
+  stat: BattleStat;
+  change: number;
+}
+
+export interface MoveMeta {
+  category?: string;
+  ailment?: string;
+  minHits?: number;
+  maxHits?: number;
+  minTurns?: number;
+  maxTurns?: number;
+  drain: number;
+  healing: number;
+  critRate: number;
+  ailmentChance: number;
+  flinchChance: number;
+  statChance: number;
 }
 
 export interface Stats {
@@ -56,6 +105,12 @@ export interface MoveDefinition {
   power: number;
   accuracy: number;
   category: MoveCategory;
+  priority: number;
+  target?: string;
+  effectId?: number;
+  flags: string[];
+  statChanges: MoveStatChange[];
+  meta: MoveMeta;
   statusEffect?: MoveStatusEffect;
 }
 
@@ -65,8 +120,44 @@ export interface SpeciesDefinition {
   types: ElementType[];
   baseStats: Stats;
   movePool: string[];
+  levelUpMoves: SpeciesLevelUpMove[];
+  weightHg: number;
   captureRate: number;
   rarity: number;
+}
+
+export interface SpeciesLevelUpMove {
+  moveId: string;
+  level: number;
+  order: number | null;
+}
+
+export type BattleStatStages = Partial<Record<BattleStat, number>>;
+
+export interface CreatureVolatileState {
+  confusionTurns?: number;
+  trapTurns?: number;
+  trapSourceId?: string;
+  leechSeedSourceId?: string;
+  flinched?: boolean;
+  protected?: boolean;
+  substituteHp?: number;
+  chargingMoveId?: string;
+  rechargeTurns?: number;
+  lockedMoveId?: string;
+  lockedTurns?: number;
+  tauntTurns?: number;
+  encoreMoveId?: string;
+  encoreTurns?: number;
+  disabledMoveId?: string;
+  disabledTurns?: number;
+  yawnTurns?: number;
+  focusEnergy?: boolean;
+  bideTurns?: number;
+  bideDamage?: number;
+  lastMoveId?: string;
+  lastDamageTaken?: number;
+  lastDamageCategory?: "physical" | "special";
 }
 
 export interface Creature {
@@ -74,6 +165,8 @@ export interface Creature {
   speciesId: number;
   speciesName: string;
   types: ElementType[];
+  weightHg?: number;
+  level?: number;
   stats: Stats;
   currentHp: number;
   moves: MoveDefinition[];
@@ -81,6 +174,8 @@ export interface Creature {
   powerScore: number;
   captureRate: number;
   status?: BattleStatusState;
+  statStages?: BattleStatStages;
+  volatile?: CreatureVolatileState;
 }
 
 export interface BattleLogEntry {
@@ -136,6 +231,19 @@ export type BattleReplayEvent =
   | {
       sequence: number;
       turn: number;
+      type: "move.effect";
+      actorId?: string;
+      actorSide?: "player" | "enemy";
+      targetId?: string;
+      targetSide?: "player" | "enemy";
+      entityId?: string;
+      side?: "player" | "enemy";
+      move?: string;
+      label: string;
+    }
+  | {
+      sequence: number;
+      turn: number;
       type: "turn.skip";
       entityId: string;
       side: "player" | "enemy";
@@ -180,7 +288,7 @@ export type BattleReplayEvent =
       type: "status.tick";
       entityId: string;
       side: "player" | "enemy";
-      status: "burn" | "poison";
+      status: BattleStatus | VolatileBattleStatus;
       damage: number;
       hpBefore: number;
       hpAfter: number;
@@ -264,9 +372,15 @@ export interface GameBalance {
   teamRestCost: number;
   pokeBallCost: number;
   greatBallCost: number;
+  ultraBallCost: number;
+  hyperBallCost: number;
+  masterBallCost: number;
   startingMoney: number;
   startingPokeBalls: number;
   startingGreatBalls: number;
+  startingUltraBalls: number;
+  startingHyperBalls: number;
+  startingMasterBalls: number;
 }
 
 export interface GameState {
@@ -280,6 +394,7 @@ export interface GameState {
   balls: Record<BallType, number>;
   team: Creature[];
   selectedRoute?: SelectedRoute;
+  encounterBoost?: EncounterBoost;
   supplyUsedAtWave?: number;
   pendingEncounter?: EncounterSnapshot;
   pendingCapture?: Creature;
@@ -290,6 +405,7 @@ export interface GameState {
 
 export type GameAction =
   | { type: "START_RUN"; starterSpeciesId?: number; trainerName?: string }
+  | { type: "RETURN_TO_STARTER_CHOICE"; trainerName?: string }
   | { type: "SET_TRAINER_NAME"; trainerName: string }
   | { type: "CHOOSE_ROUTE"; routeId: RouteId }
   | { type: "RESOLVE_NEXT_ENCOUNTER" }
@@ -297,7 +413,11 @@ export type GameAction =
   | { type: "ACCEPT_CAPTURE"; replaceIndex?: number }
   | { type: "DISCARD_CAPTURE" }
   | { type: "REST_TEAM" }
-  | { type: "BUY_BALL"; ball: BallType; quantity?: number };
+  | { type: "BUY_HEAL"; scope: HealScope; tier: HealTier; targetEntityId?: string }
+  | { type: "BUY_BALL"; ball: BallType; quantity?: number }
+  | { type: "BUY_SCOUT"; kind: ScoutKind; tier: ScoutTier }
+  | { type: "BUY_RARITY_BOOST"; tier: RarityBoostTier }
+  | { type: "BUY_LEVEL_BOOST"; tier: LevelBoostTier };
 
 export interface AutoPlayOptions {
   maxWaves: number;

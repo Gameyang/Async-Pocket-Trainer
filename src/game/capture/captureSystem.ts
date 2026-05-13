@@ -4,6 +4,9 @@ import type { BallType, Creature } from "../types";
 const ballModifiers: Record<BallType, number> = {
   pokeBall: 1,
   greatBall: 1.65,
+  ultraBall: 2.25,
+  hyperBall: 3,
+  masterBall: Number.POSITIVE_INFINITY,
 };
 
 export interface CaptureCheck {
@@ -22,6 +25,10 @@ export function calculateCaptureChance(
   ball: BallType,
   options: CaptureChanceOptions = {},
 ): number {
+  if (ball === "masterBall") {
+    return 1;
+  }
+
   const rawHpRatio = creature.stats.hp <= 0 ? 1 : creature.currentHp / creature.stats.hp;
   const hpRatio = clamp(Math.max(rawHpRatio, options.hpRatioFloor ?? 0), 0, 1);
   const lowHpBonus = 1 + (1 - hpRatio) * 0.78;
@@ -46,6 +53,6 @@ export function attemptCapture(
   const chance = calculateCaptureChance(creature, wave, ball, options);
   return {
     chance,
-    success: rng.chance(chance),
+    success: chance >= 1 || rng.chance(chance),
   };
 }

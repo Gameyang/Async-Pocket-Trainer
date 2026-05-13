@@ -40,9 +40,7 @@ describe("canvas frame renderer", () => {
     });
     vi.stubGlobal("Image", imageCtor);
 
-    const client = new HeadlessGameClient({ seed: "vis-2" });
-    client.dispatch({ type: "START_RUN", starterSpeciesId: 7 });
-    client.dispatch({ type: "RESOLVE_NEXT_ENCOUNTER" });
+    const client = findClientWithCue("battle.superEffective", 7);
     const renderer = createCanvasFrameRenderer(canvas, {
       resolveAssetPath: (assetPath) => assetPath,
     });
@@ -57,6 +55,20 @@ describe("canvas frame renderer", () => {
     vi.unstubAllGlobals();
   });
 });
+
+function findClientWithCue(effectKey: string, starterSpeciesId: number): HeadlessGameClient {
+  for (let index = 0; index < 200; index += 1) {
+    const client = new HeadlessGameClient({ seed: `canvas-${effectKey}-${index}` });
+    client.dispatch({ type: "START_RUN", starterSpeciesId });
+    client.dispatch({ type: "RESOLVE_NEXT_ENCOUNTER" });
+
+    if (client.getFrame().visualCues.some((cue) => cue.effectKey === effectKey)) {
+      return client;
+    }
+  }
+
+  throw new Error(`Could not find canvas frame with cue ${effectKey}.`);
+}
 
 interface FakeImageLike {
   complete: boolean;

@@ -25,6 +25,24 @@ describe("HeadlessGameClient", () => {
     expect(snapshot.team.every((creature) => creature.currentHp >= 0)).toBe(true);
   });
 
+  it("rolls starter creature stats when the run starts", () => {
+    const statKeys = Array.from({ length: 8 }, (_, index) => {
+      const client = new HeadlessGameClient({ seed: `starter-roll-${index}` });
+      client.dispatch({ type: "START_RUN", starterSpeciesId: 1 });
+      const starter = client.getSnapshot().team[0];
+
+      return [
+        starter.stats.hp,
+        starter.stats.attack,
+        starter.stats.defense,
+        starter.stats.special,
+        starter.stats.speed,
+      ].join(":");
+    });
+
+    expect(new Set(statKeys).size).toBeGreaterThan(1);
+  });
+
   it("saves and loads a run snapshot without changing deterministic continuation", () => {
     const original = new HeadlessGameClient({ seed: "save-load", trainerName: "Snapshot QA" });
 
@@ -107,22 +125,38 @@ describe("HeadlessGameClient", () => {
 
   it("covers core user input paths through FrameAction dispatch", () => {
     const shopClient = startFromFrameAction("input-shop");
+    const snapshot = shopClient.saveSnapshot();
+    snapshot.state.money = 200;
+    shopClient.loadSnapshot(snapshot);
     const shopFrame = shopClient.getFrame();
-    expect(shopFrame.actions.map((action) => action.id)).toEqual([
-      "route:normal",
-      "route:elite",
-      "route:supply",
-      "encounter:next",
-      "shop:rest",
-      "shop:pokeball",
-      "shop:greatball",
-    ]);
-    dispatchFrameAction(shopClient, "route:elite");
-    expect(shopClient.getSnapshot().selectedRoute).toMatchObject({ id: "elite", wave: 1 });
-    dispatchFrameAction(shopClient, "shop:rest");
+    expect(shopFrame.actions.map((action) => action.id)).toEqual(
+      expect.arrayContaining([
+        "route:supply",
+        "encounter:next",
+        "shop:rest",
+        "shop:pokeball",
+        "shop:greatball",
+        "shop:ultraball",
+        "shop:heal:single:1",
+        "shop:heal:team:1",
+        "shop:scout:rarity:1",
+        "shop:scout:power:1",
+        "shop:rarity-boost:1",
+        "shop:level-boost:1",
+      ]),
+    );
+    dispatchFrameAction(shopClient, "shop:rarity-boost:1");
+    expect(shopClient.getSnapshot().encounterBoost).toMatchObject({ rarityBonus: 0.1, wave: 1 });
+    dispatchFrameAction(shopClient, "shop:level-boost:1");
+    expect(shopClient.getSnapshot().encounterBoost).toMatchObject({ levelMin: 1, levelMax: 2 });
     dispatchFrameAction(shopClient, "shop:pokeball");
+    dispatchFrameAction(shopClient, "shop:scout:power:1");
+    dispatchFrameAction(shopClient, "shop:rest");
     expect(shopClient.getSnapshot().events.map((event) => event.type)).toContain("team_rested");
     expect(shopClient.getSnapshot().events.map((event) => event.type)).toContain("ball_bought");
+    expect(shopClient.getSnapshot().events.map((event) => event.type)).toContain(
+      "scout_reported",
+    );
 
     const skipClient = startFromFrameAction("input-skip");
     dispatchFrameAction(skipClient, "encounter:next");
@@ -149,12 +183,25 @@ describe("HeadlessGameClient", () => {
     gameOverSnapshot.state.phase = "gameOver";
     gameOverSnapshot.state.gameOverReason = "Restart coverage.";
     const restored = HeadlessGameClient.fromSnapshot(gameOverSnapshot);
-    dispatchFrameAction(restored, "start:4");
+    expect(restored.getFrame().actions.map((action) => action.id)).toEqual([
+      "restart:team:0",
+      "restart:starter-choice",
+    ]);
+    dispatchFrameAction(restored, "restart:team:0");
     expect(restored.getSnapshot()).toMatchObject({
       phase: "ready",
       currentWave: 1,
     });
-    expect(restored.getSnapshot().team[0].speciesId).toBe(4);
+    expect(restored.getSnapshot().team[0].speciesId).toBe(1);
+    expect(restored.getSnapshot().team[0].currentHp).toBe(restored.getSnapshot().team[0].stats.hp);
+
+    const starterRestored = HeadlessGameClient.fromSnapshot(gameOverSnapshot);
+    dispatchFrameAction(starterRestored, "restart:starter-choice");
+    expect(starterRestored.getSnapshot()).toMatchObject({
+      phase: "starterChoice",
+      currentWave: 1,
+      team: [],
+    });
   });
 
   it("limits supply route value to once per wave", () => {

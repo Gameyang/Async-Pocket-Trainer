@@ -1,4 +1,4 @@
-import { createCreature } from "../creatureFactory";
+import { createCreature, normalizeCreatureBattleLoadout } from "../creatureFactory";
 import { getMove, getSpecies } from "../data/catalog";
 import { formatWave } from "../localization";
 import { scoreCreature, scoreTeam } from "../scoring";
@@ -6,14 +6,40 @@ import type { SeededRng } from "../rng";
 import type { Creature, EncounterSnapshot, GameBalance, RouteId, Stats } from "../types";
 import type { TrainerSnapshot, TrainerSnapshotCreature } from "../sync/trainerSnapshot";
 
+export interface EncounterBoostOptions {
+  rarityBonus?: number;
+  levelMin?: number;
+  levelMax?: number;
+}
+
+function resolveBoostWave(baseWave: number, rng: SeededRng, boost?: EncounterBoostOptions): number {
+  const min = Math.max(0, boost?.levelMin ?? 0);
+  const max = Math.max(min, boost?.levelMax ?? 0);
+
+  if (max <= 0) {
+    return baseWave;
+  }
+
+  const offset = min + Math.floor(rng.nextFloat() * (max - min + 1));
+  return Math.max(1, baseWave + offset);
+}
+
 export function createWildEncounter(
   wave: number,
   rng: SeededRng,
   balance: GameBalance,
   routeId: RouteId = "normal",
+  boost?: EncounterBoostOptions,
 ): EncounterSnapshot {
+  const effectiveWave = resolveBoostWave(wave, rng, boost);
   const creature = applyRouteToCreature(
-    createCreature({ rng, wave, balance, role: "wild" }),
+    createCreature({
+      rng,
+      wave: effectiveWave,
+      balance,
+      role: "wild",
+      rarityBoost: boost?.rarityBonus ?? 0,
+    }),
     routeId,
     balance,
   );
@@ -33,14 +59,26 @@ export function createTrainerEncounter(
   rng: SeededRng,
   balance: GameBalance,
   routeId: RouteId = "normal",
+  boost?: EncounterBoostOptions,
 ): EncounterSnapshot {
-  const checkpointCount = Math.max(1, Math.floor(wave / balance.checkpointInterval));
+  const effectiveWave = resolveBoostWave(wave, rng, boost);
+  const checkpointCount = Math.max(1, Math.floor(effectiveWave / balance.checkpointInterval));
   const teamSize = Math.min(
     balance.maxTeamSize,
     1 + Math.floor(checkpointCount * balance.checkpointTeamSizeGrowthPerCheckpoint),
   );
   const team = Array.from({ length: teamSize }, () =>
-    applyRouteToCreature(createCreature({ rng, wave, balance, role: "trainer" }), routeId, balance),
+    applyRouteToCreature(
+      createCreature({
+        rng,
+        wave: effectiveWave,
+        balance,
+        role: "trainer",
+        rarityBoost: boost?.rarityBonus ?? 0,
+      }),
+      routeId,
+      balance,
+    ),
   );
 
   return {
@@ -77,10 +115,11 @@ export function createEncounter(
   rng: SeededRng,
   balance: GameBalance,
   routeId: RouteId = "normal",
+  boost?: EncounterBoostOptions,
 ): EncounterSnapshot {
   return wave % balance.checkpointInterval === 0
-    ? createTrainerEncounter(wave, rng, balance, routeId)
-    : createWildEncounter(wave, rng, balance, routeId);
+    ? createTrainerEncounter(wave, rng, balance, routeId, boost)
+    : createWildEncounter(wave, rng, balance, routeId, boost);
 }
 
 export function calculateReward(
@@ -121,18 +160,19 @@ export function replaceTeamAfterCapture(
 function snapshotCreatureToCreature(creature: TrainerSnapshotCreature): Creature {
   const species = getSpecies(creature.speciesId);
 
-  return {
+  return normalizeCreatureBattleLoadout({
     instanceId: creature.creatureId,
     speciesId: creature.speciesId,
     speciesName: creature.speciesName,
     types: [...species.types],
+    level: creature.level,
     stats: { ...creature.stats },
     currentHp: creature.stats.hp,
     moves: creature.moves.map((moveId) => getMove(moveId)),
     rarityScore: creature.rarityScore,
     powerScore: creature.powerScore,
     captureRate: species.captureRate,
-  };
+  });
 }
 
 function applyRouteToCreature(

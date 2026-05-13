@@ -1,4 +1,18 @@
 import { getMove, getSpecies, starterSpeciesIds } from "../data/catalog";
+import { normalizeCreatureMoves } from "../creatureFactory";
+import {
+  ballActionSlug,
+  getBallCost,
+  getHealProduct,
+  getLevelBoostProduct,
+  getRarityBoostProduct,
+  getScoutProduct,
+  healTiers,
+  levelBoostTiers,
+  rarityBoostTiers,
+  scoutKinds,
+  scoutTiers,
+} from "../shopCatalog";
 import {
   formatMoney,
   formatWave,
@@ -12,6 +26,7 @@ import {
   withJosa,
 } from "../localization";
 import { getTeamHealthRatio, scoreCreature, scoreTeam } from "../scoring";
+import { ballTypes } from "../types";
 import type {
   BattleStatus,
   BattleReplayEvent,
@@ -23,10 +38,11 @@ import type {
   GameEvent,
   GamePhase,
   GameState,
+  HealScope,
   RouteId,
   SpeciesDefinition,
+  VolatileBattleStatus,
 } from "../types";
-import { calculateRestCost } from "../wave/waveSystem";
 
 export type FrameProtocolVersion = 1;
 
@@ -49,10 +65,7 @@ export interface FrameHud {
   trainerName: string;
   wave: number;
   money: number;
-  balls: {
-    pokeBall: number;
-    greatBall: number;
-  };
+  balls: Record<BallType, number>;
   teamPower: number;
   teamHpRatio: number;
   gameOverReason?: string;
@@ -207,7 +220,7 @@ export interface FrameBattleReplayEvent {
   hpAfter?: number;
   effectiveness?: number;
   critical?: boolean;
-  status?: BattleStatus;
+  status?: BattleStatus | VolatileBattleStatus;
   winner?: "player" | "enemy";
   playerRemainingHp?: number;
   enemyRemainingHp?: number;
@@ -518,8 +531,12 @@ function createStarterOptions(state: GameState): FrameStarterOption[] {
   return starterSpeciesIds.map((speciesId) => speciesToStarterOption(getSpecies(speciesId)));
 }
 
-function speciesToStarterOption(species: SpeciesDefinition): FrameStarterOption {
-  const moves = species.movePool.slice(0, 4).map((moveId) => getMove(moveId));
+export function speciesToStarterOption(species: SpeciesDefinition): FrameStarterOption {
+  const moves = normalizeCreatureMoves(
+    species.id,
+    1,
+    species.movePool.map((moveId) => getMove(moveId)),
+  );
 
   return {
     speciesId: species.id,
@@ -598,7 +615,7 @@ function parseLatestCaptureAttempt(event: GameEvent | undefined):
   }
 
   const data = event.data ?? {};
-  const ball = data.ball === "greatBall" ? "greatBall" : "pokeBall";
+  const ball = ballTypes.includes(data.ball as BallType) ? (data.ball as BallType) : "pokeBall";
   const success = data.success === true;
   const chance = typeof data.chance === "number" ? data.chance : undefined;
   const targetName = typeof data.target === "string" ? data.target : undefined;
@@ -733,7 +750,7 @@ function isValidEntityLayout(entity: FrameEntity): boolean {
 }
 
 function createFrameActions(state: GameState, balance: GameBalance): FrameAction[] {
-  if (state.phase === "starterChoice" || state.phase === "gameOver") {
+  if (state.phase === "starterChoice") {
     return starterSpeciesIds.map((speciesId) => ({
       id: `start:${speciesId}`,
       label: `${getSpecies(speciesId).name} 선택`,
@@ -743,78 +760,30 @@ function createFrameActions(state: GameState, balance: GameBalance): FrameAction
     }));
   }
 
+  if (state.phase === "gameOver") {
+    return createGameOverActions(state, balance);
+  }
+
   if (state.phase === "ready") {
     const selectedRoute = getSelectedRouteId(state);
-    const restCost = calculateRestCost(state.currentWave, balance);
 
     return [
-      routeAction("normal", selectedRoute, state, balance),
-      routeAction("elite", selectedRoute, state, balance),
       routeAction("supply", selectedRoute, state, balance),
       {
         id: "encounter:next",
-        label: selectedRoute === "supply" ? "보급 받기" : `${routeActionName(selectedRoute)} 시작`,
+        label: selectedRoute === "supply" ? "보급 받기" : "전투 시작",
         role: "primary",
         enabled: true,
         action: { type: "RESOLVE_NEXT_ENCOUNTER" },
       },
-      {
-        id: "shop:rest",
-        label: `전원 회복 ${formatMoney(restCost)}`,
-        role: "secondary",
-        enabled: state.money >= restCost,
-        cost: restCost,
-        action: { type: "REST_TEAM" },
-        reason: state.money >= restCost ? undefined : "코인이 부족합니다",
-      },
-      {
-        id: "shop:pokeball",
-        label: `${localizeBall("pokeBall")} 구매 ${formatMoney(balance.pokeBallCost)}`,
-        role: "secondary",
-        enabled: state.money >= balance.pokeBallCost,
-        cost: balance.pokeBallCost,
-        action: { type: "BUY_BALL", ball: "pokeBall", quantity: 1 },
-        reason: state.money >= balance.pokeBallCost ? undefined : "코인이 부족합니다",
-      },
-      {
-        id: "shop:greatball",
-        label: `${localizeBall("greatBall")} 구매 ${formatMoney(balance.greatBallCost)}`,
-        role: "secondary",
-        enabled: state.money >= balance.greatBallCost,
-        cost: balance.greatBallCost,
-        action: { type: "BUY_BALL", ball: "greatBall", quantity: 1 },
-        reason: state.money >= balance.greatBallCost ? undefined : "코인이 부족합니다",
-      },
+      ...createReadyShopActions(state, balance),
     ];
   }
 
   if (state.phase === "captureDecision") {
     const targetEntityId = state.pendingEncounter?.enemyTeam[0]?.instanceId;
     return [
-      {
-        id: "capture:pokeball",
-        label: `${localizeBall("pokeBall")} 던지기 (${state.balls.pokeBall})`,
-        role: "primary",
-        enabled: state.balls.pokeBall > 0,
-        targetEntityId,
-        action: { type: "ATTEMPT_CAPTURE", ball: "pokeBall" },
-        reason:
-          state.balls.pokeBall > 0
-            ? undefined
-            : `${withJosa(localizeBall("pokeBall"), "이/가")} 없습니다`,
-      },
-      {
-        id: "capture:greatball",
-        label: `${localizeBall("greatBall")} 던지기 (${state.balls.greatBall})`,
-        role: "primary",
-        enabled: state.balls.greatBall > 0,
-        targetEntityId,
-        action: { type: "ATTEMPT_CAPTURE", ball: "greatBall" },
-        reason:
-          state.balls.greatBall > 0
-            ? undefined
-            : `${withJosa(localizeBall("greatBall"), "이/가")} 없습니다`,
-      },
+      ...ballTypes.map((ball) => captureBallAction(state, ball, targetEntityId)),
       {
         id: "capture:skip",
         label: "포획 포기",
@@ -863,6 +832,152 @@ function createFrameActions(state: GameState, balance: GameBalance): FrameAction
   }
 
   return [];
+}
+
+function createGameOverActions(state: GameState, balance: GameBalance): FrameAction[] {
+  const teamRestartActions = state.team.slice(0, balance.maxTeamSize).map(
+    (creature, index): FrameAction => ({
+      id: `restart:team:${index}`,
+      label: `${index + 1}번 ${creature.speciesName} 재출발`,
+      role: "primary",
+      enabled: true,
+      targetEntityId: creature.instanceId,
+      action: { type: "START_RUN", starterSpeciesId: creature.speciesId },
+    }),
+  );
+
+  return [
+    ...teamRestartActions,
+    {
+      id: "restart:starter-choice",
+      label: "스타터 화면으로",
+      role: "secondary",
+      enabled: true,
+      action: { type: "RETURN_TO_STARTER_CHOICE" },
+    },
+  ];
+}
+
+function captureBallAction(
+  state: GameState,
+  ball: BallType,
+  targetEntityId: string | undefined,
+): FrameAction {
+  const count = state.balls[ball];
+
+  return {
+    id: `capture:${ballActionSlug(ball)}`,
+    label: `${localizeBall(ball)} 던지기 (${count})`,
+    role: "primary",
+    enabled: count > 0,
+    targetEntityId,
+    action: { type: "ATTEMPT_CAPTURE", ball },
+    reason: count > 0 ? undefined : `${withJosa(localizeBall(ball), "이/가")} 없습니다`,
+  };
+}
+
+function createReadyShopActions(state: GameState, balance: GameBalance): FrameAction[] {
+  return [
+    ...createHealActions(state),
+    ...createBallShopActions(state, balance),
+    ...createScoutActions(state),
+    ...createRarityBoostActions(state),
+    ...createLevelBoostActions(state),
+  ];
+}
+
+function createRarityBoostActions(state: GameState): FrameAction[] {
+  return rarityBoostTiers.map((tier) => {
+    const product = getRarityBoostProduct(tier);
+    const bonusPercent = Math.round(product.bonus * 100);
+
+    return {
+      id: `shop:rarity-boost:${tier}`,
+      label: `희귀도 +${bonusPercent}% ${formatMoney(product.cost)}`,
+      role: "secondary" as const,
+      enabled: state.money >= product.cost,
+      cost: product.cost,
+      action: { type: "BUY_RARITY_BOOST" as const, tier },
+      reason: state.money >= product.cost ? undefined : "코인이 부족합니다",
+    };
+  });
+}
+
+function createLevelBoostActions(state: GameState): FrameAction[] {
+  return levelBoostTiers.map((tier) => {
+    const product = getLevelBoostProduct(tier);
+
+    return {
+      id: `shop:level-boost:${tier}`,
+      label: `숙련도 ${product.min}~${product.max} ${formatMoney(product.cost)}`,
+      role: "secondary" as const,
+      enabled: state.money >= product.cost,
+      cost: product.cost,
+      action: { type: "BUY_LEVEL_BOOST" as const, tier },
+      reason: state.money >= product.cost ? undefined : "코인이 부족합니다",
+    };
+  });
+}
+
+function createHealActions(state: GameState): FrameAction[] {
+  return [
+    ...healTiers.map((tier) => healAction(state, "single", tier)),
+    ...healTiers.map((tier) => healAction(state, "team", tier)),
+  ];
+}
+
+function healAction(state: GameState, scope: HealScope, tier: (typeof healTiers)[number]): FrameAction {
+  const product = getHealProduct(scope, tier);
+  const isFullTeamRest = scope === "team" && tier === 5;
+  const label =
+    scope === "team"
+      ? `전체 회복 ${tier}단계 ${formatMoney(product.cost)}`
+      : `단일 회복 ${tier}단계 ${formatMoney(product.cost)}`;
+
+  return {
+    id: isFullTeamRest ? "shop:rest" : `shop:heal:${scope}:${tier}`,
+    label,
+    role: "secondary",
+    enabled: state.money >= product.cost,
+    cost: product.cost,
+    action: isFullTeamRest ? { type: "REST_TEAM" } : { type: "BUY_HEAL", scope, tier },
+    reason: state.money >= product.cost ? undefined : "코인이 부족합니다",
+  };
+}
+
+function createBallShopActions(state: GameState, balance: GameBalance): FrameAction[] {
+  return ballTypes.map((ball) => {
+    const cost = getBallCost(ball, balance);
+
+    return {
+      id: `shop:${ballActionSlug(ball)}`,
+      label: `${localizeBall(ball)} 구매 ${formatMoney(cost)}`,
+      role: "secondary",
+      enabled: state.money >= cost,
+      cost,
+      action: { type: "BUY_BALL", ball, quantity: 1 },
+      reason: state.money >= cost ? undefined : "코인이 부족합니다",
+    };
+  });
+}
+
+function createScoutActions(state: GameState): FrameAction[] {
+  return scoutKinds.flatMap((kind) =>
+    scoutTiers.map((tier) => {
+      const product = getScoutProduct(kind, tier);
+      const label = kind === "rarity" ? "희귀 탐지" : "강도 탐지";
+
+      return {
+        id: `shop:scout:${kind}:${tier}`,
+        label: `${label} ${tier}단계 ${formatMoney(product.cost)}`,
+        role: "secondary" as const,
+        enabled: state.money >= product.cost,
+        cost: product.cost,
+        action: { type: "BUY_SCOUT" as const, kind, tier },
+        reason: state.money >= product.cost ? undefined : "코인이 부족합니다",
+      };
+    }),
+  );
 }
 
 function createTimeline(state: GameState): FrameTimelineEntry[] {
@@ -1023,6 +1138,22 @@ function toFrameBattleReplayEvent(
       targetSide: lookup.side(event.targetId),
       sourceEntityId: event.actorId,
       targetEntityId: event.targetId,
+    };
+  }
+
+  if (event.type === "move.effect") {
+    return {
+      sequence: event.sequence,
+      turn: event.turn,
+      type: event.type,
+      label: event.label,
+      move: event.move,
+      sourceSide: event.actorSide ?? lookup.side(event.actorId),
+      targetSide: event.targetSide ?? lookup.side(event.targetId),
+      side: event.side,
+      sourceEntityId: event.actorId,
+      targetEntityId: event.targetId,
+      entityId: event.entityId,
     };
   }
 
@@ -1285,7 +1416,13 @@ function toneForEvent(type: string): FrameTimelineEntry["tone"] {
     return "danger";
   }
 
-  if (type.includes("kept") || type.includes("succeeded") || type.includes("rested")) {
+  if (
+    type.includes("kept") ||
+    type.includes("succeeded") ||
+    type.includes("rested") ||
+    type.includes("healed") ||
+    type.includes("scout_reported")
+  ) {
     return "success";
   }
 

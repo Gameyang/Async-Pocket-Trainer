@@ -7,9 +7,9 @@ import {
   parseSheetTrainerRow,
   serializeTrainerSnapshot,
 } from "../sync/trainerSnapshot";
+import { ballTypes } from "../types";
 import type {
   AutoPlayStrategy,
-  BallType,
   GameEvent,
   GamePhase,
   GameState,
@@ -132,8 +132,6 @@ const validPhases: GamePhase[] = [
   "teamDecision",
   "gameOver",
 ];
-
-const ballTypes: BallType[] = ["pokeBall", "greatBall"];
 
 export function runHeadlessQa(options: HeadlessQaOptions): HeadlessQaReport {
   const runs: HeadlessRunReport[] = [];
@@ -328,7 +326,7 @@ export function validateState(state: GameState): string[] {
       );
     }
 
-    if (creature.moves.length < 1 || creature.moves.length > 4) {
+    if (creature.moves.length !== 2) {
       errors.push(`${creature.speciesName} has invalid move count: ${creature.moves.length}`);
     }
   }

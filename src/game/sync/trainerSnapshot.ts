@@ -1,5 +1,5 @@
 import { scoreTeam } from "../scoring";
-import type { BallType, Creature, GamePhase, GameState, RunSummary, Stats } from "../types";
+import { ballTypes, type BallType, type Creature, type GamePhase, type GameState, type RunSummary, type Stats } from "../types";
 
 export const TRAINER_SNAPSHOT_VERSION = 1;
 
@@ -7,6 +7,7 @@ export interface TrainerSnapshotCreature {
   creatureId: string;
   speciesId: number;
   speciesName: string;
+  level?: number;
   stats: Stats;
   currentHp: number;
   moves: string[];
@@ -53,8 +54,6 @@ const validPhases: GamePhase[] = [
   "teamDecision",
   "gameOver",
 ];
-
-const ballTypes: BallType[] = ["pokeBall", "greatBall"];
 
 export function createTrainerSnapshot(
   state: GameState,
@@ -139,6 +138,7 @@ function toSnapshotCreature(creature: Creature): TrainerSnapshotCreature {
     creatureId: creature.instanceId,
     speciesId: creature.speciesId,
     speciesName: creature.speciesName,
+    level: creature.level,
     stats: { ...creature.stats },
     currentHp: creature.currentHp,
     moves: creature.moves.map((move) => move.id),
@@ -156,6 +156,10 @@ function parseSnapshotCreature(value: unknown, index: number): TrainerSnapshotCr
     creatureId: readRequiredString(source, "creatureId"),
     speciesId: readPositiveInteger(source, "speciesId"),
     speciesName: readRequiredString(source, "speciesName"),
+    level:
+      source.level === undefined
+        ? undefined
+        : readPositiveInteger(source, "level"),
     stats,
     currentHp: readNonNegativeNumber(source, "currentHp"),
     moves,
@@ -173,7 +177,7 @@ function parseRunSummary(source: Record<string, unknown>): RunSummary {
 
   const ballsSource = requireRecord(source.balls, "runSummary.balls");
   const balls = Object.fromEntries(
-    ballTypes.map((ball) => [ball, readNonNegativeInteger(ballsSource, ball)]),
+    ballTypes.map((ball) => [ball, readOptionalNonNegativeInteger(ballsSource, ball)]),
   ) as Record<BallType, number>;
   const gameOverReason =
     source.gameOverReason === undefined ? undefined : readRequiredString(source, "gameOverReason");
@@ -306,6 +310,14 @@ function readNonNegativeInteger(source: Record<string, unknown>, field: string):
   }
 
   return value;
+}
+
+function readOptionalNonNegativeInteger(source: Record<string, unknown>, field: string): number {
+  if (source[field] === undefined) {
+    return 0;
+  }
+
+  return readNonNegativeInteger(source, field);
 }
 
 function readNonNegativeNumber(source: Record<string, unknown>, field: string): number {

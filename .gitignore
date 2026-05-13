@@ -4,6 +4,7 @@ coverage/
 .vite/
 test-results/
 playwright-report/
+tmp/
 
 *.log
 npm-debug.log*

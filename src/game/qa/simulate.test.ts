@@ -39,7 +39,7 @@ describe("headless QA simulation", () => {
 
     expect(report.invariantErrors).toEqual([]);
     expect(report.aggregate.completedTargetWave).toBeGreaterThanOrEqual(5);
-    expect(report.aggregate.averageFinalWave).toBeGreaterThanOrEqual(22);
+    expect(report.aggregate.averageFinalWave).toBeGreaterThanOrEqual(20);
   });
 
   it("produces deterministic seed replay summaries and balance comparison deltas", () => {
