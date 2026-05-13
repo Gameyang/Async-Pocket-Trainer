@@ -417,8 +417,10 @@ async function clickAction(page: Page, selector: string): Promise<void> {
   await skipBattleReplay(page);
 }
 
-async function selectStarterAndConfirm(page: Page): Promise<void> {
-  const starter = page.locator('.starter-option[data-starter-state="unlocked"]').first();
+async function selectStarterAndConfirm(page: Page, speciesId = 4): Promise<void> {
+  const starter = page.locator(
+    `.starter-option[data-starter-id="${speciesId}"][data-starter-state="unlocked"]`,
+  );
 
   await starter.locator("[data-starter-pick]").click();
   await expect(starter).toHaveAttribute("data-starter-selected", "true");
