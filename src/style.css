@@ -155,7 +155,7 @@ h1 {
   min-width: 0;
 }
 
-.run-status span,
+.run-status > span,
 .drawer summary span:last-child {
   min-height: 28px;
   display: inline-grid;
@@ -169,6 +169,26 @@ h1 {
   font-size: 0.68rem;
   font-weight: 900;
   white-space: nowrap;
+}
+
+.team-hp-chip {
+  min-width: 92px;
+  gap: 3px;
+}
+
+.mini-meter {
+  width: 100%;
+  height: 5px;
+  overflow: hidden;
+  border: 1px solid rgba(16, 23, 34, 0.8);
+  border-radius: 999px;
+  background: #6b5e4b;
+}
+
+.mini-meter span {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, var(--green), #dbec5c);
 }
 
 .audio-toggle {
@@ -787,7 +807,7 @@ h1 {
 }
 
 .ready-screen {
-  grid-template-rows: minmax(0, 1fr) auto auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   gap: 10px;
   background: linear-gradient(180deg, #8bd8ff 0 46%, #68aa72 46% 100%);
 }
@@ -815,7 +835,11 @@ h1 {
 .camp-board,
 .camp-party,
 .camp-inventory,
+.shop-board,
+.shop-party,
+.shop-card-grid,
 .candidate-panel,
+.reward-board,
 .result-board,
 .result-matchup {
   position: relative;
@@ -824,7 +848,9 @@ h1 {
 
 .camp-board,
 .camp-inventory,
+.shop-board,
 .candidate-card,
+.reward-board,
 .result-board,
 .result-matchup > div {
   border: 3px solid var(--line);
@@ -852,7 +878,51 @@ h1 {
   font-size: 0.9rem;
 }
 
+.shop-board {
+  align-self: start;
+  display: grid;
+  gap: 6px;
+}
+
+.shop-board > span {
+  color: #275768;
+  font-size: 0.64rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.shop-board strong {
+  overflow-wrap: anywhere;
+  font-size: 0.98rem;
+  line-height: 1.1;
+}
+
+.shop-route-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.shop-route-row span {
+  min-height: 22px;
+  display: inline-grid;
+  place-items: center;
+  border: 2px solid rgba(23, 32, 42, 0.72);
+  border-radius: 5px;
+  padding: 1px 6px;
+  background: #eef7ff;
+  font-size: 0.62rem;
+  font-weight: 900;
+}
+
 .camp-party {
+  align-self: center;
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+}
+
+.shop-party {
   align-self: center;
   display: grid;
   justify-items: center;
@@ -894,8 +964,72 @@ h1 {
   gap: 6px;
 }
 
+.shop-card-grid {
+  align-self: end;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.shop-card-grid[data-shop-card-count="1"] {
+  grid-template-columns: 1fr;
+}
+
+.shop-card-grid[data-shop-card-count="2"] {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.shop-card {
+  display: grid;
+  align-content: start;
+  justify-items: start;
+  gap: 5px;
+  min-width: 0;
+  min-height: 132px;
+  padding: 9px 8px;
+  text-align: left;
+}
+
+.shop-card span,
+.shop-card small {
+  color: #34413c;
+  font-size: 0.58rem;
+  font-weight: 900;
+  line-height: 1.1;
+}
+
+.shop-card strong {
+  overflow-wrap: anywhere;
+  font-size: 0.92rem;
+  line-height: 1.05;
+}
+
+.shop-card p {
+  margin: 0;
+  color: #394740;
+  font-size: 0.68rem;
+  font-weight: 900;
+  line-height: 1.2;
+}
+
+.shop-card[data-shop-kind="battle"] {
+  background: linear-gradient(180deg, #fffef5, #f4d45a);
+}
+
+.shop-card[data-shop-kind="rest"] {
+  background: linear-gradient(180deg, #e8ffed, #94d9a1);
+}
+
+.shop-card[data-shop-kind="item"] {
+  background: linear-gradient(180deg, #eaf9ff, #94c8dd);
+}
+
+.shop-card[data-shop-kind="route"] {
+  background: linear-gradient(180deg, #fff4ce, #d6b05e);
+}
+
 .team-decision-screen {
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) auto;
   gap: 8px;
   background: linear-gradient(180deg, #8bd8ff 0 32%, #7cc06f 32% 100%);
 }
@@ -943,6 +1077,27 @@ h1 {
 
 .candidate-card dd {
   margin: 0;
+}
+
+.reward-board {
+  align-self: end;
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  text-align: center;
+}
+
+.reward-board span {
+  color: #275768;
+  font-size: 0.64rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.reward-board strong {
+  overflow-wrap: anywhere;
+  font-size: 0.98rem;
+  line-height: 1.1;
 }
 
 .slot-compare-grid,
@@ -1175,6 +1330,10 @@ h1 {
 
 .command-band button[data-role="primary"] {
   background: linear-gradient(180deg, #fffef5, #f4d45a);
+}
+
+.command-band button[data-role="secondary"] {
+  background: linear-gradient(180deg, #eaf9ff, #94c8dd);
 }
 
 .drawer-stack {
@@ -1509,7 +1668,7 @@ h1 {
     justify-content: stretch;
   }
 
-  .run-status span {
+  .run-status > span {
     flex: 1 1 auto;
     min-height: 24px;
     padding: 0 4px;
@@ -1558,6 +1717,15 @@ h1 {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .shop-card-grid,
+  .shop-card-grid[data-shop-card-count="3"] {
+    grid-template-columns: 1fr;
+  }
+
+  .shop-card {
+    min-height: 92px;
+  }
+
   .candidate-card {
     grid-template-columns: 52px minmax(0, 1fr);
   }
@@ -1598,33 +1766,21 @@ h1 {
   }
 
   .app-shell {
-    width: min(100%, 980px);
+    width: min(100%, 760px);
     min-height: min(100dvh - 24px, 780px);
-    grid-template-columns: minmax(0, 1fr) 300px;
-    grid-template-rows: auto minmax(420px, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(440px, 1fr) auto auto;
   }
 
   .topbar,
-  .command-band {
-    grid-column: 1 / -1;
+  .command-band,
+  .drawer-stack,
+  .screen {
+    grid-column: 1;
   }
 
   .drawer-stack {
-    grid-column: 2;
-    grid-row: 2;
-    align-self: start;
-    max-height: calc(100dvh - 170px);
-    overflow: auto;
-  }
-
-  .screen {
-    grid-column: 1;
-    grid-row: 2;
-  }
-
-  .team-slot-list,
-  .slot-compare-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 

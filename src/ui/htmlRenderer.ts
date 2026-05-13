@@ -112,6 +112,7 @@ export function mountHtmlRenderer(
     bindSettings(root, options, render);
     bindAudio(root, audioState, frame, playbackView, render);
     bindBattlePlayback(root, battlePlayback, frame, render);
+    bindPanelToggles(root);
     syncAudio(audioState, frame, playbackView);
     scheduleBattlePlayback(battlePlayback, frame, render);
   };
@@ -237,6 +238,21 @@ function bindAudio(
   });
 }
 
+function bindPanelToggles(root: HTMLElement): void {
+  root.querySelectorAll<HTMLButtonElement>("[data-team-details-toggle]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const panel = root.querySelector<HTMLDetailsElement>("[data-team-panel]");
+
+      if (!panel) {
+        return;
+      }
+
+      panel.open = true;
+      panel.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    });
+  });
+}
+
 function renderFrame(
   frame: GameFrame,
   statusView: HtmlRendererStatusView,
@@ -294,19 +310,25 @@ function renderFrame(
         </div>
         <div class="run-status">
           <span>${formatWave(frame.hud.wave)}</span>
-          <span>${renderPhaseLabel(frame.phase)}</span>
+          <span class="team-hp-chip">
+            <span>팀 HP ${Math.round(frame.hud.teamHpRatio * 100)}%</span>
+            <span class="mini-meter"><span style="width: ${Math.round(frame.hud.teamHpRatio * 100)}%"></span></span>
+          </span>
           <span>${formatMoney(frame.hud.money)}</span>
-          <span>${localizeBall("pokeBall")} ${frame.hud.balls.pokeBall}</span>
-          <span>${localizeBall("greatBall")} ${frame.hud.balls.greatBall}</span>
+          <span>${localizeBall("pokeBall")} ${frame.hud.balls.pokeBall} / ${localizeBall("greatBall")} ${frame.hud.balls.greatBall}</span>
         </div>
         ${renderAudioButton(audioState)}
       </header>
 
       ${screen}
 
-      ${frame.phase === "starterChoice" ? "" : renderCommandBand(frame, playback.isPlaying)}
+      ${
+        frame.phase === "starterChoice" || frame.phase === "ready"
+          ? ""
+          : renderCommandBand(frame, playback.isPlaying, playerEntities, pendingCapture)
+      }
 
-      <section class="drawer-stack">
+      <section class="drawer-stack" aria-label="보조 정보">
         ${renderTeamPanel(frame, playerEntities, pendingCapture)}
         ${renderTimelinePanel(frame)}
         ${renderSyncPanel(statusView)}
@@ -569,22 +591,26 @@ function renderStarterOption(option: FrameStarterOption, actions: readonly Frame
 }
 
 function renderReadyScreen({ frame, playerEntities, activePlayer }: ScreenRenderContext): string {
+  const shopActions = selectReadyShopActions(frame, playerEntities);
+
   return `
-    <section class="screen ready-screen" data-screen="ready" aria-label="웨이브 준비">
+    <section class="screen ready-screen shop-screen" data-screen="ready" data-shop-actions="${shopActions.length}" aria-label="관리 단계">
       <div class="camp-sky" aria-hidden="true"></div>
       <div class="camp-ground" aria-hidden="true"></div>
-      <div class="camp-board">
-        <span>${formatWave(frame.hud.wave)}</span>
+      <div class="shop-board">
+        <span>${formatWave(frame.hud.wave)} 관리 단계</span>
         <strong>${escapeHtml(frame.scene.subtitle)}</strong>
+        <div class="shop-route-row">
+          <span>${escapeHtml(resolveSelectedRouteLabel(frame.actions))}</span>
+          <span>${formatMoney(frame.hud.money)}</span>
+        </div>
       </div>
-      <div class="camp-party">
+      <div class="shop-party">
         ${activePlayer ? renderCampLead(activePlayer) : '<p class="empty">스타터를 선택하세요.</p>'}
         ${renderTeamDots(playerEntities)}
       </div>
-      <div class="camp-inventory">
-        <span>${formatMoney(frame.hud.money)}</span>
-        <span>${localizeBall("pokeBall")} ${frame.hud.balls.pokeBall}</span>
-        <span>${localizeBall("greatBall")} ${frame.hud.balls.greatBall}</span>
+      <div class="shop-card-grid" data-shop-card-count="${shopActions.length}">
+        ${shopActions.map((action) => renderShopActionCard(action, frame)).join("")}
       </div>
     </section>
   `;
@@ -602,19 +628,94 @@ function renderCampLead(entity: FrameEntity): string {
   `;
 }
 
+function renderShopActionCard(action: FrameAction, frame: GameFrame): string {
+  const disabled = action.enabled ? "" : " disabled";
+  const reason = action.reason ? ` title="${escapeHtml(action.reason)}"` : "";
+  const profile = shopActionProfile(action, frame);
+
+  return `
+    <button type="button" class="shop-card" data-action-id="${escapeHtml(action.id)}" data-shop-kind="${profile.kind}" data-role="${action.role}"${disabled}${reason}>
+      <span>${escapeHtml(profile.kicker)}</span>
+      <strong>${escapeHtml(profile.title)}</strong>
+      <p>${escapeHtml(profile.detail)}</p>
+      <small>${escapeHtml(profile.meta)}</small>
+    </button>
+  `;
+}
+
+function shopActionProfile(
+  action: FrameAction,
+  frame: GameFrame,
+): { kind: string; kicker: string; title: string; detail: string; meta: string } {
+  if (action.id === "encounter:next") {
+    return {
+      kind: "battle",
+      kicker: "전투",
+      title: "다음 만남",
+      detail: action.label,
+      meta: `${formatWave(frame.hud.wave)} 출발`,
+    };
+  }
+
+  if (action.id === "shop:rest") {
+    return {
+      kind: "rest",
+      kicker: "정비",
+      title: "전원 회복",
+      detail: `팀 HP ${Math.round(frame.hud.teamHpRatio * 100)}%`,
+      meta: action.cost === undefined ? action.label : formatMoney(action.cost),
+    };
+  }
+
+  if (action.id === "shop:pokeball" || action.id === "shop:greatball") {
+    return {
+      kind: "item",
+      kicker: "상점",
+      title: action.id === "shop:greatball" ? localizeBall("greatBall") : localizeBall("pokeBall"),
+      detail:
+        action.id === "shop:greatball"
+          ? `보유 ${frame.hud.balls.greatBall}`
+          : `보유 ${frame.hud.balls.pokeBall}`,
+      meta: action.cost === undefined ? action.label : formatMoney(action.cost),
+    };
+  }
+
+  if (action.id.startsWith("route:")) {
+    return {
+      kind: "route",
+      kicker: "루트",
+      title: action.label.replace(" 선택됨", ""),
+      detail: action.id === "route:elite" ? "보상 증가" : "이번 웨이브 조정",
+      meta: action.cost === undefined ? "선택" : formatMoney(action.cost),
+    };
+  }
+
+  return {
+    kind: "action",
+    kicker: renderPhaseLabel(frame.phase),
+    title: action.label,
+    detail: frame.scene.subtitle,
+    meta: action.cost === undefined ? "선택" : formatMoney(action.cost),
+  };
+}
+
 function renderTeamDecisionScreen({
   frame,
   playerEntities,
   pendingCapture,
 }: ScreenRenderContext): string {
+  const fullTeam = playerEntities.length >= 6;
+
   return `
     <section class="screen team-decision-screen" data-screen="teamDecision" aria-label="팀 편성">
       ${renderCaptureOverlay(frame.scene.capture)}
       <div class="candidate-panel">
         ${pendingCapture ? renderCandidateCard(pendingCapture) : '<p class="empty">대기 중인 포획 대상이 없습니다.</p>'}
       </div>
-      <div class="slot-compare-grid">
-        ${renderTeamSlots(playerEntities, pendingCapture, frame.actions)}
+      <div class="reward-board">
+        <span>${fullTeam ? "팀이 가득 찼습니다" : "새 동료 후보"}</span>
+        <strong>${pendingCapture ? escapeHtml(pendingCapture.name) : "포획 결과"}</strong>
+        ${renderTeamDots(playerEntities)}
       </div>
     </section>
   `;
@@ -664,19 +765,25 @@ function renderGameOverScreen({
   `;
 }
 
-function renderCommandBand(frame: GameFrame, locked: boolean): string {
-  const actions =
-    frame.phase === "teamDecision"
-      ? frame.actions.filter((action) => !action.id.startsWith("team:replace:"))
-      : frame.actions;
+type CommandItem =
+  | { type: "action"; action: FrameAction }
+  | { type: "panel"; id: string; label: string; role: FrameAction["role"] };
 
-  if (actions.length === 0) {
+function renderCommandBand(
+  frame: GameFrame,
+  locked: boolean,
+  playerEntities: readonly FrameEntity[],
+  pendingCapture: FrameEntity | undefined,
+): string {
+  const commands = selectCommandItems(frame, playerEntities, pendingCapture);
+
+  if (commands.length === 0) {
     return "";
   }
 
   return `
-    <section class="command-band" data-command-count="${actions.length}">
-      ${actions.map((action) => renderAction(action, locked)).join("")}
+    <section class="command-band" data-command-count="${commands.length}">
+      ${commands.map((command) => renderCommandItem(command, locked)).join("")}
     </section>
   `;
 }
@@ -726,9 +833,9 @@ function renderTeamPanel(
   pendingCapture: FrameEntity | undefined,
 ): string {
   return `
-    <details class="drawer team-panel">
+    <details class="drawer team-panel" data-team-panel>
       <summary>
-        <span>팀</span>
+        <span>팀 상세</span>
         <span>전투력 ${frame.hud.teamPower}</span>
       </summary>
       <div class="meter" aria-label="팀 HP">
@@ -850,6 +957,138 @@ function renderAction(action: FrameAction, locked = false): string {
   return `<button type="button" data-action-id="${escapeHtml(action.id)}" data-role="${action.role}"${disabled}${reason}>${escapeHtml(
     action.label,
   )}</button>`;
+}
+
+function renderCommandItem(command: CommandItem, locked: boolean): string {
+  if (command.type === "action") {
+    return renderAction(command.action, locked);
+  }
+
+  const disabled = locked ? " disabled" : "";
+  const reason = locked ? ' title="전투 리플레이 재생 중입니다."' : "";
+  return `<button type="button" data-panel-command-id="${escapeHtml(command.id)}" data-team-details-toggle data-role="${command.role}"${disabled}${reason}>${escapeHtml(command.label)}</button>`;
+}
+
+function selectReadyShopActions(
+  frame: GameFrame,
+  playerEntities: readonly FrameEntity[],
+): FrameAction[] {
+  const next = findAction(frame.actions, "encounter:next");
+  const rest = findAction(frame.actions, "shop:rest");
+  const pokeBall = findAction(frame.actions, "shop:pokeball");
+  const greatBall = findAction(frame.actions, "shop:greatball");
+  const routeActions = ["route:elite", "route:supply", "route:normal"]
+    .map((id) => findAction(frame.actions, id))
+    .filter((action): action is FrameAction => action !== undefined && action.enabled);
+  const needsRest =
+    frame.hud.teamHpRatio < 0.75 || playerEntities.some((entity) => entity.hp.current <= 0);
+  const picks: FrameAction[] = [];
+  const add = (action: FrameAction | undefined) => {
+    if (!action || !action.enabled || picks.some((existing) => existing.id === action.id)) {
+      return;
+    }
+
+    picks.push(action);
+  };
+
+  add(next);
+
+  if (needsRest) {
+    add(rest);
+  }
+
+  if (frame.hud.balls.pokeBall < 2) {
+    add(pokeBall);
+  }
+
+  if (frame.hud.balls.greatBall < 1) {
+    add(greatBall);
+  }
+
+  for (const action of [...routeActions, rest, pokeBall, greatBall]) {
+    if (picks.length >= 3) {
+      break;
+    }
+
+    add(action);
+  }
+
+  return picks.slice(0, 3);
+}
+
+function selectCommandItems(
+  frame: GameFrame,
+  playerEntities: readonly FrameEntity[],
+  pendingCapture: FrameEntity | undefined,
+): CommandItem[] {
+  if (frame.phase === "ready") {
+    return [];
+  }
+
+  if (frame.phase === "teamDecision") {
+    const keep = findAction(frame.actions, "team:keep");
+    const release = findAction(frame.actions, "team:release");
+
+    if (keep) {
+      return [keep, release]
+        .filter((action): action is FrameAction => Boolean(action))
+        .map((action) => ({ type: "action", action }));
+    }
+
+    const replace = selectRecommendedReplaceAction(frame.actions, playerEntities, pendingCapture);
+    return [
+      ...(replace ? [{ type: "action" as const, action: replace }] : []),
+      ...(release ? [{ type: "action" as const, action: release }] : []),
+      {
+        type: "panel" as const,
+        id: "team:direct",
+        label: "팀 직접 선택",
+        role: "secondary" as const,
+      },
+    ].slice(0, 3);
+  }
+
+  return frame.actions.slice(0, 3).map((action) => ({ type: "action", action }));
+}
+
+function selectRecommendedReplaceAction(
+  actions: readonly FrameAction[],
+  playerEntities: readonly FrameEntity[],
+  pendingCapture: FrameEntity | undefined,
+): FrameAction | undefined {
+  const replaceActions = actions.filter((action) => action.id.startsWith("team:replace:"));
+
+  if (replaceActions.length === 0) {
+    return undefined;
+  }
+
+  const scored = replaceActions.map((action) => {
+    const index = Number(action.id.split(":").at(-1) ?? -1);
+    const entity = playerEntities[index];
+    const faintedPenalty = entity && entity.hp.current <= 0 ? -10_000 : 0;
+    const power = entity?.scores.power ?? 0;
+    const captureGain = pendingCapture ? pendingCapture.scores.power - power : 0;
+
+    return {
+      action,
+      score: faintedPenalty + power - captureGain,
+    };
+  });
+
+  scored.sort((left, right) => left.score - right.score);
+  return scored[0]?.action;
+}
+
+function findAction(actions: readonly FrameAction[], id: string): FrameAction | undefined {
+  return actions.find((action) => action.id === id);
+}
+
+function resolveSelectedRouteLabel(actions: readonly FrameAction[]): string {
+  const selected = actions.find(
+    (action) => action.id.startsWith("route:") && action.role === "primary" && !action.enabled,
+  );
+
+  return selected ? selected.label.replace(" 선택됨", "") : "일반 모험";
 }
 
 function renderBattleMonster(
