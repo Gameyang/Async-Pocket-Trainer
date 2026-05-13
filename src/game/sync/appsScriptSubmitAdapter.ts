@@ -1,4 +1,6 @@
 import type { TrainerSnapshot } from "./trainerSnapshot";
+import { serializeTrainerSnapshot } from "./trainerSnapshot";
+import { SHEET_TRAINER_ROW_COLUMNS, sheetTrainerRowToValues } from "./googleSheetsAdapter";
 
 export interface AppsScriptSubmitterOptions {
   submitUrl: string;
@@ -30,6 +32,8 @@ export class AppsScriptSubmitter {
   }
 
   async submitSnapshot(snapshot: TrainerSnapshot): Promise<AppsScriptSubmitResult> {
+    const row = serializeTrainerSnapshot(snapshot);
+
     await this.fetchImpl(this.submitUrl, {
       method: "POST",
       mode: "no-cors",
@@ -37,6 +41,10 @@ export class AppsScriptSubmitter {
         "Content-Type": "text/plain;charset=utf-8",
       },
       body: JSON.stringify({
+        ...row,
+        columns: [...SHEET_TRAINER_ROW_COLUMNS],
+        values: sheetTrainerRowToValues(row),
+        row,
         snapshot,
       }),
     });

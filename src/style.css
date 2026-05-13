@@ -81,6 +81,7 @@ p {
 }
 
 .app-shell {
+  position: relative;
   width: min(100%, 430px);
   min-height: min(100dvh - 24px, 860px);
   display: grid;
@@ -1339,6 +1340,78 @@ h1 {
 .drawer-stack {
   display: grid;
   gap: 8px;
+}
+
+.team-record-panel {
+  position: absolute;
+  z-index: 24;
+  right: 16px;
+  bottom: 92px;
+  left: 16px;
+  pointer-events: none;
+}
+
+.team-record-panel form {
+  display: grid;
+  gap: 8px;
+  border: 3px solid var(--line);
+  border-radius: 7px;
+  padding: 10px;
+  background: rgba(255, 254, 244, 0.97);
+  box-shadow: 6px 7px 0 rgba(0, 0, 0, 0.2);
+  pointer-events: auto;
+}
+
+.team-record-panel span,
+.team-record-panel strong,
+.team-record-panel label,
+.team-record-panel p {
+  margin: 0;
+  font-weight: 900;
+  line-height: 1.2;
+}
+
+.team-record-panel > form > span {
+  color: #275768;
+  font-size: 0.66rem;
+}
+
+.team-record-panel strong {
+  overflow-wrap: anywhere;
+  font-size: 0.9rem;
+}
+
+.team-record-panel label {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  font-size: 0.7rem;
+}
+
+.team-record-panel input {
+  min-width: 0;
+  border: 2px solid var(--line);
+  border-radius: 6px;
+  padding: 8px;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.team-record-panel button {
+  width: 100%;
+}
+
+.record-message {
+  border: 2px solid rgba(23, 32, 42, 0.28);
+  border-radius: 6px;
+  padding: 6px;
+  background: #eef7ff;
+  color: #275768;
+  font-size: 0.66rem;
 }
 
 .drawer {

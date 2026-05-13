@@ -37,6 +37,26 @@ describe("trainer snapshot sync schema", () => {
     expect(parseSheetTrainerRow(row)).toEqual(snapshot);
   });
 
+  it("allows checkpoint records to override the saved team name", () => {
+    const client = new HeadlessGameClient({
+      seed: "snapshot-name",
+      trainerName: "Original Trainer",
+    });
+    client.autoStep("greedy");
+    const renamed = createTrainerSnapshot(client.getSnapshot(), {
+      playerId: "player-name",
+      trainerName: "Renamed Team",
+      createdAt: "2026-05-11T12:00:00.000Z",
+      runSummary: {
+        ...client.getRunSummary(),
+        trainerName: "Renamed Team",
+      },
+      wave: 5,
+    });
+
+    expect(serializeTrainerSnapshot(renamed).trainerName).toBe("Renamed Team");
+  });
+
   it("rejects unsupported schema versions and broken JSON payloads", () => {
     const client = new HeadlessGameClient({ seed: "bad-row" });
     client.autoStep("greedy");

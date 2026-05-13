@@ -24,7 +24,7 @@ describe("browser sync controller", () => {
       now: () => "2026-05-12T00:00:00.000Z",
     });
 
-    await sync.afterDispatch({ type: "DISCARD_CAPTURE" });
+    await sync.submitCheckpointRecord({ wave: 5 });
 
     const rows = await adapter.listRows({ wave: 5 });
     expect(rows).toHaveLength(1);
@@ -74,7 +74,7 @@ describe("browser sync controller", () => {
     expect(sync.getStatus()).toMatchObject({ state: "offline" });
   });
 
-  it("loads public CSV candidates and skips checkpoint append as read-only", async () => {
+  it("loads public CSV candidates and reports missing submit URL for checkpoint records", async () => {
     const opponent = buildOpponentSnapshot();
     const csv = toCsv([serializeTrainerSnapshot(opponent)]);
     const client = readyAtCheckpoint("public-csv-sync");
@@ -107,8 +107,8 @@ describe("browser sync controller", () => {
       },
     );
 
-    await sync.afterDispatch({ type: "DISCARD_CAPTURE" });
-    expect(sync.getStatus().message).toContain("읽기 전용");
+    await sync.submitCheckpointRecord({ wave: 5 });
+    expect(sync.getStatus().message).toContain("제출 URL");
     expect(requests.some((request) => request.init.method === "POST")).toBe(false);
 
     await sync.beforeDispatch({ type: "RESOLVE_NEXT_ENCOUNTER" });
@@ -153,16 +153,23 @@ describe("browser sync controller", () => {
 
     expect(sync.getStatus().message).toContain("Apps Script 준비됨");
 
-    await sync.afterDispatch({ type: "DISCARD_CAPTURE" });
+    await sync.submitCheckpointRecord({ wave: 5 });
 
     const post = requests.find((request) => request.init.method === "POST");
     expect(post?.url).toBe("https://script.google.com/macros/s/deploy-id/exec");
     expect(post?.init.mode).toBe("no-cors");
-    expect(JSON.parse(post?.init.body ?? "{}").snapshot).toMatchObject({
+    const body = JSON.parse(post?.init.body ?? "{}") as Record<string, unknown>;
+    expect(body).toMatchObject({
       playerId: "player-a",
       wave: 5,
       seed: "public-csv-submit",
     });
+    expect(body.snapshot).toMatchObject({
+      playerId: "player-a",
+      wave: 5,
+      seed: "public-csv-submit",
+    });
+    expect(body.values).toEqual(expect.arrayContaining(["player-a", "5", "public-csv-submit"]));
     expect(sync.getStatus().message).toContain("Apps Script 제출 완료");
   });
 });

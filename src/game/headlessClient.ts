@@ -134,6 +134,9 @@ export class HeadlessGameClient {
       case "START_RUN":
         this.startRun(action.starterSpeciesId, action.trainerName);
         break;
+      case "SET_TRAINER_NAME":
+        this.setTrainerName(action.trainerName);
+        break;
       case "CHOOSE_ROUTE":
         this.chooseRoute(action.routeId);
         break;
@@ -264,6 +267,17 @@ export class HeadlessGameClient {
         starterPower: starter.powerScore,
       },
     );
+  }
+
+  private setTrainerName(trainerName: string): void {
+    const normalized = trainerName.trim();
+
+    if (!normalized) {
+      this.addEvent("trainer_name_ignored", "팀 이름이 비어 있습니다.");
+      return;
+    }
+
+    this.state.trainerName = normalized;
   }
 
   private chooseRoute(routeId: RouteId): void {

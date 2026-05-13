@@ -1,15 +1,13 @@
 import "./style.css";
 
-import {
-  clearClientSnapshot,
-  loadClientSnapshotResult,
-  saveClientSnapshot,
-} from "./browser/clientStorage";
+import { loadClientSnapshotResult, saveClientSnapshot } from "./browser/clientStorage";
+import type { BrowserSyncStatus } from "./browser/browserSync";
 import { BrowserSyncController } from "./browser/browserSync";
-import { loadSyncSettings, saveSyncSettings, type SyncSettings } from "./browser/syncSettings";
+import { CODE_SYNC_SETTINGS } from "./browser/syncSettings";
 import { buildMetadata } from "./buildMetadata";
 import { HeadlessGameClient } from "./game/headlessClient";
 import { DEFAULT_BROWSER_TRAINER_NAME } from "./game/localization";
+import type { GameAction, GameState, RunSummary } from "./game/types";
 import { mountHtmlRenderer } from "./ui/htmlRenderer";
 
 export { buildMetadata };
@@ -27,20 +25,21 @@ if (app) {
         seed: "browser-preview",
         trainerName: getBrowserTrainerName(storage),
       });
-  const syncController = new BrowserSyncController(client, loadSyncSettings(storage), {
+  const syncController = new BrowserSyncController(client, CODE_SYNC_SETTINGS, {
     playerId: getBrowserPlayerId(storage),
   });
   if (loaded.error) {
     console.warn("Recovered browser save data after validation error:", loaded.error);
   }
 
-  let saveNotice = loaded.recovered ? "손상된 저장 데이터를 복구했습니다." : "";
+  let recordPrompt: PendingTeamRecord | undefined;
 
   mountHtmlRenderer(
     app,
     {
       getFrame: () => client.getFrame(),
       async dispatch(action) {
+        const before = client.getSnapshot();
         const resolvedAction =
           action.type === "START_RUN"
             ? { ...action, trainerName: getBrowserTrainerName(storage) }
@@ -49,37 +48,100 @@ if (app) {
         const state = client.dispatch(resolvedAction);
         saveClientSnapshot(client.saveSnapshot(), storage);
         await syncController.afterDispatch(resolvedAction);
+        if (
+          shouldOpenTeamRecordPrompt(
+            resolvedAction,
+            before,
+            state,
+            client.getBalance().checkpointInterval,
+          )
+        ) {
+          recordPrompt = {
+            wave: before.currentWave,
+            opponentName: state.lastBattle?.opponentName ?? "트레이너",
+            trainerName: getBrowserTrainerName(storage),
+            state,
+            runSummary: client.getRunSummary(),
+          };
+        }
         saveClientSnapshot(client.saveSnapshot(), storage);
         return state;
       },
     },
     {
       getStatusView: () => ({
-        saveNotice,
-        sync: {
-          settings: syncController.getSettings(),
-          status: syncController.getStatus(),
-        },
+        teamRecord: recordPrompt
+          ? toTeamRecordView(recordPrompt, syncController.getStatus())
+          : undefined,
       }),
-      onSyncSettingsSubmit(settings: SyncSettings) {
-        const normalized = saveSyncSettings(settings, storage);
-        syncController.updateSettings(normalized);
-        saveNotice = "동기화 설정을 저장했습니다.";
-      },
-      onClearSave() {
-        clearClientSnapshot(storage);
-        saveNotice = "브라우저 저장 데이터를 삭제했습니다.";
-      },
-      onNewRun() {
-        clearClientSnapshot(storage);
-        window.location.reload();
-      },
-      onTrainerNameSubmit(trainerName: string) {
-        saveBrowserTrainerName(storage, trainerName);
-        saveNotice = "트레이너 이름을 저장했습니다.";
+      async onTeamRecordSubmit(trainerName: string) {
+        if (!recordPrompt) {
+          return;
+        }
+
+        const normalized = saveBrowserTrainerName(storage, trainerName);
+        client.dispatch({ type: "SET_TRAINER_NAME", trainerName: normalized });
+        saveClientSnapshot(client.saveSnapshot(), storage);
+        const status = await syncController.submitCheckpointRecord({
+          wave: recordPrompt.wave,
+          trainerName: normalized,
+          state: {
+            ...recordPrompt.state,
+            trainerName: normalized,
+          },
+          runSummary: {
+            ...recordPrompt.runSummary,
+            trainerName: normalized,
+          },
+        });
+
+        if (status.state === "synced") {
+          recordPrompt = undefined;
+        } else {
+          recordPrompt = {
+            ...recordPrompt,
+            trainerName: normalized,
+            message: status.message,
+          };
+        }
       },
     },
   );
+}
+
+interface PendingTeamRecord {
+  wave: number;
+  opponentName: string;
+  trainerName: string;
+  state: GameState;
+  runSummary: RunSummary;
+  message?: string;
+}
+
+function shouldOpenTeamRecordPrompt(
+  action: GameAction,
+  before: GameState,
+  after: GameState,
+  checkpointInterval: number,
+): boolean {
+  return (
+    action.type === "RESOLVE_NEXT_ENCOUNTER" &&
+    before.phase === "ready" &&
+    before.currentWave > 0 &&
+    before.currentWave % checkpointInterval === 0 &&
+    after.phase === "ready" &&
+    after.lastBattle?.kind === "trainer" &&
+    after.lastBattle.winner === "player"
+  );
+}
+
+function toTeamRecordView(record: PendingTeamRecord, status: BrowserSyncStatus) {
+  return {
+    wave: record.wave,
+    opponentName: record.opponentName,
+    trainerName: record.trainerName,
+    message: record.message ?? status.message,
+  };
 }
 
 function getBrowserPlayerId(storage: Storage): string {
@@ -102,7 +164,8 @@ function getBrowserTrainerName(storage: Storage): string {
   return saved || DEFAULT_BROWSER_TRAINER_NAME;
 }
 
-function saveBrowserTrainerName(storage: Storage, trainerName: string): void {
+function saveBrowserTrainerName(storage: Storage, trainerName: string): string {
   const normalized = trainerName.trim() || DEFAULT_BROWSER_TRAINER_NAME;
   storage.setItem(TRAINER_NAME_STORAGE_KEY, normalized);
+  return normalized;
 }

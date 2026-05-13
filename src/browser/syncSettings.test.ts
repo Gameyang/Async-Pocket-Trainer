@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { StorageLike } from "./clientStorage";
 import {
+  CODE_SYNC_SETTINGS,
   DEFAULT_SYNC_SETTINGS,
   SYNC_SETTINGS_STORAGE_KEY,
   clearSyncSettings,
@@ -13,6 +14,15 @@ import {
 describe("browser sync settings storage", () => {
   it("defaults to disabled sync", () => {
     expect(loadSyncSettings(createMemoryStorage())).toEqual(DEFAULT_SYNC_SETTINGS);
+  });
+
+  it("defines code-owned browser sync settings without user storage", () => {
+    expect(CODE_SYNC_SETTINGS).toMatchObject({
+      enabled: true,
+      mode: "publicCsv",
+      spreadsheetId: expect.any(String),
+      range: "APT_WAVE_TEAMS!A:I",
+    });
   });
 
   it("stores valid settings only in the provided storage", () => {

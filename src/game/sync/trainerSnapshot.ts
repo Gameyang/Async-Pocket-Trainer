@@ -40,6 +40,7 @@ export interface SheetTrainerRow {
 
 export interface CreateTrainerSnapshotOptions {
   playerId: string;
+  trainerName?: string;
   createdAt?: string;
   runSummary: RunSummary;
   wave?: number;
@@ -65,7 +66,7 @@ export function createTrainerSnapshot(
   return {
     version: TRAINER_SNAPSHOT_VERSION,
     playerId: requireNonEmptyString(options.playerId, "playerId"),
-    trainerName: state.trainerName,
+    trainerName: requireNonEmptyString(options.trainerName ?? state.trainerName, "trainerName"),
     wave: options.wave ?? state.currentWave,
     createdAt,
     seed: state.seed,

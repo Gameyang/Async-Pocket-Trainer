@@ -93,7 +93,10 @@ export class GoogleSheetsTrainerAdapter implements TrainerSyncAdapter {
 
     return values
       .filter((rowValues, index) => !isHeaderRow(rowValues, index))
-      .map(sheetTrainerRowFromValues)
+      .flatMap((rowValues) => {
+        const row = trySheetTrainerRowFromValues(rowValues);
+        return row ? [row] : [];
+      })
       .filter((row) => matchesTrainerRowQuery(row, query))
       .map((row) => ({ ...row }));
   }
@@ -192,6 +195,16 @@ export function sheetTrainerRowFromValues(values: readonly unknown[]): SheetTrai
 
   parseSheetTrainerRow(row);
   return row;
+}
+
+export function trySheetTrainerRowFromValues(
+  values: readonly unknown[],
+): SheetTrainerRow | undefined {
+  try {
+    return sheetTrainerRowFromValues(values);
+  } catch {
+    return undefined;
+  }
 }
 
 function parseValuesResponse(payload: unknown): unknown[][] {

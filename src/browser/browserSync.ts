@@ -18,7 +18,7 @@ import {
   type TrainerSnapshot,
 } from "../game/sync/trainerSnapshot";
 import { formatWave } from "../game/localization";
-import type { GameAction } from "../game/types";
+import type { GameAction, GameState, RunSummary } from "../game/types";
 import { hasSyncCredentials, type SyncSettings } from "./syncSettings";
 
 export type BrowserSyncState = "disabled" | "offline" | "ready" | "syncing" | "synced" | "error";
@@ -36,6 +36,13 @@ export interface BrowserSyncControllerOptions {
   fetch?: FetchLike & PublicCsvFetchLike & AppsScriptFetchLike;
   playerId?: string;
   now?: () => string;
+}
+
+export interface BrowserCheckpointSubmitOptions {
+  wave: number;
+  trainerName?: string;
+  state?: GameState;
+  runSummary?: RunSummary;
 }
 
 export class BrowserSyncController {
@@ -123,56 +130,58 @@ export class BrowserSyncController {
   }
 
   async afterDispatch(_action: GameAction): Promise<void> {
-    const state = this.client.getSnapshot();
+    return;
+  }
+
+  async submitCheckpointRecord(
+    options: BrowserCheckpointSubmitOptions,
+  ): Promise<BrowserSyncStatus> {
+    const state = options.state ?? this.client.getSnapshot();
 
     if (
       state.phase !== "ready" ||
       state.team.length === 0 ||
-      !isCheckpointWave(state.currentWave, this.client.getBalance().checkpointInterval)
+      !isCheckpointWave(options.wave, this.client.getBalance().checkpointInterval)
     ) {
-      return;
+      return this.status;
     }
 
     if (this.settings.mode === "publicCsv") {
       if (this.settings.enabled) {
-        await this.submitPublicCheckpoint(state);
+        await this.submitPublicCheckpoint(state, options);
       }
-      return;
+      return this.getStatus();
     }
 
     const adapter = this.resolveReadyAdapter();
 
     if (!adapter) {
-      return;
+      return this.getStatus();
     }
 
-    const checkpointKey = `${state.seed}:${state.currentWave}:${state.rngState}`;
+    const checkpointKey = `${state.seed}:${options.wave}:${state.rngState}`;
     if (this.appendedCheckpoints.has(checkpointKey)) {
-      return;
+      return this.getStatus();
     }
 
-    this.appendedCheckpoints.add(checkpointKey);
     this.status = {
       state: "syncing",
-      message: `${formatWave(state.currentWave)} 기록 업로드 중`,
+      message: `${formatWave(options.wave)} 기록 업로드 중`,
     };
 
     try {
-      await adapter.appendSnapshot(
-        createTrainerSnapshot(state, {
-          playerId: this.playerId,
-          createdAt: this.now(),
-          runSummary: this.client.getRunSummary(),
-        }),
-      );
+      await adapter.appendSnapshot(this.createCheckpointSnapshot(state, options));
+      this.appendedCheckpoints.add(checkpointKey);
       this.status = {
         state: "synced",
-        message: `${formatWave(state.currentWave)} 기록 업로드 완료`,
+        message: `${formatWave(options.wave)} 기록 업로드 완료`,
         lastSyncedAt: this.now(),
       };
     } catch (error) {
       this.status = toErrorStatus(error, "체크포인트 업로드 실패");
     }
+
+    return this.getStatus();
   }
 
   private resolveReadyAdapter(): TrainerSyncAdapter | undefined {
@@ -273,43 +282,54 @@ export class BrowserSyncController {
     };
   }
 
-  private async submitPublicCheckpoint(state: ReturnType<HeadlessGameClient["getSnapshot"]>) {
+  private async submitPublicCheckpoint(state: GameState, options: BrowserCheckpointSubmitOptions) {
     if (!this.appsScriptSubmitter) {
       this.status = {
-        state: "synced",
-        message: "공개 시트는 읽기 전용이라 체크포인트를 업로드하지 않았습니다",
-        lastSyncedAt: this.now(),
+        state: "offline",
+        message: "Apps Script 제출 URL이 코드에 설정되지 않았습니다",
       };
       return;
     }
 
-    const checkpointKey = `${state.seed}:${state.currentWave}:${state.rngState}`;
+    const checkpointKey = `${state.seed}:${options.wave}:${state.rngState}`;
     if (this.appendedCheckpoints.has(checkpointKey)) {
       return;
     }
 
-    this.appendedCheckpoints.add(checkpointKey);
     this.status = {
       state: "syncing",
-      message: `${formatWave(state.currentWave)} 제출 중`,
+      message: `${formatWave(options.wave)} 제출 중`,
     };
 
     try {
-      await this.appsScriptSubmitter.submitSnapshot(
-        createTrainerSnapshot(state, {
-          playerId: this.playerId,
-          createdAt: this.now(),
-          runSummary: this.client.getRunSummary(),
-        }),
-      );
+      await this.appsScriptSubmitter.submitSnapshot(this.createCheckpointSnapshot(state, options));
+      this.appendedCheckpoints.add(checkpointKey);
       this.status = {
         state: "synced",
-        message: `${formatWave(state.currentWave)} Apps Script 제출 완료`,
+        message: `${formatWave(options.wave)} Apps Script 제출 완료`,
         lastSyncedAt: this.now(),
       };
     } catch (error) {
       this.status = toErrorStatus(error, "Apps Script 제출 실패");
     }
+  }
+
+  private createCheckpointSnapshot(
+    state: GameState,
+    options: BrowserCheckpointSubmitOptions,
+  ): TrainerSnapshot {
+    const runSummary = {
+      ...(options.runSummary ?? this.client.getRunSummary()),
+      ...(options.trainerName ? { trainerName: options.trainerName } : {}),
+    };
+
+    return createTrainerSnapshot(state, {
+      playerId: this.playerId,
+      trainerName: options.trainerName,
+      createdAt: this.now(),
+      runSummary,
+      wave: options.wave,
+    });
   }
 }
 

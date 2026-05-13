@@ -3,6 +3,7 @@ import type { StorageLike } from "./clientStorage";
 export const SYNC_SETTINGS_STORAGE_KEY = "apt:sync-settings:v1";
 export const DEFAULT_PUBLIC_SPREADSHEET_ID = "14ra0Y0zLORpru3nmT-obu3yD1UuO2kAJP4aJ5IIA0M4";
 export const DEFAULT_PUBLIC_SHEET_NAME = "APT_WAVE_TEAMS";
+export const CODE_APPS_SCRIPT_SUBMIT_URL: string = "";
 
 export type SyncMode = "publicCsv" | "googleApi";
 
@@ -22,6 +23,14 @@ export const DEFAULT_SYNC_SETTINGS: SyncSettings = {
   mode: "publicCsv",
   spreadsheetId: DEFAULT_PUBLIC_SPREADSHEET_ID,
   range: DEFAULT_PUBLIC_SHEET_NAME,
+};
+
+export const CODE_SYNC_SETTINGS: SyncSettings = {
+  enabled: true,
+  mode: "publicCsv",
+  spreadsheetId: DEFAULT_PUBLIC_SPREADSHEET_ID,
+  range: `${DEFAULT_PUBLIC_SHEET_NAME}!A:I`,
+  ...(CODE_APPS_SCRIPT_SUBMIT_URL ? { appsScriptSubmitUrl: CODE_APPS_SCRIPT_SUBMIT_URL } : {}),
 };
 
 export function loadSyncSettings(storage: StorageLike = getBrowserStorage()): SyncSettings {

@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { HeadlessGameClient } from "../headlessClient";
-import { createTrainerSnapshot } from "./trainerSnapshot";
+import { sheetTrainerRowToValues } from "./googleSheetsAdapter";
+import { createTrainerSnapshot, serializeTrainerSnapshot } from "./trainerSnapshot";
 import { AppsScriptSubmitter, type AppsScriptFetchLike } from "./appsScriptSubmitAdapter";
 
 describe("AppsScriptSubmitter", () => {
@@ -12,6 +13,7 @@ describe("AppsScriptSubmitter", () => {
       fetch: createFetch(requests),
     });
     const snapshot = buildSnapshot();
+    const row = serializeTrainerSnapshot(snapshot);
 
     await expect(submitter.submitSnapshot(snapshot)).resolves.toEqual({
       ok: true,
@@ -28,7 +30,12 @@ describe("AppsScriptSubmitter", () => {
         },
       },
     });
-    expect(JSON.parse(requests[0].init.body ?? "{}")).toEqual({ snapshot });
+    expect(JSON.parse(requests[0].init.body ?? "{}")).toMatchObject({
+      ...row,
+      row,
+      values: sheetTrainerRowToValues(row),
+      snapshot: JSON.parse(JSON.stringify(snapshot)),
+    });
   });
 });
 

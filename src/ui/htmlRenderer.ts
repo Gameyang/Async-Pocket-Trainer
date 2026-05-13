@@ -10,14 +10,7 @@ import type {
   FrameVisualCue,
   GameFrame,
 } from "../game/view/frame";
-import type { BrowserSyncStatus } from "../browser/browserSync";
-import type { SyncSettings } from "../browser/syncSettings";
-import {
-  formatMoney,
-  formatWave,
-  localizeBall,
-  localizeBattleStatus,
-} from "../game/localization";
+import { formatMoney, formatWave, localizeBall, localizeBattleStatus } from "../game/localization";
 import {
   createBattleCueText,
   createBattleEventSummary,
@@ -65,19 +58,19 @@ export interface FrameClient {
 }
 
 export interface HtmlRendererStatusView {
-  saveNotice?: string;
-  sync?: {
-    settings: SyncSettings;
-    status: BrowserSyncStatus;
-  };
+  teamRecord?: HtmlRendererTeamRecordView;
+}
+
+export interface HtmlRendererTeamRecordView {
+  wave: number;
+  opponentName: string;
+  trainerName: string;
+  message?: string;
 }
 
 export interface HtmlRendererOptions {
   getStatusView?: () => HtmlRendererStatusView;
-  onSyncSettingsSubmit?: (settings: SyncSettings) => unknown | Promise<unknown>;
-  onClearSave?: () => unknown | Promise<unknown>;
-  onNewRun?: () => unknown | Promise<unknown>;
-  onTrainerNameSubmit?: (trainerName: string) => unknown | Promise<unknown>;
+  onTeamRecordSubmit?: (trainerName: string) => unknown | Promise<unknown>;
 }
 
 interface BattlePlaybackState {
@@ -124,7 +117,7 @@ export function mountHtmlRenderer(
     const playbackView = createBattlePlaybackView(battlePlayback, frame);
     root.innerHTML = renderFrame(frame, options.getStatusView?.() ?? {}, playbackView, audioState);
     bindActions(root, client, frame, playbackView, audioState, render);
-    bindSettings(root, options, render);
+    bindTeamRecord(root, options, render);
     bindAudio(root, audioState, frame, playbackView, render);
     bindBattlePlayback(root, battlePlayback, frame, render);
     bindPanelToggles(root);
@@ -170,55 +163,17 @@ function bindActions(
   });
 }
 
-function bindSettings(root: HTMLElement, options: HtmlRendererOptions, render: () => void): void {
-  const form = root.querySelector<HTMLFormElement>("[data-sync-form]");
+function bindTeamRecord(root: HTMLElement, options: HtmlRendererOptions, render: () => void): void {
+  const form = root.querySelector<HTMLFormElement>("[data-team-record-form]");
   form?.addEventListener("submit", async (event) => {
     event.preventDefault();
 
-    if (!options.onSyncSettingsSubmit) {
+    if (!options.onTeamRecordSubmit) {
       return;
     }
 
     const data = new FormData(form);
-    await options.onSyncSettingsSubmit({
-      enabled: data.get("enabled") === "on",
-      mode: data.get("mode") === "googleApi" ? "googleApi" : "publicCsv",
-      spreadsheetId: String(data.get("spreadsheetId") ?? ""),
-      range: String(data.get("range") ?? ""),
-      publicCsvUrl: optionalFormValue(data.get("publicCsvUrl")),
-      appsScriptSubmitUrl: optionalFormValue(data.get("appsScriptSubmitUrl")),
-      apiKey: optionalFormValue(data.get("apiKey")),
-      accessToken: optionalFormValue(data.get("accessToken")),
-    });
-    render();
-  });
-
-  root
-    .querySelector<HTMLButtonElement>("[data-clear-save]")
-    ?.addEventListener("click", async () => {
-      if (!window.confirm("저장 데이터를 삭제할까요? 이 작업은 되돌릴 수 없습니다.")) {
-        return;
-      }
-
-      await options.onClearSave?.();
-      render();
-    });
-
-  root.querySelector<HTMLButtonElement>("[data-new-run]")?.addEventListener("click", async () => {
-    await options.onNewRun?.();
-    render();
-  });
-
-  const trainerForm = root.querySelector<HTMLFormElement>("[data-trainer-form]");
-  trainerForm?.addEventListener("submit", async (event) => {
-    event.preventDefault();
-
-    if (!options.onTrainerNameSubmit) {
-      return;
-    }
-
-    const data = new FormData(trainerForm);
-    await options.onTrainerNameSubmit(String(data.get("trainerName") ?? ""));
+    await options.onTeamRecordSubmit(String(data.get("trainerName") ?? ""));
     render();
   });
 }
@@ -341,6 +296,7 @@ function renderFrame(
       </header>
 
       ${screen}
+      ${playback.isPlaying ? "" : renderTeamRecordPanel(statusView.teamRecord, playerEntities)}
 
       ${
         frame.phase === "starterChoice" || frame.phase === "ready"
@@ -350,9 +306,6 @@ function renderFrame(
 
       <section class="drawer-stack" aria-label="보조 정보">
         ${renderTeamPanel(frame, playerEntities, pendingCapture)}
-        ${renderTimelinePanel(frame)}
-        ${renderSyncPanel(statusView)}
-        ${renderSettingsPanel(frame, statusView)}
       </section>
     </main>
   `;
@@ -763,6 +716,35 @@ function renderTeamPanel(
   `;
 }
 
+function renderTeamRecordPanel(
+  record: HtmlRendererTeamRecordView | undefined,
+  playerEntities: readonly FrameEntity[],
+): string {
+  if (!record) {
+    return "";
+  }
+
+  const message = record.message
+    ? `<p class="record-message">${escapeHtml(record.message)}</p>`
+    : "";
+
+  return `
+    <section class="team-record-panel" data-team-record-panel>
+      <form data-team-record-form>
+        <span>${formatWave(record.wave)} 트레이너 승리 기록</span>
+        <strong>${escapeHtml(record.opponentName)}</strong>
+        ${renderTeamDots(playerEntities)}
+        <label>
+          <span>팀 이름</span>
+          <input name="trainerName" value="${escapeHtml(record.trainerName)}" maxlength="24" autocomplete="off" />
+        </label>
+        <button type="submit">기록 저장</button>
+        ${message}
+      </form>
+    </section>
+  `;
+}
+
 function renderTeamSlots(
   playerEntities: readonly FrameEntity[],
   pendingCapture: FrameEntity | undefined,
@@ -812,52 +794,6 @@ function renderTeamSlot(
       ${pendingCapture ? `<span class="slot-delta" data-delta="${delta >= 0 ? "up" : "down"}">${deltaText}</span>` : ""}
       ${actionButton}
     </article>
-  `;
-}
-
-function renderTimelinePanel(frame: GameFrame): string {
-  return `
-    <details class="drawer timeline-panel">
-      <summary>
-        <span>로그</span>
-        <span>${frame.timeline.length}</span>
-      </summary>
-      <ol class="event-list">
-        ${frame.timeline
-          .map(
-            (entry) =>
-              `<li data-tone="${entry.tone}"><span>${formatWave(entry.wave)}</span>${escapeHtml(entry.text)}</li>`,
-          )
-          .join("")}
-      </ol>
-    </details>
-  `;
-}
-
-function renderSettingsPanel(frame: GameFrame, statusView: HtmlRendererStatusView): string {
-  const notice = statusView.saveNotice
-    ? `<p class="save-notice" data-save-notice>${escapeHtml(statusView.saveNotice)}</p>`
-    : "";
-
-  return `
-    <details class="drawer settings-panel">
-      <summary>
-        <span>설정</span>
-        <span>도전</span>
-      </summary>
-      <form class="trainer-form" data-trainer-form>
-        <label>
-          <span>트레이너 이름</span>
-          <input name="trainerName" value="${escapeHtml(frame.hud.trainerName)}" autocomplete="off" />
-        </label>
-        <button type="submit">이름 변경</button>
-      </form>
-      <div class="settings-actions">
-        <button type="button" data-new-run>새 도전</button>
-        <button type="button" data-clear-save>저장 삭제</button>
-      </div>
-      ${notice}
-    </details>
   `;
 }
 
@@ -1194,81 +1130,6 @@ function saveMutedPreference(muted: boolean): void {
   } catch {
     return;
   }
-}
-
-function renderSyncPanel(statusView: HtmlRendererStatusView): string {
-  const sync = statusView.sync;
-
-  if (!sync) {
-    return "";
-  }
-
-  const { settings, status } = sync;
-  const checked = settings.enabled ? " checked" : "";
-  const publicSelected = settings.mode === "publicCsv" ? " selected" : "";
-  const googleSelected = settings.mode === "googleApi" ? " selected" : "";
-  const lastError =
-    status.state === "error" && status.lastError
-      ? `<p class="sync-error-detail">상세 오류: ${escapeHtml(status.lastError)}</p>`
-      : "";
-
-  return `
-    <details class="drawer sync-panel" data-sync-state="${status.state}">
-      <summary>
-        <span>동기화</span>
-        <span data-sync-status>${escapeHtml(status.message)}</span>
-      </summary>
-      <form class="sync-form" data-sync-form>
-        <label class="toggle-row">
-          <input type="checkbox" name="enabled"${checked} />
-          <span>Google Sheets 사용</span>
-        </label>
-        <label>
-          <span>방식</span>
-          <select name="mode">
-            <option value="publicCsv"${publicSelected}>공개 CSV</option>
-            <option value="googleApi"${googleSelected}>Google API</option>
-          </select>
-        </label>
-        <details class="advanced-settings">
-          <summary>고급 설정</summary>
-          <label>
-            <span>시트 URL/ID</span>
-            <input name="spreadsheetId" value="${escapeHtml(settings.spreadsheetId)}" autocomplete="off" />
-          </label>
-          <label>
-            <span>탭/범위</span>
-            <input name="range" value="${escapeHtml(settings.range)}" autocomplete="off" />
-          </label>
-          <label>
-            <span>CSV URL</span>
-            <input name="publicCsvUrl" value="${escapeHtml(settings.publicCsvUrl ?? "")}" autocomplete="off" />
-          </label>
-          <label>
-            <span>제출 URL</span>
-            <input name="appsScriptSubmitUrl" value="${escapeHtml(settings.appsScriptSubmitUrl ?? "")}" autocomplete="off" />
-          </label>
-          <label>
-            <span>API 키</span>
-            <input name="apiKey" type="password" value="${escapeHtml(settings.apiKey ?? "")}" autocomplete="off" />
-          </label>
-          <label>
-            <span>토큰</span>
-            <input name="accessToken" type="password" value="${escapeHtml(settings.accessToken ?? "")}" autocomplete="off" />
-          </label>
-          ${lastError}
-        </details>
-        <div class="sync-actions">
-          <button type="submit">동기화 저장</button>
-        </div>
-      </form>
-    </details>
-  `;
-}
-
-function optionalFormValue(value: FormDataEntryValue | null): string | undefined {
-  const resolved = String(value ?? "").trim();
-  return resolved.length > 0 ? resolved : undefined;
 }
 
 function escapeHtml(value: string): string {

@@ -56,6 +56,32 @@ describe("PublicCsvTrainerAdapter", () => {
     expect(picked?.wave).toBe(5);
   });
 
+  it("skips malformed CSV rows while keeping valid trainer snapshots readable", async () => {
+    const row = buildRow("public-a", "Public A", "public-sheet-a", 5);
+    const headers = [
+      "version",
+      "playerId",
+      "trainerName",
+      "wave",
+      "createdAt",
+      "seed",
+      "teamPower",
+      "teamJson",
+      "runSummaryJson",
+    ];
+    const malformed = ["1", "", "", "5", "", "", "0", "", ""];
+    const adapter = new PublicCsvTrainerAdapter({
+      csvUrl: "https://example.test/public.csv",
+      fetch: createFetch(
+        [headers, malformed, Object.values(row).map(String)]
+          .map((cells) => cells.map(csvCell).join(","))
+          .join("\n"),
+      ),
+    });
+
+    await expect(adapter.listRows({ wave: 5 })).resolves.toEqual([row]);
+  });
+
   it("rejects append in public CSV mode", async () => {
     const row = buildRow("public-a", "Public A", "public-sheet-a", 5);
     const adapter = new PublicCsvTrainerAdapter({

@@ -290,6 +290,7 @@ export interface GameState {
 
 export type GameAction =
   | { type: "START_RUN"; starterSpeciesId?: number; trainerName?: string }
+  | { type: "SET_TRAINER_NAME"; trainerName: string }
   | { type: "CHOOSE_ROUTE"; routeId: RouteId }
   | { type: "RESOLVE_NEXT_ENCOUNTER" }
   | { type: "ATTEMPT_CAPTURE"; ball: BallType }

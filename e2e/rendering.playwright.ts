@@ -115,9 +115,7 @@ test("drives browser input through frame actions, disabled actions, and reload s
   await expect.poll(() => readShellState(page)).toEqual(beforeReload);
 });
 
-test("reads public CSV and submits Apps Script without credentials during checkpoint play", async ({
-  page,
-}) => {
+test("reads public CSV from code sync settings and opens team record prompt", async ({ page }) => {
   const requests: string[] = [];
   const sheetRow = buildSheetTrainerCsv();
   await page.route("**/gviz/tq**", async (route) => {
@@ -127,44 +125,25 @@ test("reads public CSV and submits Apps Script without credentials during checkp
       body: sheetRow,
     });
   });
-  await page.route("https://script.google.com/**", async (route) => {
-    requests.push(route.request().method());
-    await route.fulfill({
-      contentType: "application/json",
-      body: JSON.stringify({ ok: true }),
-    });
-  });
 
   await openFresh(page);
-  await openSync(page);
-  await page.locator('input[name="enabled"]').check();
-  await page.locator('select[name="mode"]').selectOption("publicCsv");
-  await openAdvancedSync(page);
-  await page
-    .locator('input[name="spreadsheetId"]')
-    .fill("14ra0Y0zLORpru3nmT-obu3yD1UuO2kAJP4aJ5IIA0M4");
-  await page.locator('input[name="range"]').fill("APT_WAVE_TEAMS");
-  await page
-    .locator('input[name="appsScriptSubmitUrl"]')
-    .fill("https://script.google.com/macros/s/deploy-id/exec");
-  await page.locator('input[name="apiKey"]').fill("");
-  await page.locator('input[name="accessToken"]').fill("");
-  await page.locator('[data-sync-form] button[type="submit"]').click();
-  await expect(page.locator("[data-sync-status]")).toContainText("Apps Script 준비됨");
-
   await clickAction(page, '[data-action-id^="start:"]');
   await playUntilWave(page, 5);
-  await expect(page.locator("[data-sync-status]")).toContainText("Apps Script 제출 완료");
 
   await page.locator('[data-action-id="encounter:next"]').first().click();
   await expect.poll(() => page.locator("#app").getAttribute("data-busy")).toBeNull();
   await expect(page.locator(".app-shell")).toBeVisible();
-  await expect(page.locator("[data-sync-status]")).toContainText(/Sheet Rival 불러옴|패배/);
   await expect(page.locator('.trainer-badge[data-trainer-source="sheet"] img')).toBeVisible();
   await assertLoadedImage(page.locator('.trainer-badge[data-trainer-source="sheet"] img'));
   await skipBattleReplay(page);
+  await expect(page.locator("[data-team-record-panel]")).toBeVisible();
+  await page.locator('input[name="trainerName"]').fill("E2E Team");
+  await page.locator("[data-team-record-form] button").click();
+  await expect(page.locator(".record-message")).toContainText("Apps Script 제출 URL");
+  await expect
+    .poll(() => page.evaluate(() => localStorage.getItem("apt:trainer-name:v1")))
+    .toBe("E2E Team");
   expect(requests).toContain("GET");
-  expect(requests).toContain("POST");
 });
 
 async function assertPhaseScreen(page: Page, phase: string, screenSelector: string): Promise<void> {
@@ -245,22 +224,6 @@ async function playUntilWave(page: Page, targetWave: number): Promise<void> {
   }
 
   throw new Error(`Could not reach wave ${targetWave}.`);
-}
-
-async function openSync(page: Page): Promise<void> {
-  const sync = page.locator(".sync-panel");
-
-  if ((await sync.getAttribute("open")) === null) {
-    await sync.locator(":scope > summary").click();
-  }
-}
-
-async function openAdvancedSync(page: Page): Promise<void> {
-  const advanced = page.locator(".advanced-settings");
-
-  if ((await advanced.getAttribute("open")) === null) {
-    await advanced.locator(":scope > summary").click();
-  }
 }
 
 async function openFresh(page: Page): Promise<void> {
@@ -401,6 +364,24 @@ function buildSheetTrainerCsv(): string {
       wave: 5,
     }),
   );
+  const team = JSON.parse(row.teamJson) as Array<{
+    stats: Record<string, number>;
+    currentHp: number;
+    powerScore: number;
+    rarityScore: number;
+  }>;
+  team[0] = {
+    ...team[0],
+    stats: { hp: 1, attack: 1, defense: 1, special: 1, speed: 1 },
+    currentHp: 1,
+    powerScore: 1,
+    rarityScore: 1,
+  };
+  const weakRow = {
+    ...row,
+    teamPower: 1,
+    teamJson: JSON.stringify(team),
+  };
   const headers = [
     "version",
     "playerId",
@@ -413,7 +394,7 @@ function buildSheetTrainerCsv(): string {
     "runSummaryJson",
   ];
 
-  return [headers, Object.values(row).map(String)]
+  return [headers, Object.values(weakRow).map(String)]
     .map((cells) => cells.map(csvCell).join(","))
     .join("\n");
 }

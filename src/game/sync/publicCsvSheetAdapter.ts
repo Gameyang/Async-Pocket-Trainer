@@ -4,7 +4,7 @@ import {
   type TrainerRowQuery,
   type TrainerSyncAdapter,
 } from "./localSheetAdapter";
-import { SHEET_TRAINER_ROW_COLUMNS, sheetTrainerRowFromValues } from "./googleSheetsAdapter";
+import { SHEET_TRAINER_ROW_COLUMNS, trySheetTrainerRowFromValues } from "./googleSheetsAdapter";
 import {
   parseSheetTrainerRow,
   type SheetTrainerRow,
@@ -63,7 +63,10 @@ export class PublicCsvTrainerAdapter implements TrainerSyncAdapter {
     return parseCsvRows(await response.text())
       .filter((row) => row.some((cell) => cell.trim().length > 0))
       .filter((row, index) => !isHeaderRow(row, index))
-      .map(sheetTrainerRowFromValues)
+      .flatMap((rowValues) => {
+        const row = trySheetTrainerRowFromValues(rowValues);
+        return row ? [row] : [];
+      })
       .filter((row) => matchesTrainerRowQuery(row, query))
       .map((row) => ({ ...row }));
   }

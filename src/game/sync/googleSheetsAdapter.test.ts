@@ -53,6 +53,7 @@ describe("GoogleSheetsTrainerAdapter", () => {
     const otherWave = buildSnapshot("google-d", "Google D", "google-sheet-d", 10);
     const values = [
       [...SHEET_TRAINER_ROW_COLUMNS],
+      ["1", "", "", "5", "", "", "0", "", ""],
       sheetTrainerRowToValues(serializeTrainerSnapshot(first)),
       sheetTrainerRowToValues(serializeTrainerSnapshot(second)),
       sheetTrainerRowToValues(serializeTrainerSnapshot(old)),
