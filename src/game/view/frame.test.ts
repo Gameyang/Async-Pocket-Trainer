@@ -82,6 +82,43 @@ describe("game frame contract", () => {
     expect(frame.visualCues.map((cue) => cue.type)).toContain("capture.success");
   });
 
+  it("classifies replay cues with readable names and effect tiers", () => {
+    const superEffective = createBattleFrame("vis-2", 7);
+    const resisted = createBattleFrame("vis-12", 1);
+    const missed = createBattleFrame("vis-11", 7);
+    const superEffectiveEvent = superEffective.battleReplay.events.find(
+      (event) => event.type === "damage.apply" && (event.effectiveness ?? 1) > 1,
+    );
+
+    expect(superEffective.visualCues).toContainEqual(
+      expect.objectContaining({
+        type: "battle.hit",
+        effectKey: "battle.superEffective",
+        label: expect.stringContaining("꼬부기"),
+      }),
+    );
+    expect(superEffective.visualCues).toContainEqual(
+      expect.objectContaining({
+        type: "battle.hit",
+        effectKey: "battle.criticalHit",
+      }),
+    );
+    expect(resisted.visualCues).toContainEqual(
+      expect.objectContaining({
+        type: "battle.hit",
+        effectKey: "battle.resisted",
+      }),
+    );
+    expect(missed.visualCues).toContainEqual(
+      expect.objectContaining({
+        type: "battle.miss",
+        effectKey: "battle.miss",
+      }),
+    );
+    expect(superEffectiveEvent?.label).toContain("꼬부기");
+    expect(superEffectiveEvent?.label).not.toMatch(/\d+-\d+-[0-9a-f]+/);
+  });
+
   it("keeps failed capture feedback visible after advancing to the next ready wave", () => {
     const client = firstFailedCaptureClient();
     const frame = client.getFrame();
@@ -126,6 +163,13 @@ describe("game frame contract", () => {
     });
   });
 });
+
+function createBattleFrame(seed: string, starterSpeciesId: number) {
+  const client = new HeadlessGameClient({ seed });
+  client.dispatch({ type: "START_RUN", starterSpeciesId });
+  client.dispatch({ type: "RESOLVE_NEXT_ENCOUNTER" });
+  return client.getFrame();
+}
 
 function firstFailedCaptureClient(): HeadlessGameClient {
   for (let index = 0; index < 50; index += 1) {

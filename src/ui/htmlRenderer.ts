@@ -1,4 +1,4 @@
-import type { GameAction } from "../game/types";
+import type { BattleStatus, GameAction } from "../game/types";
 import type {
   FrameAction,
   FrameBattleReplayEvent,
@@ -7,6 +7,7 @@ import type {
   FrameEntity,
   FrameStarterOption,
   FrameTrainerScene,
+  FrameVisualCue,
   GameFrame,
 } from "../game/view/frame";
 import type { BrowserSyncStatus } from "../browser/browserSync";
@@ -263,6 +264,7 @@ function renderFrame(
     opponentEntities.find((entity) => entity.hp.current > 0) ??
     opponentEntities[0];
   const latestCue = [...frame.visualCues].reverse().find((cue) => cue.type !== "phase.change");
+  const activeCue = findActiveVisualCue(frame, playback.activeEvent);
   const latestLine = frame.timeline[0]?.text ?? latestCue?.label ?? frame.scene.subtitle;
   const logLine =
     playback.isPlaying && playback.activeEvent
@@ -277,6 +279,7 @@ function renderFrame(
     activeOpponent,
     playback,
     logLine,
+    activeCue,
   });
 
   return `
@@ -322,6 +325,7 @@ interface ScreenRenderContext {
   activeOpponent?: FrameEntity;
   playback: BattlePlaybackView;
   logLine: string;
+  activeCue?: FrameVisualCue;
 }
 
 function renderScreen(context: ScreenRenderContext): string {
@@ -491,20 +495,27 @@ function renderBattleScreen({
   activeOpponent,
   playback,
   logLine,
+  activeCue,
 }: ScreenRenderContext): string {
+  const battleEntities = playerEntities.concat(opponentEntities);
+  const activeCueAttribute = activeCue
+    ? ` data-active-cue="${escapeHtml(activeCue.effectKey)}"`
+    : "";
+
   return `
-    <section class="screen encounter-panel" data-screen="battle" aria-label="전투 화면">
+    <section class="screen encounter-panel" data-screen="battle"${activeCueAttribute} aria-label="전투 화면">
       <div class="battlefield" aria-hidden="true"></div>
       <div class="platform enemy" aria-hidden="true"></div>
       <div class="platform hero" aria-hidden="true"></div>
       ${renderTrainerBadge(frame.scene.trainer)}
-      ${renderBattleMonster(activeOpponent, "enemy-mon", playback.activeEvent)}
-      ${renderBattleMonster(activePlayer, "hero-mon", playback.activeEvent)}
+      ${renderBattleMonster(activeOpponent, "enemy-mon", playback.activeEvent, activeCue)}
+      ${renderBattleMonster(activePlayer, "hero-mon", playback.activeEvent, activeCue)}
       ${renderBattleCard(activeOpponent, "enemy", frame.scene.title, frame.scene.subtitle)}
       ${renderBattleCard(activePlayer, "hero", frame.hud.trainerName, `전투력 ${frame.hud.teamPower}`)}
       ${renderCaptureOverlay(frame.scene.capture)}
-      ${renderBattleCue(playback.activeEvent, playerEntities.concat(opponentEntities))}
+      ${renderBattleCue(playback.activeEvent, activeCue, battleEntities)}
       <div class="battle-log log-panel" aria-label="전투 로그">
+        ${renderBattleEventSummary(playback.activeEvent, activeCue, battleEntities)}
         <p class="log-line">${escapeHtml(logLine)}</p>
         ${renderReplayMeter(playback)}
         ${renderTeamDots(playerEntities)}
@@ -845,6 +856,7 @@ function renderBattleMonster(
   entity: FrameEntity | undefined,
   className: string,
   activeEvent: FrameBattleReplayEvent | undefined,
+  activeCue: FrameVisualCue | undefined,
 ): string {
   if (!entity) {
     return "";
@@ -852,10 +864,14 @@ function renderBattleMonster(
 
   const effect = resolveBattleEffect(entity, activeEvent);
   const effectAttribute = effect ? ` data-battle-effect="${effect}"` : "";
+  const cueAttribute =
+    activeCue && visualCueReferencesEntity(activeCue, entity.id)
+      ? ` data-battle-effect-key="${escapeHtml(activeCue.effectKey)}"`
+      : "";
   const faintedAttribute = entity.flags.includes("fainted") ? ' data-fainted="true"' : "";
 
   return `
-    <div class="screen-monster ${className}" data-entity-id="${escapeHtml(entity.id)}"${effectAttribute}${faintedAttribute}>
+    <div class="screen-monster ${className}" data-entity-id="${escapeHtml(entity.id)}"${effectAttribute}${cueAttribute}${faintedAttribute}>
       <img src="${resolveAssetPath(entity.assetPath)}" alt="${escapeHtml(`${entity.name} 포켓몬`)}" />
     </div>
   `;
@@ -870,16 +886,56 @@ function renderBattleCard(
   const name = entity?.name ?? title;
   const hpRatio = entity?.hp.ratio ?? 0;
   const hpText = entity ? `${entity.hp.current}/${entity.hp.max}` : subtitle;
+  const hpState = resolveHpState(hpRatio);
 
   return `
-    <aside class="battle-card ${className}">
+    <aside class="battle-card ${className}" data-hp-state="${hpState}">
       <div class="name-row">
         <span>${escapeHtml(name)}</span>
         <span>${escapeHtml(hpText)}</span>
       </div>
       <div class="hp-line"><span style="width: ${Math.round(hpRatio * 100)}%"></span></div>
+      ${renderBattleTags(entity)}
     </aside>
   `;
+}
+
+function renderBattleTags(entity: FrameEntity | undefined): string {
+  if (!entity) {
+    return "";
+  }
+
+  const typeTags = entity.typeLabels
+    .slice(0, 2)
+    .map((label) => `<span data-tag-kind="type">${escapeHtml(label)}</span>`);
+  const statusTags = entity.flags
+    .filter((flag) => flag.startsWith("status:"))
+    .map((flag) => {
+      const status = flag.replace("status:", "") as BattleStatus;
+      return `<span data-tag-kind="status">${localizeBattleStatus(status)}</span>`;
+    });
+  const faintedTag = entity.flags.includes("fainted")
+    ? ['<span data-tag-kind="fainted">기절</span>']
+    : [];
+  const tags = [...typeTags, ...statusTags, ...faintedTag];
+
+  return tags.length > 0 ? `<div class="battle-tags">${tags.join("")}</div>` : "";
+}
+
+function resolveHpState(hpRatio: number): "high" | "mid" | "low" | "empty" {
+  if (hpRatio <= 0) {
+    return "empty";
+  }
+
+  if (hpRatio <= 0.25) {
+    return "low";
+  }
+
+  if (hpRatio <= 0.5) {
+    return "mid";
+  }
+
+  return "high";
 }
 
 function renderTeamDots(entities: readonly FrameEntity[]): string {
@@ -913,8 +969,158 @@ function renderReplayMeter(playback: BattlePlaybackView): string {
   `;
 }
 
+function renderBattleEventSummary(
+  activeEvent: FrameBattleReplayEvent | undefined,
+  activeCue: FrameVisualCue | undefined,
+  entities: readonly FrameEntity[],
+): string {
+  const summary = createBattleEventSummary(activeEvent, activeCue, entities);
+
+  if (!summary) {
+    return "";
+  }
+
+  const effectKey = activeCue?.effectKey ?? "";
+
+  return `
+    <div class="battle-event-summary" data-event-kind="${summary.kind}" data-effect-key="${escapeHtml(effectKey)}">
+      <span class="turn-chip">${escapeHtml(summary.turn)}</span>
+      <strong>${escapeHtml(summary.title)}</strong>
+      <span class="result-chip">${escapeHtml(summary.result)}</span>
+      ${summary.detail ? `<p>${escapeHtml(summary.detail)}</p>` : ""}
+    </div>
+  `;
+}
+
+function createBattleEventSummary(
+  activeEvent: FrameBattleReplayEvent | undefined,
+  activeCue: FrameVisualCue | undefined,
+  entities: readonly FrameEntity[],
+): { kind: string; turn: string; title: string; result: string; detail?: string } | undefined {
+  if (!activeEvent) {
+    return undefined;
+  }
+
+  const source = resolveEntityName(activeEvent.sourceEntityId, entities);
+  const target = resolveEntityName(activeEvent.targetEntityId, entities);
+  const entity = resolveEntityName(activeEvent.entityId, entities);
+  const turn = activeEvent.turn > 0 ? `${activeEvent.turn}턴` : "개시";
+
+  if (activeEvent.type === "battle.start") {
+    return {
+      kind: "start",
+      turn,
+      title: "전투 시작",
+      result: "대기",
+      detail: "양쪽 선봉이 나왔습니다.",
+    };
+  }
+
+  if (activeEvent.type === "turn.start") {
+    return {
+      kind: "turn",
+      turn,
+      title: "새 턴",
+      result: "선봉 확인",
+      detail: "이번 턴의 행동 순서를 계산합니다.",
+    };
+  }
+
+  if (activeEvent.type === "move.select") {
+    return {
+      kind: "move",
+      turn,
+      title: `${source} -> ${target}`,
+      result: "기술 준비",
+      detail: activeEvent.move ?? "기술",
+    };
+  }
+
+  if (activeEvent.type === "move.miss") {
+    return {
+      kind: "miss",
+      turn,
+      title: `${source} -> ${target}`,
+      result: "빗나감",
+      detail: activeEvent.move,
+    };
+  }
+
+  if (activeEvent.type === "damage.apply") {
+    const kind = resolveDamageCueKind(activeEvent, activeCue);
+    return {
+      kind,
+      turn,
+      title: `${source}의 ${activeEvent.move ?? "기술"}`,
+      result: `${activeEvent.damage ?? 0} 피해`,
+      detail: `${target} HP ${activeEvent.targetHpBefore ?? "?"} -> ${activeEvent.targetHpAfter ?? "?"}${formatDamageSummaryNotes(
+        activeEvent,
+      )}`,
+    };
+  }
+
+  if (activeEvent.type === "turn.skip") {
+    return {
+      kind: "status",
+      turn,
+      title: entity,
+      result: localizeBattleStatus(activeEvent.status),
+      detail: "상태 이상으로 행동하지 못했습니다.",
+    };
+  }
+
+  if (activeEvent.type === "status.apply" || activeEvent.type === "status.immune") {
+    return {
+      kind: "status",
+      turn,
+      title: target,
+      result: localizeBattleStatus(activeEvent.status),
+      detail: activeEvent.type === "status.immune" ? "면역" : "상태 변화",
+    };
+  }
+
+  if (activeEvent.type === "status.tick") {
+    return {
+      kind: "status",
+      turn,
+      title: entity,
+      result: `${activeEvent.damage ?? 0} 피해`,
+      detail: `${localizeBattleStatus(activeEvent.status)} HP ${activeEvent.hpBefore ?? "?"} -> ${activeEvent.hpAfter ?? "?"}`,
+    };
+  }
+
+  if (activeEvent.type === "status.clear") {
+    return {
+      kind: "status",
+      turn,
+      title: entity,
+      result: "회복",
+      detail: localizeBattleStatus(activeEvent.status),
+    };
+  }
+
+  if (activeEvent.type === "creature.faint") {
+    return {
+      kind: "faint",
+      turn,
+      title: entity,
+      result: "기절",
+      detail: "다음 포켓몬을 확인합니다.",
+    };
+  }
+
+  return {
+    kind: activeEvent.winner === "player" ? "win" : "loss",
+    turn,
+    title: "전투 종료",
+    result: activeEvent.winner === "player" ? "승리" : "패배",
+    detail: `남은 HP 우리 ${activeEvent.playerRemainingHp ?? 0} / 상대 ${activeEvent.enemyRemainingHp ?? 0}`,
+  };
+}
+
 function renderBattleCue(
   activeEvent: FrameBattleReplayEvent | undefined,
+  activeCue: FrameVisualCue | undefined,
   entities: readonly FrameEntity[],
 ): string {
   if (!activeEvent) {
@@ -924,7 +1130,7 @@ function renderBattleCue(
   const targetId = activeEvent.targetEntityId ?? activeEvent.entityId;
   const target = entities.find((entity) => entity.id === targetId);
   const lane = target?.owner === "player" ? "hero" : "enemy";
-  const cue = createBattleCueText(activeEvent);
+  const cue = createBattleCueText(activeEvent, activeCue);
 
   if (!cue) {
     return "";
@@ -935,9 +1141,18 @@ function renderBattleCue(
 
 function createBattleCueText(
   activeEvent: FrameBattleReplayEvent,
+  activeCue: FrameVisualCue | undefined,
 ): { kind: string; text: string } | undefined {
   if (activeEvent.type === "damage.apply") {
-    const prefix = activeEvent.critical ? "급소 " : "";
+    const kind = resolveDamageCueKind(activeEvent, activeCue);
+    const prefix =
+      kind === "critical"
+        ? "급소 "
+        : kind === "super-effective"
+          ? "효과 굉장 "
+          : kind === "resisted"
+            ? "효과 약함 "
+            : "";
     const suffix =
       activeEvent.effectiveness && activeEvent.effectiveness > 1
         ? "!"
@@ -945,7 +1160,7 @@ function createBattleCueText(
           ? "..."
           : "";
     return {
-      kind: activeEvent.critical ? "critical" : "damage",
+      kind,
       text: `${prefix}-${activeEvent.damage ?? 0}${suffix}`,
     };
   }
@@ -963,6 +1178,40 @@ function createBattleCueText(
   }
 
   return undefined;
+}
+
+function resolveDamageCueKind(
+  activeEvent: FrameBattleReplayEvent,
+  activeCue: FrameVisualCue | undefined,
+): "critical" | "super-effective" | "resisted" | "damage" {
+  if (activeCue?.effectKey === "battle.criticalHit" || activeEvent.critical) {
+    return "critical";
+  }
+
+  if (activeCue?.effectKey === "battle.superEffective" || (activeEvent.effectiveness ?? 1) > 1) {
+    return "super-effective";
+  }
+
+  if (
+    activeCue?.effectKey === "battle.resisted" ||
+    ((activeEvent.effectiveness ?? 1) > 0 && (activeEvent.effectiveness ?? 1) < 1)
+  ) {
+    return "resisted";
+  }
+
+  return "damage";
+}
+
+function formatDamageSummaryNotes(activeEvent: FrameBattleReplayEvent): string {
+  const notes = [
+    ...(activeEvent.critical ? ["급소"] : []),
+    ...(activeEvent.effectiveness && activeEvent.effectiveness > 1 ? ["효과 굉장"] : []),
+    ...(activeEvent.effectiveness && activeEvent.effectiveness > 0 && activeEvent.effectiveness < 1
+      ? ["효과 약함"]
+      : []),
+  ];
+
+  return notes.length > 0 ? ` / ${notes.join(", ")}` : "";
 }
 
 function formatBattleEventLabel(
@@ -990,8 +1239,8 @@ function formatBattleEventLabel(
   }
 
   if (activeEvent.type === "damage.apply") {
-    const critical = activeEvent.critical ? " 급소에 맞았습니다!" : "";
-    return `${source}의 ${activeEvent.move ?? "기술"}! ${target}에게 ${activeEvent.damage ?? 0} 피해.${critical}`;
+    const notes = formatDamageSummaryNotes(activeEvent).replace(" / ", "");
+    return `${source}의 ${activeEvent.move ?? "기술"}! ${target}에게 ${activeEvent.damage ?? 0} 피해.${notes ? ` ${notes}.` : ""}`;
   }
 
   if (activeEvent.type === "turn.skip") {
@@ -1054,7 +1303,19 @@ function resolveBattleEffect(
     }
 
     if (activeEvent.type === "damage.apply") {
-      return activeEvent.critical ? "critical-hit" : "hit";
+      if (activeEvent.critical) {
+        return "critical-hit";
+      }
+
+      if ((activeEvent.effectiveness ?? 1) > 1) {
+        return "super-effective";
+      }
+
+      if ((activeEvent.effectiveness ?? 1) > 0 && (activeEvent.effectiveness ?? 1) < 1) {
+        return "resisted-hit";
+      }
+
+      return "hit";
     }
 
     return "status";
@@ -1065,6 +1326,51 @@ function resolveBattleEffect(
   }
 
   return "";
+}
+
+function findActiveVisualCue(
+  frame: GameFrame,
+  activeEvent: FrameBattleReplayEvent | undefined,
+): FrameVisualCue | undefined {
+  if (!activeEvent) {
+    return undefined;
+  }
+
+  return frame.visualCues.find((cue) => {
+    if (cue.sequence !== activeEvent.sequence) {
+      return false;
+    }
+
+    if (activeEvent.type === "damage.apply") {
+      return cue.type === "battle.hit";
+    }
+
+    if (activeEvent.type === "move.miss") {
+      return cue.type === "battle.miss";
+    }
+
+    if (activeEvent.type === "creature.faint") {
+      return cue.type === "creature.faint";
+    }
+
+    return false;
+  });
+}
+
+function visualCueReferencesEntity(cue: FrameVisualCue, entityId: string): boolean {
+  if (cue.type === "battle.hit" || cue.type === "battle.miss") {
+    return cue.sourceEntityId === entityId || cue.targetEntityId === entityId;
+  }
+
+  if (cue.type === "creature.faint") {
+    return cue.entityId === entityId;
+  }
+
+  if (cue.type === "capture.success" || cue.type === "capture.fail") {
+    return cue.targetEntityId === entityId;
+  }
+
+  return false;
 }
 
 function updateBattlePlayback(playback: BattlePlaybackState, frame: GameFrame): void {

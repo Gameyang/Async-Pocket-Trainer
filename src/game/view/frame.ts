@@ -209,6 +209,8 @@ export interface FrameBattleReplayEvent {
   critical?: boolean;
   status?: BattleStatus;
   winner?: "player" | "enemy";
+  playerRemainingHp?: number;
+  enemyRemainingHp?: number;
 }
 
 export type FrameVisualCue =
@@ -877,6 +879,7 @@ function createTimeline(state: GameState): FrameTimelineEntry[] {
 }
 
 function createVisualCues(state: GameState): FrameVisualCue[] {
+  const lookup = createBattleEntityLookup(state);
   const battleCues = (state.lastBattle?.replay ?? [])
     .filter(
       (event) =>
@@ -885,7 +888,7 @@ function createVisualCues(state: GameState): FrameVisualCue[] {
         event.type === "creature.faint",
     )
     .slice(-12)
-    .map((event) => battleReplayEventToCue(event))
+    .map((event) => battleReplayEventToCue(event, lookup))
     .filter((cue): cue is FrameVisualCue => Boolean(cue));
   const captureCue = createCaptureCue(state);
 
@@ -929,7 +932,10 @@ function createCaptureCue(state: GameState): FrameVisualCue | undefined {
 }
 
 function createBattleReplay(state: GameState): FrameBattleReplay {
-  const events = (state.lastBattle?.replay ?? []).map(toFrameBattleReplayEvent);
+  const lookup = createBattleEntityLookup(state);
+  const events = (state.lastBattle?.replay ?? []).map((event) =>
+    toFrameBattleReplayEvent(event, lookup),
+  );
 
   return {
     sequenceIndex: events.at(-1)?.sequence ?? 0,
@@ -937,7 +943,38 @@ function createBattleReplay(state: GameState): FrameBattleReplay {
   };
 }
 
-function toFrameBattleReplayEvent(event: BattleReplayEvent): FrameBattleReplayEvent {
+interface BattleEntityLookup {
+  name: (entityId: string | undefined) => string;
+  side: (entityId: string | undefined) => "player" | "enemy" | undefined;
+}
+
+function createBattleEntityLookup(state: GameState): BattleEntityLookup {
+  const names = new Map<string, string>();
+  const sides = new Map<string, "player" | "enemy">();
+  const addCreature = (creature: Creature, side: "player" | "enemy") => {
+    names.set(creature.instanceId, creature.speciesName);
+    sides.set(creature.instanceId, side);
+  };
+
+  state.team.forEach((creature) => addCreature(creature, "player"));
+  state.pendingEncounter?.enemyTeam.forEach((creature) => addCreature(creature, "enemy"));
+  state.lastBattle?.playerTeam.forEach((creature) => addCreature(creature, "player"));
+  state.lastBattle?.enemyTeam.forEach((creature) => addCreature(creature, "enemy"));
+
+  if (state.pendingCapture) {
+    names.set(state.pendingCapture.instanceId, state.pendingCapture.speciesName);
+  }
+
+  return {
+    name: (entityId) => (entityId ? (names.get(entityId) ?? "대상") : "대상"),
+    side: (entityId) => (entityId ? sides.get(entityId) : undefined),
+  };
+}
+
+function toFrameBattleReplayEvent(
+  event: BattleReplayEvent,
+  lookup: BattleEntityLookup,
+): FrameBattleReplayEvent {
   if (event.type === "battle.start") {
     return {
       sequence: event.sequence,
@@ -959,11 +996,12 @@ function toFrameBattleReplayEvent(event: BattleReplayEvent): FrameBattleReplayEv
   }
 
   if (event.type === "move.select") {
+    const actor = lookup.name(event.actorId);
     return {
       sequence: event.sequence,
       turn: event.turn,
       type: event.type,
-      label: `${withJosa(event.actorId, "이/가")} ${withJosa(event.move, "을/를")} 준비했습니다.`,
+      label: `${withJosa(actor, "이/가")} ${withJosa(event.move, "을/를")} 준비했습니다.`,
       move: event.move,
       sourceSide: event.actorSide,
       targetSide: event.targetSide,
@@ -973,25 +1011,28 @@ function toFrameBattleReplayEvent(event: BattleReplayEvent): FrameBattleReplayEv
   }
 
   if (event.type === "move.miss") {
+    const actor = lookup.name(event.actorId);
+    const target = lookup.name(event.targetId);
     return {
       sequence: event.sequence,
       turn: event.turn,
       type: event.type,
-      label: `${withJosa(`${event.actorId}의 ${event.move}`, "이/가")} 빗나갔습니다.`,
+      label: `${withJosa(`${actor}의 ${event.move}`, "이/가")} ${target}에게 빗나갔습니다.`,
       move: event.move,
-      sourceSide: undefined,
-      targetSide: undefined,
+      sourceSide: lookup.side(event.actorId),
+      targetSide: lookup.side(event.targetId),
       sourceEntityId: event.actorId,
       targetEntityId: event.targetId,
     };
   }
 
   if (event.type === "turn.skip") {
+    const entity = lookup.name(event.entityId);
     return {
       sequence: event.sequence,
       turn: event.turn,
       type: event.type,
-      label: `${withJosa(event.entityId, "은/는")} 움직일 수 없습니다: ${event.reason}`,
+      label: `${withJosa(entity, "은/는")} 움직일 수 없습니다: ${event.reason}`,
       entityId: event.entityId,
       side: event.side,
       status: event.status,
@@ -999,14 +1040,19 @@ function toFrameBattleReplayEvent(event: BattleReplayEvent): FrameBattleReplayEv
   }
 
   if (event.type === "damage.apply") {
+    const actor = lookup.name(event.actorId);
+    const target = lookup.name(event.targetId);
     return {
       sequence: event.sequence,
       turn: event.turn,
       type: event.type,
-      label: `${event.actorId}의 ${event.move}: ${event.damage} 피해`,
+      label: `${actor}의 ${event.move}: ${target}에게 ${event.damage} 피해${formatDamageQualifiers(
+        event.effectiveness,
+        event.critical,
+      )}`,
       move: event.move,
-      sourceSide: undefined,
-      targetSide: undefined,
+      sourceSide: lookup.side(event.actorId),
+      targetSide: lookup.side(event.targetId),
       sourceEntityId: event.actorId,
       targetEntityId: event.targetId,
       damage: event.damage,
@@ -1018,14 +1064,15 @@ function toFrameBattleReplayEvent(event: BattleReplayEvent): FrameBattleReplayEv
   }
 
   if (event.type === "status.apply") {
+    const target = lookup.name(event.targetId);
     return {
       sequence: event.sequence,
       turn: event.turn,
       type: event.type,
-      label: `${withJosa(event.targetId, "이/가")} ${localizeBattleStatus(event.status)} 상태가 되었습니다.`,
+      label: `${withJosa(target, "이/가")} ${localizeBattleStatus(event.status)} 상태가 되었습니다.`,
       move: event.move,
-      sourceSide: undefined,
-      targetSide: undefined,
+      sourceSide: lookup.side(event.actorId),
+      targetSide: lookup.side(event.targetId),
       sourceEntityId: event.actorId,
       targetEntityId: event.targetId,
       status: event.status,
@@ -1033,14 +1080,15 @@ function toFrameBattleReplayEvent(event: BattleReplayEvent): FrameBattleReplayEv
   }
 
   if (event.type === "status.immune") {
+    const target = lookup.name(event.targetId);
     return {
       sequence: event.sequence,
       turn: event.turn,
       type: event.type,
-      label: `${withJosa(event.targetId, "은/는")} ${localizeBattleStatus(event.status)}에 면역입니다.`,
+      label: `${withJosa(target, "은/는")} ${localizeBattleStatus(event.status)}에 면역입니다.`,
       move: event.move,
-      sourceSide: undefined,
-      targetSide: undefined,
+      sourceSide: lookup.side(event.actorId),
+      targetSide: lookup.side(event.targetId),
       sourceEntityId: event.actorId,
       targetEntityId: event.targetId,
       status: event.status,
@@ -1048,11 +1096,12 @@ function toFrameBattleReplayEvent(event: BattleReplayEvent): FrameBattleReplayEv
   }
 
   if (event.type === "status.tick") {
+    const entity = lookup.name(event.entityId);
     return {
       sequence: event.sequence,
       turn: event.turn,
       type: event.type,
-      label: `${withJosa(event.entityId, "이/가")} ${localizeBattleStatus(event.status)} 피해 ${withJosa(String(event.damage), "을/를")} 받았습니다.`,
+      label: `${withJosa(entity, "이/가")} ${localizeBattleStatus(event.status)} 피해 ${withJosa(String(event.damage), "을/를")} 받았습니다.`,
       entityId: event.entityId,
       side: event.side,
       damage: event.damage,
@@ -1063,11 +1112,12 @@ function toFrameBattleReplayEvent(event: BattleReplayEvent): FrameBattleReplayEv
   }
 
   if (event.type === "status.clear") {
+    const entity = lookup.name(event.entityId);
     return {
       sequence: event.sequence,
       turn: event.turn,
       type: event.type,
-      label: `${event.entityId}의 ${localizeBattleStatus(event.status)} 상태가 풀렸습니다.`,
+      label: `${entity}의 ${localizeBattleStatus(event.status)} 상태가 풀렸습니다.`,
       entityId: event.entityId,
       side: event.side,
       status: event.status,
@@ -1075,11 +1125,12 @@ function toFrameBattleReplayEvent(event: BattleReplayEvent): FrameBattleReplayEv
   }
 
   if (event.type === "creature.faint") {
+    const entity = lookup.name(event.entityId);
     return {
       sequence: event.sequence,
       turn: event.turn,
       type: event.type,
-      label: `${withJosa(event.entityId, "이/가")} 쓰러졌습니다.`,
+      label: `${withJosa(entity, "이/가")} 쓰러졌습니다.`,
       entityId: event.entityId,
       side: event.side,
     };
@@ -1091,11 +1142,44 @@ function toFrameBattleReplayEvent(event: BattleReplayEvent): FrameBattleReplayEv
     type: event.type,
     label: `${localizeWinner(event.winner)}했습니다.`,
     winner: event.winner,
+    playerRemainingHp: event.playerRemainingHp,
+    enemyRemainingHp: event.enemyRemainingHp,
   };
 }
 
-function battleReplayEventToCue(event: BattleReplayEvent): FrameVisualCue | undefined {
+function formatDamageQualifiers(effectiveness: number, critical: boolean): string {
+  const qualifiers = [
+    ...(critical ? ["급소"] : []),
+    ...(effectiveness > 1 ? ["효과 굉장"] : []),
+    ...(effectiveness > 0 && effectiveness < 1 ? ["효과 약함"] : []),
+  ];
+
+  return qualifiers.length > 0 ? ` (${qualifiers.join(", ")})` : "";
+}
+
+function battleHitEffectKey(effectiveness: number, critical: boolean): string {
+  if (critical) {
+    return "battle.criticalHit";
+  }
+
+  if (effectiveness > 1) {
+    return "battle.superEffective";
+  }
+
+  if (effectiveness > 0 && effectiveness < 1) {
+    return "battle.resisted";
+  }
+
+  return "battle.hit";
+}
+
+function battleReplayEventToCue(
+  event: BattleReplayEvent,
+  lookup: BattleEntityLookup,
+): FrameVisualCue | undefined {
   if (event.type === "move.miss") {
+    const actor = lookup.name(event.actorId);
+    const target = lookup.name(event.targetId);
     return {
       id: `battle:${event.sequence}:miss`,
       type: "battle.miss",
@@ -1105,7 +1189,7 @@ function battleReplayEventToCue(event: BattleReplayEvent): FrameVisualCue | unde
       turn: event.turn,
       sourceEntityId: event.actorId,
       targetEntityId: event.targetId,
-      label: `${withJosa(`${event.actorId}의 ${event.move}`, "이/가")} 빗나갔습니다.`,
+      label: `${withJosa(`${actor}의 ${event.move}`, "이/가")} ${target}에게 빗나갔습니다.`,
       damage: 0,
       effectiveness: 1,
       critical: false,
@@ -1113,16 +1197,21 @@ function battleReplayEventToCue(event: BattleReplayEvent): FrameVisualCue | unde
   }
 
   if (event.type === "damage.apply") {
+    const actor = lookup.name(event.actorId);
+    const target = lookup.name(event.targetId);
     return {
       id: `battle:${event.sequence}:hit`,
       type: "battle.hit",
       sequence: event.sequence,
-      effectKey: event.critical ? "battle.criticalHit" : "battle.hit",
+      effectKey: battleHitEffectKey(event.effectiveness, event.critical),
       soundKey: event.critical ? "sfx.battle.criticalHit" : "sfx.battle.hit",
       turn: event.turn,
       sourceEntityId: event.actorId,
       targetEntityId: event.targetId,
-      label: `${event.actorId}의 ${event.move}`,
+      label: `${actor}의 ${event.move}: ${target}에게 ${event.damage} 피해${formatDamageQualifiers(
+        event.effectiveness,
+        event.critical,
+      )}`,
       damage: event.damage,
       effectiveness: event.effectiveness,
       critical: event.critical,
@@ -1130,6 +1219,7 @@ function battleReplayEventToCue(event: BattleReplayEvent): FrameVisualCue | unde
   }
 
   if (event.type === "creature.faint") {
+    const entity = lookup.name(event.entityId);
     return {
       id: `faint:${event.sequence}:${event.entityId}`,
       type: "creature.faint",
@@ -1138,7 +1228,7 @@ function battleReplayEventToCue(event: BattleReplayEvent): FrameVisualCue | unde
       soundKey: "sfx.creature.faint",
       turn: event.turn,
       entityId: event.entityId,
-      label: `${withJosa(event.entityId, "이/가")} 쓰러졌습니다.`,
+      label: `${withJosa(entity, "이/가")} 쓰러졌습니다.`,
     };
   }
 

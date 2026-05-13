@@ -29,6 +29,33 @@ describe("canvas frame renderer", () => {
 
     vi.unstubAllGlobals();
   });
+
+  it("draws battle cue overlays from visual cues", () => {
+    const operations: string[] = [];
+    const canvas = createFakeCanvas(operations);
+    const imageCtor = vi.fn(function FakeImage(this: FakeImageLike) {
+      this.complete = false;
+      this.naturalWidth = 0;
+      this.src = "";
+    });
+    vi.stubGlobal("Image", imageCtor);
+
+    const client = new HeadlessGameClient({ seed: "vis-2" });
+    client.dispatch({ type: "START_RUN", starterSpeciesId: 7 });
+    client.dispatch({ type: "RESOLVE_NEXT_ENCOUNTER" });
+    const renderer = createCanvasFrameRenderer(canvas, {
+      resolveAssetPath: (assetPath) => assetPath,
+    });
+
+    expect(() => renderer.render(client.getFrame())).not.toThrow();
+    expect(client.getFrame().visualCues.map((cue) => cue.effectKey)).toContain(
+      "battle.superEffective",
+    );
+    expect(operations.filter((operation) => operation === "fillText").length).toBeGreaterThan(4);
+    expect(operations).toContain("strokeRect");
+
+    vi.unstubAllGlobals();
+  });
 });
 
 interface FakeImageLike {

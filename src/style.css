@@ -268,12 +268,23 @@ h1 {
 }
 
 .screen-monster[data-battle-effect="hit"],
-.screen-monster[data-battle-effect="critical-hit"] {
+.screen-monster[data-battle-effect="critical-hit"],
+.screen-monster[data-battle-effect="super-effective"],
+.screen-monster[data-battle-effect="resisted-hit"] {
   animation: battle-hit 260ms steps(3, end);
 }
 
 .screen-monster[data-battle-effect="critical-hit"] {
   filter: drop-shadow(0 7px 0 rgba(25, 38, 36, 0.22)) drop-shadow(0 0 8px #fff3a0);
+}
+
+.screen-monster[data-battle-effect="super-effective"] {
+  filter: drop-shadow(0 7px 0 rgba(25, 38, 36, 0.22)) drop-shadow(0 0 9px #ffef75);
+}
+
+.screen-monster[data-battle-effect="resisted-hit"] {
+  opacity: 0.86;
+  animation-duration: 180ms;
 }
 
 .screen-monster[data-battle-effect="miss"] {
@@ -326,7 +337,7 @@ h1 {
 
 .battle-card.hero {
   right: 9px;
-  bottom: 110px;
+  bottom: 128px;
 }
 
 .name-row {
@@ -350,6 +361,31 @@ h1 {
   font-size: 0.66rem;
 }
 
+.battle-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  min-width: 0;
+}
+
+.battle-tags span {
+  min-height: 16px;
+  border: 1px solid rgba(23, 32, 42, 0.62);
+  border-radius: 4px;
+  padding: 1px 4px;
+  background: rgba(255, 254, 244, 0.78);
+  color: #34413c;
+  font-size: 0.54rem;
+  font-weight: 900;
+  line-height: 1.1;
+}
+
+.battle-tags span[data-tag-kind="status"],
+.battle-tags span[data-tag-kind="fainted"] {
+  background: #ffe2de;
+  color: #7f2720;
+}
+
 .battle-log {
   position: absolute;
   z-index: 4;
@@ -358,13 +394,84 @@ h1 {
   left: 8px;
   display: grid;
   gap: 5px;
-  max-height: 112px;
+  max-height: 132px;
   overflow: hidden;
   padding: 8px 10px;
   border: 3px solid var(--line);
   border-radius: 6px;
   background: linear-gradient(180deg, #fef9e6, #ddc989);
   box-shadow: inset 0 -4px 0 rgba(71, 55, 25, 0.12);
+}
+
+.battle-event-summary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px 7px;
+  min-width: 0;
+  border: 2px solid rgba(23, 32, 42, 0.7);
+  border-radius: 6px;
+  padding: 4px 6px;
+  background: rgba(255, 254, 244, 0.72);
+}
+
+.battle-event-summary strong {
+  overflow: hidden;
+  font-size: 0.68rem;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.battle-event-summary p {
+  grid-column: 1 / -1;
+  margin: 0;
+  overflow: hidden;
+  color: #394740;
+  font-size: 0.62rem;
+  font-weight: 900;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.turn-chip,
+.result-chip {
+  min-height: 20px;
+  border: 2px solid var(--line);
+  border-radius: 5px;
+  padding: 1px 5px;
+  background: #eef7ff;
+  font-size: 0.58rem;
+  font-weight: 900;
+  line-height: 1.1;
+  white-space: nowrap;
+}
+
+.result-chip {
+  background: #fff0a6;
+}
+
+.battle-event-summary[data-event-kind="miss"] .result-chip {
+  background: #eef7ff;
+  color: #315d91;
+}
+
+.battle-event-summary[data-event-kind="critical"] .result-chip,
+.battle-event-summary[data-event-kind="super-effective"] .result-chip {
+  background: #fff0a6;
+  color: #8b2420;
+}
+
+.battle-event-summary[data-event-kind="resisted"] .result-chip {
+  background: #edf4f0;
+  color: #3f6b55;
+}
+
+.battle-event-summary[data-event-kind="faint"] .result-chip,
+.battle-event-summary[data-event-kind="loss"] .result-chip {
+  background: #ffe2de;
+  color: #7f2720;
 }
 
 .battle-log .log-line {
@@ -405,6 +512,16 @@ h1 {
 .battle-float[data-cue-kind="critical"] {
   background: #fff0a6;
   color: #8b2420;
+}
+
+.battle-float[data-cue-kind="super-effective"] {
+  background: #ffef75;
+  color: #7a2b12;
+}
+
+.battle-float[data-cue-kind="resisted"] {
+  background: #edf4f0;
+  color: #3f6b55;
 }
 
 .battle-float[data-cue-kind="miss"] {
@@ -1197,6 +1314,20 @@ h1 {
   background: linear-gradient(90deg, var(--green), #dbec5c);
 }
 
+.battle-card[data-hp-state="mid"] .hp-line span {
+  background: linear-gradient(90deg, #f0b83e, #f3db67);
+}
+
+.battle-card[data-hp-state="low"],
+.battle-card[data-hp-state="empty"] {
+  background: linear-gradient(180deg, #fff4e8, #e4b28e);
+}
+
+.battle-card[data-hp-state="low"] .hp-line span,
+.battle-card[data-hp-state="empty"] .hp-line span {
+  background: linear-gradient(90deg, #e25248, #f38a5c);
+}
+
 .moves {
   overflow-wrap: anywhere;
 }
@@ -1394,7 +1525,7 @@ h1 {
   }
 
   .battle-card.hero {
-    bottom: 116px;
+    bottom: 136px;
   }
 
   .trainer-badge {
