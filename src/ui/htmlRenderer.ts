@@ -2443,6 +2443,7 @@ function playSfx(audioState: AudioState, soundKey: string): void {
   const url = resolveSfxUrl(soundKey);
 
   if (!url) {
+    console.warn(`[audio] missing sfx asset for key: ${soundKey}`);
     return;
   }
 
@@ -2452,7 +2453,8 @@ function playSfx(audioState: AudioState, soundKey: string): void {
   const cleanup = () => audioState.activeSfx.delete(audio);
   audio.addEventListener("ended", cleanup, { once: true });
   audio.addEventListener("error", cleanup, { once: true });
-  void audio.play().catch(() => {
+  void audio.play().catch((error) => {
+    console.warn(`[audio] sfx play failed for ${soundKey}:`, error);
     cleanup();
   });
 }
@@ -2462,7 +2464,7 @@ function resolveSfxVolume(soundKey: string): number {
     return 0.56;
   }
 
-  if (soundKey === "sfx.battle.criticalHit") {
+  if (soundKey === "sfx.battle.critical.hit") {
     return 0.58;
   }
 

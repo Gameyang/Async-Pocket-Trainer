@@ -1804,7 +1804,7 @@ function battleHitEffectKey(effectiveness: number, critical: boolean): string {
 
 function battleHitSoundKey(moveType: ElementType | undefined, critical: boolean): string {
   if (!moveType) {
-    return critical ? "sfx.battle.criticalHit" : "sfx.battle.hit";
+    return critical ? "sfx.battle.critical.hit" : "sfx.battle.hit";
   }
 
   return critical ? `sfx.battle.type.${moveType}.critical` : `sfx.battle.type.${moveType}`;
