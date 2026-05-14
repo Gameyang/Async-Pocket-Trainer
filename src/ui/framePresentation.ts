@@ -54,7 +54,7 @@ export interface ShopActionProfile {
   meta: string;
 }
 
-const MAX_READY_SHOP_ACTIONS = 12;
+const MAX_READY_SHOP_ACTIONS = 8;
 
 export function getLatestVisualCue(frame: GameFrame): FrameVisualCue | undefined {
   return [...frame.visualCues].reverse().find((cue) => cue.type !== "phase.change");

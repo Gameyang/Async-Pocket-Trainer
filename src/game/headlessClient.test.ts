@@ -43,6 +43,24 @@ describe("HeadlessGameClient", () => {
     expect(new Set(statKeys).size).toBeGreaterThan(1);
   });
 
+  it("rolls exactly one shop item from each inventory group", () => {
+    const client = new HeadlessGameClient({ seed: "shop-six-groups" });
+    client.dispatch({ type: "START_RUN", starterSpeciesId: 1 });
+
+    const inventory = client.getSnapshot().shopInventory;
+    expect(inventory?.entries).toHaveLength(6);
+    expect(new Set(inventory?.entries.map((entry) => shopInventoryGroup(entry.actionId))).size).toBe(
+      6,
+    );
+
+    const productActionIds = client
+      .getFrame()
+      .actions.map((action) => action.id)
+      .filter((id) => id.startsWith("shop:") && id !== "shop:reroll");
+
+    expect(productActionIds).toHaveLength(6);
+  });
+
   it("saves and loads a run snapshot without changing deterministic continuation", () => {
     const original = new HeadlessGameClient({ seed: "save-load", trainerName: "Snapshot QA" });
 
@@ -188,12 +206,23 @@ describe("HeadlessGameClient", () => {
     dispatchFrameAction(captureClient, "encounter:next");
     dispatchFrameAction(captureClient, "capture:greatball");
     expect(captureClient.getSnapshot().phase).toBe("teamDecision");
+    const pendingCapture = captureClient.getSnapshot().pendingCapture;
+    if (!pendingCapture) {
+      throw new Error("Expected a pending capture.");
+    }
+    const expectedCaptureHp = Math.ceil(pendingCapture.stats.hp * 0.5);
+    expect(pendingCapture.currentHp).toBe(expectedCaptureHp);
     dispatchFrameAction(captureClient, "team:keep");
     expect(captureClient.getSnapshot()).toMatchObject({
       phase: "ready",
       currentWave: 2,
     });
     expect(captureClient.getSnapshot().team).toHaveLength(2);
+    expect(
+      captureClient
+        .getSnapshot()
+        .team.find((creature) => creature.instanceId === pendingCapture.instanceId)?.currentHp,
+    ).toBe(expectedCaptureHp);
 
     const restartClient = startFromFrameAction("input-restart");
     const gameOverSnapshot = restartClient.saveSnapshot();
@@ -285,4 +314,34 @@ function dispatchFrameAction(client: HeadlessGameClient, actionId: string): void
   }
 
   client.dispatch(action.action);
+}
+
+function shopInventoryGroup(actionId: string): string {
+  if (actionId === "shop:rest" || actionId.startsWith("shop:heal:")) return "recovery";
+  if (
+    actionId === "shop:pokeball" ||
+    actionId === "shop:greatball" ||
+    actionId === "shop:ultraball" ||
+    actionId === "shop:hyperball" ||
+    actionId === "shop:masterball"
+  ) {
+    return "balls";
+  }
+  if (actionId.startsWith("shop:scout:")) return "scout";
+  if (
+    actionId.startsWith("shop:rarity-boost:") ||
+    actionId.startsWith("shop:level-boost:") ||
+    actionId.startsWith("shop:type-lock:")
+  ) {
+    return "encounter";
+  }
+  if (
+    actionId.startsWith("shop:stat-boost:") ||
+    actionId === "shop:stat-reroll" ||
+    actionId.startsWith("shop:teach-move:")
+  ) {
+    return "team";
+  }
+  if (actionId.startsWith("shop:premium:")) return "premium";
+  return "unknown";
 }

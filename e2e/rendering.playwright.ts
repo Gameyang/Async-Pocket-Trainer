@@ -6,6 +6,10 @@ import { speciesCatalog } from "../src/game/data/catalog";
 import { HeadlessGameClient, type HeadlessClientSnapshot } from "../src/game/headlessClient";
 import { createTrainerSnapshot, serializeTrainerSnapshot } from "../src/game/sync/trainerSnapshot";
 
+const E2E_BATTLE_REPLAY_STEP_MS = 540;
+const clockInstalledPages = new WeakSet<Page>();
+const replayClockTimes = new WeakMap<Page, number>();
+
 test("renders phase-specific screens with stable responsive layout", async ({ page }, testInfo) => {
   await openFresh(page);
   await assertPhaseScreen(page, "starterChoice", ".starter-screen");
@@ -46,7 +50,7 @@ test("renders phase-specific screens with stable responsive layout", async ({ pa
   await expect(page.locator(".shop-screen")).toBeVisible();
   const shopCardCount = await page.locator(".shop-card[data-action-id]").count();
   expect(shopCardCount).toBeGreaterThan(3);
-  expect(shopCardCount).toBeLessThanOrEqual(12);
+  expect(shopCardCount).toBeLessThanOrEqual(8);
   await expect(page.locator(".shop-team-slot")).toHaveCount(6);
   await expect(page.locator(".shop-slot-stats").first()).toBeVisible();
   await expect(page.locator(".shop-slot-moves span").first()).toBeVisible();
@@ -141,17 +145,16 @@ test("confirms battle replay, capture feedback, and ball count rendering", async
   await expect.poll(() => page.locator("#app").getAttribute("data-busy")).toBeNull();
   await expect(shell).toHaveAttribute("data-battle-playback", "playing");
   await expect(page.locator(".capture-overlay")).toHaveCount(0);
-  await expect(page.locator("[data-replay-skip]")).toBeVisible();
-  await expect
-    .poll(() => shell.getAttribute("data-battle-event-type"))
-    .toMatch(/^(damage\.apply|move\.miss|creature\.faint)$/);
+  await expect(page.locator("[data-replay-skip]")).toHaveCount(0);
+  await advanceBattleReplayUntilEvent(page, /^(damage\.apply|move\.miss|creature\.faint)$/);
   await expect(page.locator(".battle-float").first()).toBeVisible();
   const firstSequence = Number(await shell.getAttribute("data-battle-sequence"));
+  await runReplayClock(page, E2E_BATTLE_REPLAY_STEP_MS);
   await expect
     .poll(async () => Number(await shell.getAttribute("data-battle-sequence")))
     .toBeGreaterThan(firstSequence);
   await expect(page.locator(".screen-monster[data-battle-effect]").first()).toBeVisible();
-  await skipBattleReplay(page);
+  await waitForBattleReplay(page);
   if ((await readShellState(page)).phase === "captureDecision") {
     await expect(page.locator('.capture-overlay[data-capture-result="choosing"]')).toBeVisible();
   }
@@ -184,6 +187,7 @@ test("pauses battle replay and audio while the page is backgrounded", async ({ p
   expect((await readAudioProbe(page)).some((event) => event.startsWith("pause:"))).toBe(true);
 
   await setPageVisibility(page, "visible");
+  await runReplayClock(page, E2E_BATTLE_REPLAY_STEP_MS);
   await expect
     .poll(async () => Number(await shell.getAttribute("data-battle-sequence")))
     .toBeGreaterThan(pausedSequence);
@@ -237,16 +241,17 @@ test("reads public CSV from code sync settings and opens team record prompt", as
     });
   });
 
-  await openFresh(page);
-  await selectStarterAndConfirm(page);
-  await playUntilWave(page, 5);
+  await openSnapshot(page, trainerCheckpointReadySnapshot());
 
   await page.locator('[data-action-id="encounter:next"]').first().click();
   await expect.poll(() => page.locator("#app").getAttribute("data-busy")).toBeNull();
   await expect(page.locator(".app-shell")).toBeVisible();
   await expect(page.locator('.trainer-badge[data-trainer-source="sheet"] img')).toBeVisible();
   await assertLoadedImage(page.locator('.trainer-badge[data-trainer-source="sheet"] img'));
-  await skipBattleReplay(page);
+  await expect(page.locator(".trainer-record")).toHaveCount(0);
+  await expect(page.locator('.team-record-shift[data-record-placement="battle"]')).toHaveCount(0);
+  await waitForBattleReplay(page);
+  await expect(page.locator('.team-record-shift[data-record-placement="toast"]')).toBeVisible();
   await expect(page.locator("[data-team-record-panel]")).toBeVisible();
   await page.locator('input[name="trainerName"]').fill("E2E Team");
   await page.locator("[data-team-record-form] button").click();
@@ -355,10 +360,35 @@ async function expectStarterDexScrollContainment(page: Page): Promise<void> {
 }
 
 async function openFresh(page: Page): Promise<void> {
+  await installReplayClock(page);
   await page.goto("/");
   await page.evaluate(() => localStorage.clear());
   await page.reload();
   await expect(page.locator(".app-shell")).toBeVisible();
+  await pauseReplayClock(page);
+}
+
+async function installReplayClock(page: Page): Promise<void> {
+  if (clockInstalledPages.has(page)) {
+    return;
+  }
+
+  const initialTime = Date.now();
+  await page.clock.install({ time: initialTime });
+  clockInstalledPages.add(page);
+  replayClockTimes.set(page, initialTime);
+}
+
+async function pauseReplayClock(page: Page): Promise<void> {
+  const pageTime = await page.evaluate(() => Date.now()).catch(() => Date.now());
+  const nextTime = Math.max(replayClockTimes.get(page) ?? 0, pageTime, Date.now()) + 60_000;
+  await page.clock.pauseAt(nextTime);
+  replayClockTimes.set(page, nextTime);
+}
+
+async function runReplayClock(page: Page, ticks: number): Promise<void> {
+  await page.clock.runFor(ticks);
+  replayClockTimes.set(page, await page.evaluate(() => Date.now()));
 }
 
 async function installAudioProbe(page: Page): Promise<void> {
@@ -420,6 +450,7 @@ async function seedStarterSpeciesCache(page: Page, speciesIds: number[]): Promis
 }
 
 async function openSnapshot(page: Page, snapshot: HeadlessClientSnapshot): Promise<void> {
+  await installReplayClock(page);
   await page.goto("/");
   await page.evaluate(
     ({ key, value }) => {
@@ -433,7 +464,8 @@ async function openSnapshot(page: Page, snapshot: HeadlessClientSnapshot): Promi
   );
   await page.reload();
   await expect(page.locator(".app-shell")).toBeVisible();
-  await skipBattleReplay(page);
+  await pauseReplayClock(page);
+  await waitForBattleReplay(page);
 }
 
 async function resolveNonReadyPhase(page: Page): Promise<void> {
@@ -499,7 +531,7 @@ async function clickAction(page: Page, selector: string): Promise<void> {
   await page.locator(selector).first().click();
   await expect.poll(() => page.locator("#app").getAttribute("data-busy")).toBeNull();
   await expect(page.locator(".app-shell")).toBeVisible();
-  await skipBattleReplay(page);
+  await waitForBattleReplay(page);
 }
 
 async function selectStarterAndConfirm(page: Page, speciesId = 4): Promise<void> {
@@ -516,13 +548,33 @@ async function selectStarterAndConfirm(page: Page, speciesId = 4): Promise<void>
   await clickAction(page, '.starter-option[data-starter-selected="true"] [data-action-id^="start:"]');
 }
 
-async function skipBattleReplay(page: Page): Promise<void> {
+async function waitForBattleReplay(page: Page): Promise<void> {
   const shell = page.locator(".app-shell");
 
-  if ((await shell.getAttribute("data-battle-playback")) === "playing") {
-    await page.locator("[data-replay-skip]").click();
-    await expect(shell).toHaveAttribute("data-battle-playback", "idle");
+  for (let guard = 0; guard < 200; guard += 1) {
+    if ((await shell.getAttribute("data-battle-playback")) !== "playing") {
+      return;
+    }
+
+    await runReplayClock(page, E2E_BATTLE_REPLAY_STEP_MS);
   }
+
+  await expect(shell).toHaveAttribute("data-battle-playback", "idle", { timeout: 1_000 });
+}
+
+async function advanceBattleReplayUntilEvent(page: Page, pattern: RegExp): Promise<void> {
+  const shell = page.locator(".app-shell");
+
+  for (let guard = 0; guard < 60; guard += 1) {
+    const eventType = (await shell.getAttribute("data-battle-event-type")) ?? "";
+    if (pattern.test(eventType)) {
+      return;
+    }
+
+    await runReplayClock(page, E2E_BATTLE_REPLAY_STEP_MS);
+  }
+
+  expect((await shell.getAttribute("data-battle-event-type")) ?? "").toMatch(pattern);
 }
 
 async function readShellState(page: Page) {
@@ -584,6 +636,20 @@ function gameOverSnapshot(): HeadlessClientSnapshot {
   snapshot.state.phase = "gameOver";
   snapshot.state.currentWave = 9;
   snapshot.state.gameOverReason = "E2E 게임 오버 화면입니다.";
+  return snapshot;
+}
+
+function trainerCheckpointReadySnapshot(): HeadlessClientSnapshot {
+  const client = new HeadlessGameClient({ seed: "e2e-sheet-checkpoint" });
+  client.dispatch({ type: "START_RUN", starterSpeciesId: 149 });
+  const snapshot = client.saveSnapshot();
+  snapshot.state.phase = "ready";
+  snapshot.state.currentWave = 5;
+  snapshot.state.money = 999;
+  snapshot.state.team = snapshot.state.team.map((creature) => ({
+    ...creature,
+    currentHp: creature.stats.hp,
+  }));
   return snapshot;
 }
 

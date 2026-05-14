@@ -36,6 +36,7 @@ if (app) {
     playerId: getBrowserPlayerId(storage),
     storage,
   });
+  syncController.prefetchNextCheckpointInBackground();
   if (loaded.error) {
     console.warn("Recovered browser save data after validation error:", loaded.error);
   }
@@ -92,7 +93,7 @@ if (app) {
         await syncController.beforeDispatch(resolvedAction);
         const state = client.dispatch(resolvedAction);
         saveClientSnapshot(client.saveSnapshot(), storage);
-        await syncController.afterDispatch(resolvedAction);
+        const syncStatus = await syncController.afterDispatch(resolvedAction);
         if (resolvedAction.type === "ACCEPT_CAPTURE" && before.pendingCapture) {
           starterSpeciesPool = addStarterSpeciesToCache(storage, [before.pendingCapture.speciesId]);
           starterSpeciesChoices = rollStarterSpeciesIds(starterSpeciesPool);
@@ -106,7 +107,8 @@ if (app) {
             before,
             state,
             client.getBalance().checkpointInterval,
-          )
+          ) &&
+          syncStatus.state !== "synced"
         ) {
           recordPrompt = {
             wave: before.currentWave,

@@ -29,6 +29,7 @@ import {
   getStatRerollProduct,
   getTeachMoveProduct,
   getTypeLockProduct,
+  premiumOfferIds,
 } from "./shopCatalog";
 import { ballTypes } from "./types";
 import { createGameFrame, type GameFrame } from "./view/frame";
@@ -93,6 +94,8 @@ export interface HeadlessClientSnapshot {
   trainerSnapshots: TrainerSnapshot[];
   state: GameState;
 }
+
+type ShopInventoryPoolEntry = { actionId: string; weight: number; stock: number };
 
 export class HeadlessGameClient {
   private balance: GameBalance;
@@ -278,7 +281,7 @@ export class HeadlessGameClient {
 
   private generateShopInventory(rerollCount = 0): ShopInventory {
     const rng = new SeededRng(`${this.state.seed}:inv:${this.state.currentWave}:${rerollCount}`);
-    const pool: Array<{ actionId: string; weight: number; stock: number }> = [
+    const pool: ShopInventoryPoolEntry[] = [
       // 회복 (싸지만 강력) — 회수 적게
       { actionId: "shop:rest", weight: 8, stock: 1 },
       { actionId: "shop:heal:single:1", weight: 14, stock: 1 },
@@ -334,27 +337,21 @@ export class HeadlessGameClient {
       { actionId: "shop:premium:dex-unlock", weight: 1, stock: 1 },
     ];
 
-    const slotCount = 10;
-    const remaining = [...pool];
-    const chosen: ShopInventoryEntry[] = [];
-    while (chosen.length < slotCount && remaining.length > 0) {
-      const totalWeight = remaining.reduce((sum, entry) => sum + entry.weight, 0);
-      let ticket = rng.nextFloat() * totalWeight;
-      let pickedIndex = 0;
-      for (let i = 0; i < remaining.length; i += 1) {
-        ticket -= remaining[i].weight;
-        if (ticket <= 0) {
-          pickedIndex = i;
-          break;
-        }
-      }
-      const picked = remaining.splice(pickedIndex, 1)[0];
-      chosen.push({
-        actionId: picked.actionId,
-        stock: picked.stock,
-        initialStock: picked.stock,
-      });
-    }
+    const premiumOffers =
+      this.state.premiumOfferIds?.wave === this.state.currentWave &&
+      this.state.premiumOfferIds.ids.length > 0
+        ? this.state.premiumOfferIds.ids
+        : rollActivePremiumOffers(this.state.seed, this.state.currentWave);
+    const activePremiumActionIds = new Set(premiumOffers.map((offerId) => `shop:${offerId}`));
+    const groups: ShopInventoryPoolEntry[][] = [
+      pool.filter((entry) => isRecoveryShopAction(entry.actionId)),
+      pool.filter((entry) => isBallShopAction(entry.actionId)),
+      pool.filter((entry) => entry.actionId.startsWith("shop:scout:")),
+      pool.filter((entry) => isEncounterBoostShopAction(entry.actionId)),
+      pool.filter((entry) => isTeamUpgradeShopAction(entry.actionId)),
+      pool.filter((entry) => activePremiumActionIds.has(entry.actionId)),
+    ];
+    const chosen = groups.map((group) => createShopInventoryEntry(pickWeightedShopEntry(group, rng)));
 
     return {
       wave: this.state.currentWave,
@@ -797,10 +794,7 @@ export class HeadlessGameClient {
     );
 
     if (result.success) {
-      this.state.pendingCapture = {
-        ...target,
-        currentHp: target.stats.hp,
-      };
+      this.state.pendingCapture = createCaptureJoinCreature(target);
       this.state.phase = "teamDecision";
     } else {
       this.advanceWave();
@@ -816,7 +810,7 @@ export class HeadlessGameClient {
       return;
     }
 
-    const captured = this.state.pendingCapture;
+    const captured = createCaptureJoinCreature(this.state.pendingCapture);
     const resolvedIndex =
       replaceIndex ??
       (options.chooseReplacement === false
@@ -930,6 +924,10 @@ export class HeadlessGameClient {
       return;
     }
 
+    const focusEntityId =
+      scope === "single"
+        ? targetEntityId ?? this.findMostDamagedCreatureId()
+        : this.state.team[0]?.instanceId;
     const beforeHp = totalCurrentHp(this.state.team);
     this.state.money -= product.cost;
     this.state.team =
@@ -937,10 +935,6 @@ export class HeadlessGameClient {
         ? healTeamByRatio(this.state.team, product.healRatio)
         : healSingleByRatio(this.state.team, product.healRatio, targetEntityId);
     const healedHp = totalCurrentHp(this.state.team) - beforeHp;
-    const focusEntityId =
-      scope === "single"
-        ? targetEntityId ?? this.findMostDamagedCreatureId()
-        : undefined;
     this.flashTeamEffect(focusEntityId, "heal");
     this.addEvent(
       scope === "team" ? "team_healed" : "creature_healed",
@@ -1553,6 +1547,80 @@ function normalizeBallCount(value: number | undefined): number {
 
 function countBalls(balls: GameState["balls"]): number {
   return ballTypes.reduce((total, ball) => total + balls[ball], 0);
+}
+
+function rollActivePremiumOffers(seed: string, wave: number): PremiumOfferId[] {
+  const rng = new SeededRng(`${seed}:premium:${wave}`);
+  const shuffled = rng.shuffle(premiumOfferIds);
+  const count = 1 + Math.floor(rng.nextFloat() * 2);
+  return shuffled.slice(0, Math.min(count, shuffled.length));
+}
+
+function pickWeightedShopEntry(
+  group: readonly ShopInventoryPoolEntry[],
+  rng: SeededRng,
+): ShopInventoryPoolEntry {
+  if (group.length === 0) {
+    throw new Error("Shop inventory group is empty.");
+  }
+
+  const totalWeight = group.reduce((sum, entry) => sum + entry.weight, 0);
+  let ticket = rng.nextFloat() * totalWeight;
+  for (const entry of group) {
+    ticket -= entry.weight;
+    if (ticket <= 0) {
+      return entry;
+    }
+  }
+
+  return group[group.length - 1];
+}
+
+function createShopInventoryEntry(entry: ShopInventoryPoolEntry): ShopInventoryEntry {
+  return {
+    actionId: entry.actionId,
+    stock: entry.stock,
+    initialStock: entry.stock,
+  };
+}
+
+function isRecoveryShopAction(actionId: string): boolean {
+  return actionId === "shop:rest" || actionId.startsWith("shop:heal:");
+}
+
+function isBallShopAction(actionId: string): boolean {
+  return (
+    actionId === "shop:pokeball" ||
+    actionId === "shop:greatball" ||
+    actionId === "shop:ultraball" ||
+    actionId === "shop:hyperball" ||
+    actionId === "shop:masterball"
+  );
+}
+
+function isEncounterBoostShopAction(actionId: string): boolean {
+  return (
+    actionId.startsWith("shop:rarity-boost:") ||
+    actionId.startsWith("shop:level-boost:") ||
+    actionId.startsWith("shop:type-lock:")
+  );
+}
+
+function isTeamUpgradeShopAction(actionId: string): boolean {
+  return (
+    actionId.startsWith("shop:stat-boost:") ||
+    actionId === "shop:stat-reroll" ||
+    actionId.startsWith("shop:teach-move:")
+  );
+}
+
+function createCaptureJoinCreature(creature: Creature): Creature {
+  const maxHp = Math.max(0, creature.stats.hp);
+  const joinHp = maxHp <= 0 ? 0 : Math.max(1, Math.ceil(maxHp * 0.5));
+  return {
+    ...creature,
+    currentHp: Math.min(maxHp, joinHp),
+  };
 }
 
 function healTeamByRatio(team: GameState["team"], healRatio: number): GameState["team"] {

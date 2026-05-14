@@ -956,20 +956,6 @@ p {
   line-height: 1.1;
 }
 
-.trainer-record {
-  display: grid;
-  gap: 1px;
-  margin-top: 3px;
-  color: #26323a;
-  font-size: 0.5rem;
-  font-weight: 900;
-  line-height: 1.05;
-}
-
-.trainer-record span {
-  text-transform: none;
-}
-
 .team-record-shift {
   z-index: 7;
   display: grid;
@@ -1007,14 +993,6 @@ p {
 
 .team-record-shift[data-record-direction="up"] {
   background: rgba(255, 226, 222, 0.96);
-}
-
-.team-record-shift[data-record-placement="battle"] {
-  position: absolute;
-  top: 62px;
-  right: 9px;
-  width: min(50%, 188px);
-  animation: record-shift-pop 900ms ease-out both;
 }
 
 .team-record-shift[data-record-placement="toast"] {
@@ -2187,7 +2165,7 @@ button.shop-team-slot:hover:not(:disabled) {
   align-self: stretch;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  grid-template-rows: repeat(4, minmax(0, 1fr));
+  grid-template-rows: repeat(3, minmax(0, 1fr));
   gap: 4px;
   min-height: 0;
 }
@@ -3172,18 +3150,6 @@ button.shop-team-slot:hover:not(:disabled) {
   color: #7f2720;
 }
 
-.replay-skip {
-  min-height: 24px;
-  border-width: 2px;
-  padding: 0 9px;
-  background: #fffef4;
-  box-shadow: 0 2px 0 #6a5430;
-  font-size: 0.68rem;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-}
-
 .team-strip {
   display: grid;
   grid-template-columns: repeat(6, 1fr);
@@ -3762,11 +3728,6 @@ button.shop-team-slot:hover:not(:disabled) {
     width: min(48%, 150px);
   }
 
-  .team-record-shift[data-record-placement="battle"] {
-    top: 116px;
-    width: min(48%, 150px);
-  }
-
   .team-list,
   .sync-form,
   .trainer-form,
@@ -3972,7 +3933,7 @@ button.shop-team-slot:hover:not(:disabled) {
 
   .shop-card-grid {
     grid-template-columns: repeat(4, minmax(0, 1fr));
-    grid-template-rows: repeat(3, minmax(0, 1fr));
+    grid-template-rows: repeat(2, minmax(0, 1fr));
   }
 
   .shop-card[data-shop-featured="true"] {
@@ -4348,23 +4309,6 @@ button.shop-team-slot:hover:not(:disabled) {
   100% {
     opacity: 0;
     transform: translateY(-34px) scale(0.96);
-  }
-}
-
-@keyframes record-shift-pop {
-  0% {
-    opacity: 0;
-    transform: translateY(8px) scale(0.92);
-  }
-
-  35% {
-    opacity: 1;
-    transform: translateY(0) scale(1.04);
-  }
-
-  100% {
-    opacity: 1;
-    transform: translateY(0) scale(1);
   }
 }
 

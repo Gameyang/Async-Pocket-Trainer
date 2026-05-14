@@ -61,6 +61,12 @@ export interface BrowserCheckpointSubmitOptions {
   runSummary?: RunSummary;
 }
 
+interface PrefetchedTrainerCandidates {
+  wave: number;
+  candidates: TrainerSnapshot[];
+  fetchedAt: string;
+}
+
 export class BrowserSyncController {
   private adapter?: TrainerSyncAdapter;
   private teamRecordAdapter?: TeamRecordSyncAdapter;
@@ -73,6 +79,9 @@ export class BrowserSyncController {
   private readonly teamRecordCache: TeamBattleRecordCache;
   private settings: SyncSettings;
   private appendedCheckpoints = new Set<string>();
+  private prefetchedTrainerCandidates = new Map<number, PrefetchedTrainerCandidates>();
+  private backgroundPrefetch?: Promise<BrowserSyncStatus>;
+  private backgroundPrefetchWave?: number;
   private status: BrowserSyncStatus = {
     state: "disabled",
     message: "동기화 꺼짐",
@@ -107,7 +116,45 @@ export class BrowserSyncController {
   updateSettings(settings: SyncSettings): void {
     this.settings = { ...settings };
     this.appendedCheckpoints.clear();
+    this.prefetchedTrainerCandidates.clear();
+    this.backgroundPrefetch = undefined;
+    this.backgroundPrefetchWave = undefined;
     this.rebuildAdapter();
+  }
+
+  prefetchNextCheckpointInBackground(): void {
+    void this.prefetchNextCheckpoint();
+  }
+
+  async prefetchNextCheckpoint(): Promise<BrowserSyncStatus> {
+    const state = this.client.getSnapshot();
+
+    if (state.phase === "starterChoice" || state.phase === "gameOver") {
+      return this.getStatus();
+    }
+
+    const wave = getNextCheckpointWave(
+      state.currentWave,
+      this.client.getBalance().checkpointInterval,
+    );
+
+    if (!wave || this.prefetchedTrainerCandidates.has(wave)) {
+      return this.getStatus();
+    }
+
+    if (this.backgroundPrefetch && this.backgroundPrefetchWave === wave) {
+      return this.backgroundPrefetch;
+    }
+
+    this.backgroundPrefetchWave = wave;
+    this.backgroundPrefetch = this.prefetchTrainerCandidates(wave).finally(() => {
+      if (this.backgroundPrefetchWave === wave) {
+        this.backgroundPrefetch = undefined;
+        this.backgroundPrefetchWave = undefined;
+      }
+    });
+
+    return this.backgroundPrefetch;
   }
 
   async beforeDispatch(action: GameAction): Promise<void> {
@@ -132,49 +179,44 @@ export class BrowserSyncController {
     };
 
     try {
-      const candidates = await adapter.listSnapshots({
-        wave: state.currentWave,
-        excludePlayerId: this.playerId,
-      });
-      await this.refreshTeamBattleRecords();
-      const picked = pickTrainerSnapshot(candidates, state.seed, state.currentWave, state.rngState);
-
-      if (picked) {
-        this.client.addTrainerSnapshot(this.withTeamRecordSummary(picked));
+      if (this.backgroundPrefetch && this.backgroundPrefetchWave === state.currentWave) {
+        await this.backgroundPrefetch;
       }
 
-      this.status = {
-        state: "synced",
-        message: picked ? `${picked.trainerName} 불러옴` : "시트 트레이너가 없습니다",
-        lastSyncedAt: this.now(),
-        candidateCount: candidates.length,
-        pendingTeamRecordCount: this.teamRecordCache.listPendingRecords().length,
-      };
+      const prefetched =
+        this.prefetchedTrainerCandidates.get(state.currentWave) ??
+        (await this.loadTrainerCandidates(adapter, state.currentWave));
+
+      await this.refreshTeamBattleRecords();
+      this.applyTrainerCandidates(prefetched, state);
+      this.prefetchedTrainerCandidates.delete(state.currentWave);
     } catch (error) {
       this.status = toErrorStatus(error, "트레이너 목록 불러오기 실패");
     }
   }
 
-  async afterDispatch(action: GameAction): Promise<void> {
-    if (action.type !== "RESOLVE_NEXT_ENCOUNTER") {
-      return;
+  async afterDispatch(action: GameAction): Promise<BrowserSyncStatus> {
+    if (action.type === "RESOLVE_NEXT_ENCOUNTER") {
+      const record = createTeamBattleRecord(this.client.getSnapshot(), {
+        playerId: this.playerId,
+        createdAt: this.now(),
+      });
+
+      if (record) {
+        this.teamRecordCache.upsertPending(record, this.now());
+        this.status = {
+          ...this.status,
+          pendingTeamRecordCount: this.teamRecordCache.listPendingRecords().length,
+        };
+        await this.flushTeamBattleRecords();
+      }
+
+      await this.submitLatestCheckpointWin();
     }
 
-    const record = createTeamBattleRecord(this.client.getSnapshot(), {
-      playerId: this.playerId,
-      createdAt: this.now(),
-    });
-
-    if (!record) {
-      return;
-    }
-
-    this.teamRecordCache.upsertPending(record, this.now());
-    this.status = {
-      ...this.status,
-      pendingTeamRecordCount: this.teamRecordCache.listPendingRecords().length,
-    };
-    await this.flushTeamBattleRecords();
+    const status = this.getStatus();
+    this.prefetchNextCheckpointInBackground();
+    return status;
   }
 
   async submitCheckpointRecord(
@@ -268,6 +310,101 @@ export class BrowserSyncController {
       pendingTeamRecordCount: this.teamRecordCache.listPendingRecords().length,
     };
     return this.getStatus();
+  }
+
+  private async prefetchTrainerCandidates(wave: number): Promise<BrowserSyncStatus> {
+    const adapter = this.resolveReadyAdapter();
+
+    if (!adapter) {
+      return this.getStatus();
+    }
+
+    if (this.prefetchedTrainerCandidates.has(wave)) {
+      return this.getStatus();
+    }
+
+    this.status = {
+      state: "syncing",
+      message: `${formatWave(wave)} 트레이너 미리 불러오는 중`,
+    };
+
+    try {
+      const prefetched = await this.loadTrainerCandidates(adapter, wave);
+      await this.refreshTeamBattleRecords();
+      this.status = {
+        state: "synced",
+        message: `${formatWave(wave)} 트레이너 ${prefetched.candidates.length}명 준비됨`,
+        lastSyncedAt: prefetched.fetchedAt,
+        candidateCount: prefetched.candidates.length,
+        pendingTeamRecordCount: this.teamRecordCache.listPendingRecords().length,
+      };
+    } catch (error) {
+      this.status = toErrorStatus(error, "다음 체크포인트 트레이너 미리 불러오기 실패");
+    }
+
+    return this.getStatus();
+  }
+
+  private async loadTrainerCandidates(
+    adapter: TrainerSyncAdapter,
+    wave: number,
+  ): Promise<PrefetchedTrainerCandidates> {
+    const candidates = await adapter.listSnapshots({
+      wave,
+      excludePlayerId: this.playerId,
+    });
+    const prefetched = {
+      wave,
+      candidates,
+      fetchedAt: this.now(),
+    };
+    this.prefetchedTrainerCandidates.set(wave, prefetched);
+    return prefetched;
+  }
+
+  private applyTrainerCandidates(
+    prefetched: PrefetchedTrainerCandidates,
+    state: GameState,
+  ): BrowserSyncStatus {
+    const picked = pickTrainerSnapshot(
+      prefetched.candidates,
+      state.seed,
+      state.currentWave,
+      state.rngState,
+    );
+
+    if (picked) {
+      this.client.addTrainerSnapshot(this.withTeamRecordSummary(picked));
+    }
+
+    this.status = {
+      state: "synced",
+      message: picked ? `${picked.trainerName} 불러옴` : "시트 트레이너가 없습니다",
+      lastSyncedAt: prefetched.fetchedAt,
+      candidateCount: prefetched.candidates.length,
+      pendingTeamRecordCount: this.teamRecordCache.listPendingRecords().length,
+    };
+    return this.getStatus();
+  }
+
+  private async submitLatestCheckpointWin(): Promise<BrowserSyncStatus> {
+    const state = this.client.getSnapshot();
+    const battle = state.lastBattle;
+
+    if (state.phase !== "ready" || battle?.kind !== "trainer" || battle.winner !== "player") {
+      return this.getStatus();
+    }
+
+    const battleWave = getLatestResolvedBattleWave(state) ?? state.currentWave - 1;
+    if (!isCheckpointWave(battleWave, this.client.getBalance().checkpointInterval)) {
+      return this.getStatus();
+    }
+
+    return this.submitCheckpointRecord({
+      wave: battleWave,
+      state,
+      runSummary: this.client.getRunSummary(),
+    });
   }
 
   private async refreshTeamBattleRecords(): Promise<void> {
@@ -503,6 +640,28 @@ function pickTrainerSnapshot(
   }
 
   return new SeededRng(`${seed}:browser-sync:${wave}:${rngState}`).pick([...candidates]);
+}
+
+function getNextCheckpointWave(
+  currentWave: number,
+  checkpointInterval: number,
+): number | undefined {
+  if (
+    !Number.isInteger(currentWave) ||
+    !Number.isInteger(checkpointInterval) ||
+    currentWave < 1 ||
+    checkpointInterval < 1
+  ) {
+    return undefined;
+  }
+
+  return Math.ceil(currentWave / checkpointInterval) * checkpointInterval;
+}
+
+function getLatestResolvedBattleWave(state: GameState): number | undefined {
+  const wave = [...state.events].reverse().find((event) => event.type === "battle_resolved")?.wave;
+
+  return Number.isInteger(wave) && wave > 0 ? wave : undefined;
 }
 
 function asTeamRecordSyncAdapter(adapter: unknown): TeamRecordSyncAdapter | undefined {

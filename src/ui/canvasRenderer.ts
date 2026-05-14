@@ -295,9 +295,9 @@ function drawReadyScreen(
     context.fillText(`전투력 ${lead.scores.power}`, rect.x + 154, rect.y + 188);
   }
 
-  const actions = selectReadyShopActions(frame, screenEntities.players).slice(0, 12);
+  const actions = selectReadyShopActions(frame, screenEntities.players).slice(0, 8);
   const columns = 3;
-  const rows = 4;
+  const rows = 3;
   const gap = 8;
   const gridX = rect.x + 16;
   const gridY = rect.y + rect.height * 0.5;

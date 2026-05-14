@@ -39,7 +39,8 @@ describe("headless QA simulation", () => {
 
     expect(report.invariantErrors).toEqual([]);
     // 게임 밸런스(레벨 시스템, 보급 제거, 인벤토리 제약) 조정에 맞춰 임계값 완화
-    expect(report.aggregate.averageFinalWave).toBeGreaterThanOrEqual(8);
+    // Captured teammates now join at half HP, lowering this deterministic autoplay floor.
+    expect(report.aggregate.averageFinalWave).toBeGreaterThanOrEqual(6);
   });
 
   it("produces deterministic seed replay summaries and balance comparison deltas", () => {

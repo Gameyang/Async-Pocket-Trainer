@@ -183,7 +183,6 @@ export function mountHtmlRenderer(
     bindTeamRecord(root, options, render);
     bindStarterReroll(root, options, render);
     bindStarterDexSelection(root);
-    bindBattlePlayback(root, battlePlayback, frame, render);
     syncAudio(audioState, frame, playbackView, lifecycle);
     scheduleBattlePlayback(battlePlayback, frame, render, lifecycle);
   };
@@ -456,20 +455,6 @@ function bindStarterDexSelection(root: HTMLElement): void {
   });
 }
 
-function bindBattlePlayback(
-  root: HTMLElement,
-  playback: BattlePlaybackState,
-  frame: GameFrame,
-  render: () => void,
-): void {
-  root.querySelector<HTMLButtonElement>("[data-replay-skip]")?.addEventListener("click", () => {
-    const finalCursor = Math.max(0, frame.battleReplay.events.length - 1);
-    playback.cursor = finalCursor;
-    clearBattlePlaybackTimer(playback);
-    render();
-  });
-}
-
 function renderFrame(
   frame: GameFrame,
   statusView: HtmlRendererStatusView,
@@ -613,11 +598,8 @@ function createEntityPlaybackView(
   frame: GameFrame,
   playback: BattlePlaybackView,
 ): EntityPlaybackView {
-  if (frame.battleReplay.events.length === 0) {
-    return {
-      entities: frame.entities,
-      entitiesById: new Map(frame.entities.map((entity) => [entity.id, entity])),
-    };
+  if (frame.battleReplay.events.length === 0 || !playback.isPlaying) {
+    return createRawEntityView(frame);
   }
 
   const initialHp = new Map<string, number>();
@@ -688,6 +670,13 @@ function createEntityPlaybackView(
   };
 }
 
+function createRawEntityView(frame: GameFrame): EntityPlaybackView {
+  return {
+    entities: frame.entities,
+    entitiesById: new Map(frame.entities.map((entity) => [entity.id, entity])),
+  };
+}
+
 function renderBattleScreen({
   frame,
   playerEntities,
@@ -710,7 +699,6 @@ function renderBattleScreen({
       <div class="platform hero" aria-hidden="true"></div>
       <div class="fx-overlay" aria-hidden="true"></div>
       ${renderTrainerBadge(frame.scene.trainer)}
-      ${renderTeamRecordShift(frame.scene.trainer, "battle")}
       ${renderBattleMonster(activeOpponent, "enemy-mon", playback.activeEvent, activeCue)}
       ${renderBattleMonster(activePlayer, "hero-mon", playback.activeEvent, activeCue)}
       ${renderMoveVfx(playback.activeEvent, activeCue, battleEntities)}
@@ -1512,34 +1500,14 @@ function renderTrainerBadge(trainer: FrameTrainerScene | undefined): string {
       <div>
         <span>${escapeHtml(trainer.label)}</span>
         <strong>${escapeHtml(trainer.trainerName)}</strong>
-        ${renderTrainerRecordLine(trainer)}
       </div>
-    </div>
-  `;
-}
-
-function renderTrainerRecordLine(trainer: FrameTrainerScene): string {
-  if (!trainer.record) {
-    return trainer.teamPower === undefined
-      ? ""
-      : `<div class="trainer-record"><span>전투력 ${trainer.teamPower}</span></div>`;
-  }
-
-  const record = trainer.record;
-  const winRate = formatPercent(record.winRate);
-  const teamPower = trainer.teamPower === undefined ? "" : ` · 전투력 ${trainer.teamPower}`;
-
-  return `
-    <div class="trainer-record" data-strength="${escapeHtml(record.strengthLabel)}">
-      <span>승률 ${winRate} · ${escapeHtml(record.strengthLabel)}</span>
-      <span>${record.wins}승 ${record.losses}패${teamPower}</span>
     </div>
   `;
 }
 
 function renderTeamRecordShift(
   trainer: FrameTrainerScene | undefined,
-  placement: "battle" | "toast" | "inline",
+  placement: "toast" | "inline",
 ): string {
   const change = trainer?.recordChange;
 
@@ -1550,11 +1518,12 @@ function renderTeamRecordShift(
   const direction = change.deltaWinRate >= 0 ? "up" : "down";
   const sign = change.deltaWinRate > 0 ? "+" : "";
   const opponentResult = change.opponentResult === "win" ? "상대 승리" : "상대 패배";
+  const teamPower = trainer?.teamPower === undefined ? "" : ` · 전투력 ${trainer.teamPower}`;
 
   return `
     <div class="team-record-shift" data-record-direction="${direction}" data-record-placement="${placement}">
       <strong>상대 승률 ${formatPercent(change.before.winRate)} → ${formatPercent(change.after.winRate)}</strong>
-      <span>${opponentResult} · ${sign}${formatPercent(change.deltaWinRate)}</span>
+      <span>${opponentResult} · ${change.after.wins}승 ${change.after.losses}패 · ${sign}${formatPercent(change.deltaWinRate)}${teamPower}</span>
     </div>
   `;
 }
@@ -1986,16 +1955,12 @@ function renderReplayMeter(playback: BattlePlaybackView): string {
 
   const current = playback.activeEvent?.sequence ?? 0;
   const total = playback.visibleEvents.at(-1)?.sequence ?? current;
-  const button = playback.isPlaying
-    ? '<button type="button" class="replay-skip" data-replay-skip aria-label="전투 리플레이 빠르게 넘기기"><span aria-hidden="true">&gt;&gt;</span><span>빠르게 넘기기</span></button>'
-    : "";
   const state = playback.isPlaying ? '<span class="replay-state">전투 재생 중</span>' : "";
 
   return `
     <div class="replay-row" data-replay-current="${current}" data-replay-total="${total}">
       <span>${current}/${total}</span>
       ${state}
-      ${button}
     </div>
   `;
 }
