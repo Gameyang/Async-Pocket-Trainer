@@ -55,7 +55,7 @@ export function awardDexUnlock(meta: MetaCurrencyState, speciesId: number): Achi
   if (isClaimed(meta, id)) {
     return undefined;
   }
-  let rarity = 1;
+  let rarity: number;
   try {
     rarity = Math.max(1, getSpecies(speciesId).rarity);
   } catch {

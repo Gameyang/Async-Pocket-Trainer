@@ -87,11 +87,16 @@ interface BattlePlaybackView {
   replayKey: string;
 }
 
+interface AppLifecycleState {
+  suspended: boolean;
+}
+
 interface AudioState {
   unlocked: boolean;
   currentBgmKey?: FrameBgmKey;
   bgm?: HTMLAudioElement;
   playedCueIds: Set<string>;
+  activeSfx: Set<HTMLAudioElement>;
 }
 
 type BattleMotionClip =
@@ -128,6 +133,10 @@ export function mountHtmlRenderer(
   const audioState: AudioState = {
     unlocked: false,
     playedCueIds: new Set(),
+    activeSfx: new Set(),
+  };
+  const lifecycle: AppLifecycleState = {
+    suspended: isPageSuspended(),
   };
   const shopTarget: ShopTargetState = {};
 
@@ -152,11 +161,54 @@ export function mountHtmlRenderer(
     bindStarterReroll(root, options, render);
     bindStarterDexSelection(root);
     bindBattlePlayback(root, battlePlayback, frame, render);
-    syncAudio(audioState, frame, playbackView);
-    scheduleBattlePlayback(battlePlayback, frame, render);
+    syncAudio(audioState, frame, playbackView, lifecycle);
+    scheduleBattlePlayback(battlePlayback, frame, render, lifecycle);
   };
 
   render();
+  bindAppLifecycle(lifecycle, audioState, battlePlayback, render);
+}
+
+function bindAppLifecycle(
+  lifecycle: AppLifecycleState,
+  audioState: AudioState,
+  playback: BattlePlaybackState,
+  render: () => void,
+): void {
+  const suspend = () => {
+    const changed = !lifecycle.suspended;
+    lifecycle.suspended = true;
+    clearBattlePlaybackTimer(playback);
+    pauseAudio(audioState);
+
+    if (changed) {
+      render();
+    }
+  };
+
+  const resumeIfVisible = () => {
+    if (isPageSuspended()) {
+      suspend();
+      return;
+    }
+
+    if (!lifecycle.suspended) {
+      return;
+    }
+
+    lifecycle.suspended = false;
+    render();
+  };
+
+  document.addEventListener("visibilitychange", resumeIfVisible);
+  document.addEventListener("freeze", suspend);
+  document.addEventListener("resume", resumeIfVisible);
+  window.addEventListener("pagehide", suspend);
+  window.addEventListener("pageshow", resumeIfVisible);
+}
+
+function isPageSuspended(): boolean {
+  return document.hidden || document.visibilityState === "hidden";
 }
 
 function bindActions(
@@ -2134,8 +2186,13 @@ function scheduleBattlePlayback(
   playback: BattlePlaybackState,
   frame: GameFrame,
   render: () => void,
+  lifecycle: AppLifecycleState,
 ): void {
-  if (playback.timerId !== undefined || frame.battleReplay.events.length <= 1) {
+  if (
+    lifecycle.suspended ||
+    playback.timerId !== undefined ||
+    frame.battleReplay.events.length <= 1
+  ) {
     return;
   }
 
@@ -2145,6 +2202,9 @@ function scheduleBattlePlayback(
 
   playback.timerId = window.setTimeout(() => {
     playback.timerId = undefined;
+    if (lifecycle.suspended) {
+      return;
+    }
     playback.cursor = Math.min(playback.cursor + 1, frame.battleReplay.events.length - 1);
     render();
   }, BATTLE_REPLAY_STEP_MS);
@@ -2183,9 +2243,14 @@ function unlockAudio(audioState: AudioState): void {
   audioState.unlocked = true;
 }
 
-function syncAudio(audioState: AudioState, frame: GameFrame, playback: BattlePlaybackView): void {
-  if (!audioState.unlocked) {
-    audioState.bgm?.pause();
+function syncAudio(
+  audioState: AudioState,
+  frame: GameFrame,
+  playback: BattlePlaybackView,
+  lifecycle: AppLifecycleState,
+): void {
+  if (!audioState.unlocked || lifecycle.suspended) {
+    pauseAudio(audioState);
     return;
   }
 
@@ -2207,7 +2272,7 @@ function syncAudio(audioState: AudioState, frame: GameFrame, playback: BattlePla
     }
 
     audioState.playedCueIds.add(cue.id);
-    playSfx(cue.soundKey);
+    playSfx(audioState, cue.soundKey);
   }
 }
 
@@ -2259,7 +2324,25 @@ function syncBgm(audioState: AudioState, bgmKey: FrameBgmKey): void {
   void bgm.play().catch(() => undefined);
 }
 
-function playSfx(soundKey: string): void {
+function pauseAudio(audioState: AudioState): void {
+  audioState.bgm?.pause();
+  stopActiveSfx(audioState);
+}
+
+function stopActiveSfx(audioState: AudioState): void {
+  for (const audio of audioState.activeSfx) {
+    audio.pause();
+    try {
+      audio.currentTime = 0;
+    } catch {
+      // Some mobile browsers reject seeking streams that have not fully loaded.
+    }
+  }
+
+  audioState.activeSfx.clear();
+}
+
+function playSfx(audioState: AudioState, soundKey: string): void {
   const url = resolveSfxUrl(soundKey);
 
   if (!url) {
@@ -2268,7 +2351,13 @@ function playSfx(soundKey: string): void {
 
   const audio = new Audio(url);
   audio.volume = resolveSfxVolume(soundKey);
-  void audio.play().catch(() => undefined);
+  audioState.activeSfx.add(audio);
+  const cleanup = () => audioState.activeSfx.delete(audio);
+  audio.addEventListener("ended", cleanup, { once: true });
+  audio.addEventListener("error", cleanup, { once: true });
+  void audio.play().catch(() => {
+    cleanup();
+  });
 }
 
 function resolveSfxVolume(soundKey: string): number {

@@ -164,6 +164,31 @@ test("confirms battle replay, capture feedback, and ball count rendering", async
   }
 });
 
+test("pauses battle replay and audio while the page is backgrounded", async ({ page }) => {
+  await installAudioProbe(page);
+  await openFresh(page);
+  await selectStarterAndConfirm(page);
+
+  await page.locator('[data-action-id="encounter:next"]').first().click();
+  await expect.poll(() => page.locator("#app").getAttribute("data-busy")).toBeNull();
+
+  const shell = page.locator(".app-shell");
+  await expect(shell).toHaveAttribute("data-battle-playback", "playing");
+
+  await resetAudioProbe(page);
+  await setPageVisibility(page, "hidden");
+  const pausedSequence = Number(await shell.getAttribute("data-battle-sequence"));
+  await page.waitForTimeout(1_200);
+
+  expect(Number(await shell.getAttribute("data-battle-sequence"))).toBe(pausedSequence);
+  expect((await readAudioProbe(page)).some((event) => event.startsWith("pause:"))).toBe(true);
+
+  await setPageVisibility(page, "visible");
+  await expect
+    .poll(async () => Number(await shell.getAttribute("data-battle-sequence")))
+    .toBeGreaterThan(pausedSequence);
+});
+
 test("drives browser input through frame actions, disabled actions, and reload save", async ({
   page,
 }) => {
@@ -334,6 +359,50 @@ async function openFresh(page: Page): Promise<void> {
   await page.evaluate(() => localStorage.clear());
   await page.reload();
   await expect(page.locator(".app-shell")).toBeVisible();
+}
+
+async function installAudioProbe(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const state = window as unknown as { __audioEvents: string[] };
+    state.__audioEvents = [];
+    HTMLMediaElement.prototype.play = function () {
+      state.__audioEvents.push(`play:${this.currentSrc || this.src}`);
+      return Promise.resolve();
+    };
+    HTMLMediaElement.prototype.pause = function () {
+      state.__audioEvents.push(`pause:${this.currentSrc || this.src}`);
+    };
+  });
+}
+
+async function resetAudioProbe(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const state = window as unknown as { __audioEvents?: string[] };
+    if (state.__audioEvents) {
+      state.__audioEvents.length = 0;
+    }
+  });
+}
+
+async function readAudioProbe(page: Page): Promise<string[]> {
+  return page.evaluate(() => {
+    const state = window as unknown as { __audioEvents?: string[] };
+    return [...(state.__audioEvents ?? [])];
+  });
+}
+
+async function setPageVisibility(page: Page, visibilityState: "hidden" | "visible"): Promise<void> {
+  await page.evaluate((nextVisibilityState) => {
+    Object.defineProperty(document, "hidden", {
+      configurable: true,
+      get: () => nextVisibilityState === "hidden",
+    });
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      get: () => nextVisibilityState,
+    });
+    document.dispatchEvent(new Event("visibilitychange"));
+  }, visibilityState);
 }
 
 async function seedStarterSpeciesCache(page: Page, speciesIds: number[]): Promise<void> {
