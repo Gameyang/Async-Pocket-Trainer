@@ -98,7 +98,9 @@ describe("HeadlessGameClient", () => {
     client.loadSnapshot(saved);
 
     const [bulbasaur, charmander] = client.getSnapshot().team;
-    const fireAction = client.getFrame().actions.find((action) => action.id === "shop:teach-move:fire");
+    const fireAction = client
+      .getFrame()
+      .actions.find((action) => action.id === "shop:teach-move:fire");
 
     expect(fireAction?.enabled).toBe(true);
     expect(fireAction?.eligibleTargetIds).toEqual([charmander.instanceId]);
@@ -118,7 +120,9 @@ describe("HeadlessGameClient", () => {
       targetEntityId: charmander.instanceId,
     });
     const learnedMoveId = client.getSnapshot().events.at(-1)?.data?.move;
-    const charmanderLearnset = new Set(getSpecies(charmander.speciesId).levelUpMoves.map((entry) => entry.moveId));
+    const charmanderLearnset = new Set(
+      getSpecies(charmander.speciesId).levelUpMoves.map((entry) => entry.moveId),
+    );
 
     expect(typeof learnedMoveId).toBe("string");
     expect(charmanderLearnset.has(String(learnedMoveId))).toBe(true);
@@ -189,10 +193,7 @@ describe("HeadlessGameClient", () => {
     const expectedHealthAscendingOrder = client
       .getSnapshot()
       .team.slice()
-      .sort(
-        (left, right) =>
-          left.currentHp / left.stats.hp - right.currentHp / right.stats.hp,
-      )
+      .sort((left, right) => left.currentHp / left.stats.hp - right.currentHp / right.stats.hp)
       .map((creature) => creature.instanceId);
     dispatchFrameAction(client, "shop:team-sort:health:asc");
     expect(client.getSnapshot().team.map((creature) => creature.instanceId)).toEqual(
@@ -208,9 +209,7 @@ describe("HeadlessGameClient", () => {
     const inventory = client.getSnapshot().shopInventory;
     const groups = new Set(inventory?.entries.map((entry) => shopInventoryGroup(entry.actionId)));
     expect(inventory?.entries).toHaveLength(8);
-    expect(groups).toEqual(
-      new Set(["recovery", "balls", "encounter", "team", "premium"]),
-    );
+    expect(groups).toEqual(new Set(["recovery", "balls", "encounter", "team", "premium"]));
 
     const productActionIds = client
       .getFrame()
@@ -346,12 +345,16 @@ describe("HeadlessGameClient", () => {
     dispatchFrameAction(shopClient, "shop:type-lock:fire");
     expect(shopClient.getSnapshot().encounterBoost).toMatchObject({ lockedType: "fire" });
     dispatchFrameAction(shopClient, "shop:stat-boost:hp:1");
-    expect(shopClient.getSnapshot().team[0].stats.hp).toBeGreaterThan(snapshot.state.team[0].stats.hp);
+    expect(shopClient.getSnapshot().team[0].stats.hp).toBeGreaterThan(
+      snapshot.state.team[0].stats.hp,
+    );
     dispatchFrameAction(shopClient, "shop:pokeball");
     dispatchFrameAction(shopClient, "shop:rest");
     expect(shopClient.getSnapshot().events.map((event) => event.type)).toContain("team_rested");
     expect(shopClient.getSnapshot().events.map((event) => event.type)).toContain("ball_bought");
-    expect(shopClient.getSnapshot().events.map((event) => event.type)).toContain("stat_boost_applied");
+    expect(shopClient.getSnapshot().events.map((event) => event.type)).toContain(
+      "stat_boost_applied",
+    );
 
     const skipClient = startFromFrameAction("input-skip");
     dispatchFrameAction(skipClient, "encounter:next");

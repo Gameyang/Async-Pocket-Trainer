@@ -1,13 +1,7 @@
 import { runAutoBattle } from "./battle/battleEngine";
 import { attemptCapture } from "./capture/captureSystem";
 import { createCreature, healTeam, normalizeCreatureBattleLoadout } from "./creatureFactory";
-import {
-  defaultBalance,
-  getMove,
-  getSpecies,
-  movesById,
-  starterSpeciesIds,
-} from "./data/catalog";
+import { defaultBalance, getMove, getSpecies, movesById, starterSpeciesIds } from "./data/catalog";
 import {
   DEFAULT_HEADLESS_TRAINER_NAME,
   formatWave,
@@ -298,11 +292,15 @@ export class HeadlessGameClient {
     }
     this.state.money -= cost;
     this.state.shopInventory = this.generateShopInventory(rerollCount + 1);
-    this.addEvent("shop_rerolled", `상점을 ${cost}코인으로 재구성했습니다.`, { rerollCount: rerollCount + 1 });
+    this.addEvent("shop_rerolled", `상점을 ${cost}코인으로 재구성했습니다.`, {
+      rerollCount: rerollCount + 1,
+    });
   }
 
   private getActiveShopInventory(): ShopInventory | undefined {
-    return this.state.shopInventory?.wave === this.state.currentWave ? this.state.shopInventory : undefined;
+    return this.state.shopInventory?.wave === this.state.currentWave
+      ? this.state.shopInventory
+      : undefined;
   }
 
   private generateShopInventory(rerollCount = 0): ShopInventory {
@@ -374,8 +372,7 @@ export class HeadlessGameClient {
     ];
     const bonusGroups: ShopInventoryPoolEntry[][] = [
       pool.filter(
-        (entry) =>
-          isRecoveryShopAction(entry.actionId) || isBallShopAction(entry.actionId),
+        (entry) => isRecoveryShopAction(entry.actionId) || isBallShopAction(entry.actionId),
       ),
       pool.filter((entry) => isEncounterBoostShopAction(entry.actionId)),
       pool.filter(
@@ -578,7 +575,7 @@ export class HeadlessGameClient {
     if (effect.kind === "heal") {
       const focusEntityId =
         effect.scope === "single"
-          ? targetEntityId ?? this.findMostDamagedCreatureId()
+          ? (targetEntityId ?? this.findMostDamagedCreatureId())
           : this.state.team[0]?.instanceId;
       const beforeHp = totalCurrentHp(this.state.team);
       this.state.team =
@@ -599,11 +596,15 @@ export class HeadlessGameClient {
         ...this.state.balls,
         [effect.ball]: this.state.balls[effect.ball] + effect.quantity,
       };
-      this.addEvent("premium_purchased", `${localizeBall(effect.ball)} ${effect.quantity}개를 받았습니다.`, {
-        offerId,
-        ball: effect.ball,
-        quantity: effect.quantity,
-      });
+      this.addEvent(
+        "premium_purchased",
+        `${localizeBall(effect.ball)} ${effect.quantity}개를 받았습니다.`,
+        {
+          offerId,
+          ball: effect.ball,
+          quantity: effect.quantity,
+        },
+      );
       return;
     }
 
@@ -616,10 +617,14 @@ export class HeadlessGameClient {
         ...existing,
         rarityBonus: Math.max(existing.rarityBonus ?? 0, effect.bonus),
       };
-      this.addEvent("premium_purchased", `희귀도 보정 +${Math.round(effect.bonus * 100)}%가 적용되었습니다.`, {
-        offerId,
-        bonus: effect.bonus,
-      });
+      this.addEvent(
+        "premium_purchased",
+        `희귀도 보정 +${Math.round(effect.bonus * 100)}%가 적용되었습니다.`,
+        {
+          offerId,
+          bonus: effect.bonus,
+        },
+      );
       return;
     }
 
@@ -633,11 +638,15 @@ export class HeadlessGameClient {
         levelMin: Math.max(existing.levelMin ?? 0, effect.min),
         levelMax: Math.max(existing.levelMax ?? 0, effect.max),
       };
-      this.addEvent("premium_purchased", `숙련도 보정 +${effect.min}~${effect.max}이(가) 적용되었습니다.`, {
-        offerId,
-        min: effect.min,
-        max: effect.max,
-      });
+      this.addEvent(
+        "premium_purchased",
+        `숙련도 보정 +${effect.min}~${effect.max}이(가) 적용되었습니다.`,
+        {
+          offerId,
+          min: effect.min,
+          max: effect.max,
+        },
+      );
       return;
     }
 
@@ -650,10 +659,14 @@ export class HeadlessGameClient {
         ...existing,
         lockedType: effect.element,
       };
-      this.addEvent("premium_purchased", `다음 만남을 ${localizeType(effect.element)} 타입으로 고정했습니다.`, {
-        offerId,
-        element: effect.element,
-      });
+      this.addEvent(
+        "premium_purchased",
+        `다음 만남을 ${localizeType(effect.element)} 타입으로 고정했습니다.`,
+        {
+          offerId,
+          element: effect.element,
+        },
+      );
     }
   }
 
@@ -1083,7 +1096,7 @@ export class HeadlessGameClient {
 
     const focusEntityId =
       scope === "single"
-        ? targetEntityId ?? this.findMostDamagedCreatureId()
+        ? (targetEntityId ?? this.findMostDamagedCreatureId())
         : this.state.team[0]?.instanceId;
     const beforeHp = totalCurrentHp(this.state.team);
     this.state.money -= product.cost;
@@ -1395,10 +1408,7 @@ export class HeadlessGameClient {
     }
 
     const product = getTeamSortProduct(sortBy, direction);
-    const cost = this.resolveDiscountedCost(
-      teamSortActionId(sortBy, direction),
-      product.cost,
-    );
+    const cost = this.resolveDiscountedCost(teamSortActionId(sortBy, direction), product.cost);
 
     if (this.state.money < cost) {
       this.addEvent("team_sort_denied", "팀 정렬에 필요한 코인이 부족합니다.");
@@ -1450,7 +1460,12 @@ export class HeadlessGameClient {
     const report =
       kind === "rarity"
         ? createRarityScoutReport(tier, preview.opponentName, maxRarity)
-        : createPowerScoutReport(tier, preview.opponentName, enemyPower, scoreTeam(this.state.team));
+        : createPowerScoutReport(
+            tier,
+            preview.opponentName,
+            enemyPower,
+            scoreTeam(this.state.team),
+          );
 
     this.state.money -= product.cost;
     this.addEvent("scout_reported", report, {
@@ -1920,10 +1935,7 @@ function sortTeamMembers(
       index,
       value: teamSortValue(creature, sortBy),
     }))
-    .sort(
-      (left, right) =>
-        (left.value - right.value) * directionFactor || left.index - right.index,
-    )
+    .sort((left, right) => (left.value - right.value) * directionFactor || left.index - right.index)
     .map((entry) => entry.creature);
 }
 
@@ -1979,7 +1991,9 @@ function healSingleByRatio(
             hpRatio: creature.stats.hp <= 0 ? 1 : creature.currentHp / creature.stats.hp,
           }))
           .filter((candidate) => candidate.missingHp > 0)
-          .sort((left, right) => left.hpRatio - right.hpRatio || right.missingHp - left.missingHp)[0];
+          .sort(
+            (left, right) => left.hpRatio - right.hpRatio || right.missingHp - left.missingHp,
+          )[0];
 
   if (!target) {
     return [...team];
@@ -2005,11 +2019,7 @@ function getSelectedRouteId(state: GameState): RouteId {
   return state.selectedRoute?.wave === state.currentWave ? state.selectedRoute.id : "normal";
 }
 
-function createRarityScoutReport(
-  tier: ScoutTier,
-  opponentName: string,
-  maxRarity: number,
-): string {
+function createRarityScoutReport(tier: ScoutTier, opponentName: string, maxRarity: number): string {
   if (tier === 1) {
     const band = maxRarity >= 8 ? "높음" : maxRarity >= 5 ? "보통" : "낮음";
     return `희귀 탐지 ${tier}단계: 다음 만남의 희귀도는 ${band}입니다.`;

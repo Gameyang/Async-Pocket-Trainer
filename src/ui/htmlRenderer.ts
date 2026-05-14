@@ -1427,7 +1427,9 @@ function renderShopTeamSlot(
   const targetAllowed =
     !targetAction?.eligibleTargetIds || targetAction.eligibleTargetIds.includes(entity.id);
   const selectable =
-    Boolean(targetAction) && targetAllowed && (!requiresHealable || entity.hp.current < entity.hp.max);
+    Boolean(targetAction) &&
+    targetAllowed &&
+    (!requiresHealable || entity.hp.current < entity.hp.max);
   const interactive = options.interactive ?? true;
   const disabled = interactive && targetAction && !selectable ? " disabled" : "";
   const tag = interactive ? "button" : "div";
@@ -1441,7 +1443,7 @@ function renderShopTeamSlot(
     teamEffect && teamEffect.entityId === entity.id
       ? ` data-team-effect="${escapeHtml(teamEffect.kind)}" data-team-effect-key="${escapeHtml(teamEffect.key)}"`
       : "";
-  const rewardBadge = options.showRewardBadges ?? true ? renderShopTeamRewardBadge(entity) : "";
+  const rewardBadge = (options.showRewardBadges ?? true) ? renderShopTeamRewardBadge(entity) : "";
 
   return `
     <${tag}${typeAttribute} class="shop-team-slot" data-team-slot="${index + 1}" data-slot-state="${hpState}"${targetAttribute}${detailAttribute}${effectAttribute}${disabled}>
@@ -1471,10 +1473,7 @@ function renderShopTeamRewardBadge(entity: FrameEntity): string {
     return "";
   }
 
-  const totalReward = pendingRewards.reduce(
-    (sum, entry) => sum + entry.rewardTrainerPoints,
-    0,
-  );
+  const totalReward = pendingRewards.reduce((sum, entry) => sum + entry.rewardTrainerPoints, 0);
 
   return renderRewardAlertBadge(
     `${entity.name} 스킬 언락 보상 ${formatTrainerPoints(totalReward)}`,
@@ -2737,9 +2736,7 @@ function positionActiveMoveVfx(
   moveVfx.setAttribute("data-vfx-positioned", "true");
 }
 
-function normalizeMeasuredRect(
-  rect: DOMRect,
-): Pick<DOMRect, "left" | "top" | "width" | "height"> {
+function normalizeMeasuredRect(rect: DOMRect): Pick<DOMRect, "left" | "top" | "width" | "height"> {
   const fallbackSize = Math.max(rect.width, rect.height, 1);
 
   return {

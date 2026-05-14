@@ -108,13 +108,7 @@ export const shopElementTypes: readonly ElementType[] = [
   "fairy",
 ];
 
-export const shopStatKeys: readonly ShopStatKey[] = [
-  "hp",
-  "attack",
-  "defense",
-  "special",
-  "speed",
-];
+export const shopStatKeys: readonly ShopStatKey[] = ["hp", "attack", "defense", "special", "speed"];
 
 export const healTiers: readonly HealTier[] = [1, 2, 3, 4, 5];
 export const scoutTiers: readonly ScoutTier[] = [1, 2, 3];
@@ -294,10 +288,7 @@ export function getLevelBoostProduct(tier: LevelBoostTier): LevelBoostProduct {
   };
 }
 
-export function getStatBoostProduct(
-  stat: ShopStatKey,
-  tier: StatBoostTier,
-): StatBoostProduct {
+export function getStatBoostProduct(stat: ShopStatKey, tier: StatBoostTier): StatBoostProduct {
   return {
     stat,
     tier,
@@ -324,17 +315,13 @@ export function getTypeLockProduct(element: ElementType): TypeLockProduct {
   };
 }
 
-export function getTeamSortProduct(
-  sortBy: TeamSortKey,
-  direction: SortDirection,
-): TeamSortProduct {
+export function getTeamSortProduct(sortBy: TeamSortKey, direction: SortDirection): TeamSortProduct {
   return {
     sortBy,
     direction,
     cost:
-      teamSortOptions.find(
-        (option) => option.sortBy === sortBy && option.direction === direction,
-      )?.cost ?? 3,
+      teamSortOptions.find((option) => option.sortBy === sortBy && option.direction === direction)
+        ?.cost ?? 3,
   };
 }
 
@@ -481,14 +468,10 @@ function createPremiumOffers(): PremiumOffer[] {
   for (const element of shopElementTypes) {
     const label = typeLabels[element];
     offers.push(
-      premiumOffer(
-        `premium:type-lock:${element}`,
-        4,
-        `${label} 고정`,
-        "일반 타입 고정과 동일",
-        3,
-        { kind: "typeLock", element },
-      ),
+      premiumOffer(`premium:type-lock:${element}`, 4, `${label} 고정`, "일반 타입 고정과 동일", 3, {
+        kind: "typeLock",
+        element,
+      }),
       premiumOffer(
         `premium:teach-move:${element}:1`,
         4,

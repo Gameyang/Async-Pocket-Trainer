@@ -443,13 +443,14 @@ export function createGameFrame(
       capture: captureScene,
       trainer: createTrainerScene(state),
       bgmKey: createBgmKey(state),
-      teamEffect: state.lastTeamEffect && state.lastTeamEffect.frameId >= frameId
-        ? {
-            entityId: state.lastTeamEffect.entityId,
-            kind: state.lastTeamEffect.kind,
-            key: `${state.lastTeamEffect.kind}:${state.lastTeamEffect.frameId}`,
-          }
-        : undefined,
+      teamEffect:
+        state.lastTeamEffect && state.lastTeamEffect.frameId >= frameId
+          ? {
+              entityId: state.lastTeamEffect.entityId,
+              kind: state.lastTeamEffect.kind,
+              key: `${state.lastTeamEffect.kind}:${state.lastTeamEffect.frameId}`,
+            }
+          : undefined,
     },
     entities,
     actions: createFrameActions(state, balance),
@@ -928,7 +929,9 @@ function translateMoveShortEffect(effect: string): string | undefined {
     return exactTranslations[normalized];
   }
 
-  let match = normalized.match(/^Has a (\d+)% chance to (paralyze|burn|poison|freeze|confuse) the target\.$/);
+  let match = normalized.match(
+    /^Has a (\d+)% chance to (paralyze|burn|poison|freeze|confuse) the target\.$/,
+  );
   if (match) {
     return `${match[1]}% 확률로 상대를 ${translateAilmentVerb(match[2])} 상태로 만듭니다.`;
   }
@@ -963,7 +966,9 @@ function translateMoveShortEffect(effect: string): string | undefined {
     )}랭크 낮춥니다.`;
   }
 
-  match = normalized.match(/^Raises the user's ([A-Za-z ,and-]+) by (one|two|three) stages? each\.$/);
+  match = normalized.match(
+    /^Raises the user's ([A-Za-z ,and-]+) by (one|two|three) stages? each\.$/,
+  );
   if (match) {
     return `사용자의 ${translateStatList(match[1])} 능력치를 각각 ${translateStageCount(
       match[2],
@@ -1326,9 +1331,7 @@ function createReadyShopActions(state: GameState, balance: GameBalance): FrameAc
     state.shopInventory && state.shopInventory.wave === state.currentWave
       ? state.shopInventory
       : undefined;
-  const visibleActions = inventory
-    ? filterByInventory(allActions, inventory)
-    : allActions;
+  const visibleActions = inventory ? filterByInventory(allActions, inventory) : allActions;
   return [
     ...visibleActions.map((action) => applyShopDeal(action, state)),
     createRerollAction(state, inventory?.rerollCount ?? 0),
@@ -1444,9 +1447,9 @@ function applyShopDeal(action: FrameAction, state: GameState): FrameAction {
         ? "코인이 부족합니다"
         : blockedByActionState
           ? action.reason
-        : targetBlocked
-          ? (action.reason ?? "배울 수 있는 팀원이 없습니다")
-          : undefined,
+          : targetBlocked
+            ? (action.reason ?? "배울 수 있는 팀원이 없습니다")
+            : undefined,
   };
 }
 
@@ -1493,10 +1496,7 @@ function sortTeamMemberIds(
       index,
       value: teamSortValue(creature, sortBy),
     }))
-    .sort(
-      (left, right) =>
-        (left.value - right.value) * directionFactor || left.index - right.index,
-    )
+    .sort((left, right) => (left.value - right.value) * directionFactor || left.index - right.index)
     .map((entry) => entry.id);
 }
 
@@ -1556,11 +1556,7 @@ function createTeamSortActions(state: GameState): FrameAction[] {
   return teamSortOptions.map((option) => {
     const product = getTeamSortProduct(option.sortBy, option.direction);
     const actionId = teamSortActionId(option.sortBy, option.direction);
-    const wouldChange = wouldSortTeamOrderChange(
-      state.team,
-      option.sortBy,
-      option.direction,
-    );
+    const wouldChange = wouldSortTeamOrderChange(state.team, option.sortBy, option.direction);
     const hasEnoughMoney = state.money >= product.cost;
     return {
       id: actionId,
@@ -1637,7 +1633,11 @@ function createHealActions(state: GameState): FrameAction[] {
   ];
 }
 
-function healAction(state: GameState, scope: HealScope, tier: (typeof healTiers)[number]): FrameAction {
+function healAction(
+  state: GameState,
+  scope: HealScope,
+  tier: (typeof healTiers)[number],
+): FrameAction {
   const product = getHealProduct(scope, tier);
   const isFullTeamRest = scope === "team" && tier === 5;
   const label =

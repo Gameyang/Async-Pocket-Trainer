@@ -1174,8 +1174,7 @@ p {
     0 2px 0 rgba(0, 0, 0, 0.28),
     0 0 8px rgba(255, 236, 143, 0.72);
   filter: drop-shadow(0 2px 0 rgba(0, 0, 0, 0.26));
-  animation: currency-spend-fall var(--currency-duration) cubic-bezier(0.16, 0.84, 0.28, 1)
-    both;
+  animation: currency-spend-fall var(--currency-duration) cubic-bezier(0.16, 0.84, 0.28, 1) both;
   animation-delay: var(--currency-delay);
 }
 
@@ -4798,8 +4797,7 @@ button.move-detail-content:hover {
 
   34% {
     opacity: 1;
-    transform: translate(-50%, -50%) translate(var(--currency-x), -44px) rotate(86deg)
-      scale(1.18);
+    transform: translate(-50%, -50%) translate(var(--currency-x), -44px) rotate(86deg) scale(1.18);
   }
 
   72% {

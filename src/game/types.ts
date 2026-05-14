@@ -20,13 +20,7 @@ export type ElementType =
 
 export type MoveCategory = "physical" | "special" | "status";
 export type BattleStat = "attack" | "defense" | "special" | "speed" | "accuracy" | "evasion";
-export const ballTypes = [
-  "pokeBall",
-  "greatBall",
-  "ultraBall",
-  "hyperBall",
-  "masterBall",
-] as const;
+export const ballTypes = ["pokeBall", "greatBall", "ultraBall", "hyperBall", "masterBall"] as const;
 
 export type BallType = (typeof ballTypes)[number];
 export type EncounterKind = "wild" | "trainer";

@@ -274,14 +274,14 @@ export function resolveCueEffect(
 export function visualCueReferencesEntity(cue: FrameVisualCue, entityId: string): boolean {
   if (cue.type === "battle.support") {
     return (
-      cue.sourceEntityId === entityId || cue.targetEntityId === entityId || cue.entityId === entityId
+      cue.sourceEntityId === entityId ||
+      cue.targetEntityId === entityId ||
+      cue.entityId === entityId
     );
   }
 
   if (cue.type === "battle.hit" || cue.type === "battle.miss") {
-    return (
-      cue.sourceEntityId === entityId || cue.targetEntityId === entityId
-    );
+    return cue.sourceEntityId === entityId || cue.targetEntityId === entityId;
   }
 
   if (cue.type === "creature.faint") {
@@ -630,7 +630,10 @@ export function formatBattleEventLabel(
   return activeEvent.winner === "player" ? "우리 팀이 승리했습니다." : "상대가 승리했습니다.";
 }
 
-export function resolveEntityName(id: string | undefined, entities: readonly FrameEntity[]): string {
+export function resolveEntityName(
+  id: string | undefined,
+  entities: readonly FrameEntity[],
+): string {
   if (!id) {
     return "대상";
   }
@@ -703,7 +706,9 @@ function scoreReadyShopAction(
   const budgetFit = cost <= money ? cost : money - overBudget * 0.65 - 24;
   const availability = action.enabled ? 40 : 0;
   const onSale =
-    action.originalCost !== undefined && action.cost !== undefined && action.originalCost > action.cost
+    action.originalCost !== undefined &&
+    action.cost !== undefined &&
+    action.originalCost > action.cost
       ? 45
       : 0;
 
