@@ -104,6 +104,7 @@ interface AudioState {
   currentBgmKey?: FrameBgmKey;
   bgm?: HTMLAudioElement;
   playedCueIds: Set<string>;
+  lastReplayKey: string;
   activeSfx: Set<HTMLAudioElement>;
 }
 
@@ -149,6 +150,7 @@ export function mountHtmlRenderer(
   const audioState: AudioState = {
     unlocked: false,
     playedCueIds: new Set(),
+    lastReplayKey: "",
     activeSfx: new Set(),
   };
   const lifecycle: AppLifecycleState = {
@@ -2349,6 +2351,11 @@ function syncAudio(
   if (!audioState.unlocked || lifecycle.suspended) {
     pauseAudio(audioState);
     return;
+  }
+
+  if (playback.replayKey !== audioState.lastReplayKey) {
+    audioState.playedCueIds.clear();
+    audioState.lastReplayKey = playback.replayKey;
   }
 
   syncBgm(audioState, frame.scene.bgmKey);
