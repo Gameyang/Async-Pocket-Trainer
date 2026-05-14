@@ -49,8 +49,9 @@ test("renders phase-specific screens with stable responsive layout", async ({ pa
   await assertPhaseScreen(page, "ready", ".ready-screen");
   await expect(page.locator(".shop-screen")).toBeVisible();
   const shopCardCount = await page.locator(".shop-card[data-action-id]").count();
-  expect(shopCardCount).toBeGreaterThan(3);
-  expect(shopCardCount).toBeLessThanOrEqual(8);
+  expect(shopCardCount).toBe(9);
+  await expect(page.locator('.shop-card[data-action-id="encounter:next"]')).toHaveCount(0);
+  await expect(page.locator('.shop-start-action[data-action-id="encounter:next"]')).toBeVisible();
   await expect(page.locator(".shop-team-slot")).toHaveCount(6);
   await expect(page.locator(".shop-slot-stats").first()).toBeVisible();
   await expect(page.locator(".shop-slot-moves span").first()).toBeVisible();
@@ -99,7 +100,7 @@ test("renders phase-specific screens with stable responsive layout", async ({ pa
   await assertPhaseScreen(page, "ready", ".ready-screen");
   await expect(page.locator('.capture-overlay[data-capture-result="failure"]')).toBeVisible();
   await expect(page.locator(".command-band")).toHaveCount(0);
-  await expect(page.locator('.shop-card[data-action-id="encounter:next"]')).toBeVisible();
+  await expect(page.locator('.shop-start-action[data-action-id="encounter:next"]')).toBeVisible();
   await clickAction(page, '[data-action-id="encounter:next"]');
 
   await openSnapshot(page, gameOverSnapshot());
@@ -233,9 +234,17 @@ test("reads public CSV from code sync settings and opens team record prompt", as
       body: sheetRow,
     });
   });
+  let submitAttempts = 0;
   await page.route("https://script.google.com/macros/s/**", async (route) => {
     requests.push(route.request().method());
+    submitAttempts += 1;
+    if (submitAttempts <= 2) {
+      await route.abort("failed");
+      return;
+    }
+
     await route.fulfill({
+      status: 200,
       contentType: "text/plain",
       body: "",
     });

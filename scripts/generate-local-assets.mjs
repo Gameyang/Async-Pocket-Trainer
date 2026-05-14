@@ -3,6 +3,7 @@ import { execFile } from "node:child_process";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import process from "node:process";
 import { URL, fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { deflateSync } from "node:zlib";
@@ -12,14 +13,22 @@ const bgmDir = new URL("../src/resources/audio/bgm/", import.meta.url);
 const sfxDir = new URL("../src/resources/audio/sfx/", import.meta.url);
 const execFileAsync = promisify(execFile);
 const audioSampleRate = 44100;
-const sfxBitrate = "56k";
+const sfxBitrate = "72k";
 const bgmBitrate = "48k";
+const battleSfxOnly = process.argv.includes("--battle-sfx");
+const elementTypes = [
+  "normal", "fire", "water", "grass", "electric", "poison",
+  "ground", "flying", "bug", "fighting", "psychic", "rock",
+  "ghost", "ice", "dragon", "dark", "steel", "fairy",
+];
 
 await mkdir(trainerDir, { recursive: true });
 await mkdir(bgmDir, { recursive: true });
 await mkdir(sfxDir, { recursive: true });
 
-await generateTrainerPortraits();
+if (!battleSfxOnly) {
+  await generateTrainerPortraits();
+}
 
 async function generateTrainerPortraits() {
   const portraits = [
@@ -102,11 +111,6 @@ async function generateAudio() {
     ["capture-success.m4a", synthCaptureSuccess],
     ["capture-fail.m4a", synthCaptureFail],
   ];
-  const elementTypes = [
-    "normal", "fire", "water", "grass", "electric", "poison",
-    "ground", "flying", "bug", "fighting", "psychic", "rock",
-    "ghost", "ice", "dragon", "dark", "steel", "fairy",
-  ];
   const bgm = [
     ["starter-ready.m4a", [262, 330, 392, 330, 294, 349, 440, 349]],
     ["battle-capture.m4a", [220, 277, 330, 277, 196, 247, 294, 247]],
@@ -115,20 +119,24 @@ async function generateAudio() {
   ];
 
   for (const [file, build] of sfxBuilders) {
+    resetNoiseSeed(file);
     await writeM4a(new URL(file, sfxDir), build(), sfxBitrate);
   }
 
   for (const type of elementTypes) {
+    resetNoiseSeed(`battle-type-${type}.m4a`);
     await writeM4a(
       new URL(`battle-type-${type}.m4a`, sfxDir),
       synthTypeImpact(type, false),
       sfxBitrate,
     );
+    resetNoiseSeed(`battle-type-${type}-critical.m4a`);
     await writeM4a(
       new URL(`battle-type-${type}-critical.m4a`, sfxDir),
       synthTypeImpact(type, true),
       sfxBitrate,
     );
+    resetNoiseSeed(`battle-support-type-${type}.m4a`);
     await writeM4a(
       new URL(`battle-support-type-${type}.m4a`, sfxDir),
       synthTypeSupport(type),
@@ -138,6 +146,41 @@ async function generateAudio() {
 
   for (const [file, notes] of bgm) {
     await writeM4a(new URL(file, bgmDir), loopSamples(notes), bgmBitrate);
+  }
+}
+
+async function generateBattleAudio() {
+  const sfxBuilders = [
+    ["battle-hit.m4a", synthHit],
+    ["battle-critical-hit.m4a", synthCriticalHit],
+    ["battle-miss.m4a", synthMiss],
+    ["creature-faint.m4a", synthFaint],
+  ];
+
+  for (const [file, build] of sfxBuilders) {
+    resetNoiseSeed(file);
+    await writeM4a(new URL(file, sfxDir), build(), sfxBitrate);
+  }
+
+  for (const type of elementTypes) {
+    resetNoiseSeed(`battle-type-${type}.m4a`);
+    await writeM4a(
+      new URL(`battle-type-${type}.m4a`, sfxDir),
+      synthTypeImpact(type, false),
+      sfxBitrate,
+    );
+    resetNoiseSeed(`battle-type-${type}-critical.m4a`);
+    await writeM4a(
+      new URL(`battle-type-${type}-critical.m4a`, sfxDir),
+      synthTypeImpact(type, true),
+      sfxBitrate,
+    );
+    resetNoiseSeed(`battle-support-type-${type}.m4a`);
+    await writeM4a(
+      new URL(`battle-support-type-${type}.m4a`, sfxDir),
+      synthTypeSupport(type),
+      sfxBitrate,
+    );
   }
 }
 
@@ -186,6 +229,26 @@ function addTone(buf, opts) {
   }
 }
 
+let noiseState = 0x8f1bbcdc;
+
+function resetNoiseSeed(seed) {
+  noiseState = 0x811c9dc5;
+  for (const char of seed) {
+    noiseState ^= char.charCodeAt(0);
+    noiseState = Math.imul(noiseState, 0x01000193) >>> 0;
+  }
+  if (noiseState === 0) {
+    noiseState = 0x8f1bbcdc;
+  }
+}
+
+function nextNoiseSample() {
+  noiseState ^= noiseState << 13;
+  noiseState ^= noiseState >>> 17;
+  noiseState ^= noiseState << 5;
+  return ((noiseState >>> 0) / 0xffffffff) * 2 - 1;
+}
+
 function addNoise(buf, opts) {
   const start = Math.floor((opts.startMs / 1000) * audioSampleRate);
   const length = Math.floor((opts.durMs / 1000) * audioSampleRate);
@@ -199,7 +262,7 @@ function addNoise(buf, opts) {
   for (let i = 0; i < length; i += 1) {
     const target = start + i;
     if (target < 0 || target >= buf.length) continue;
-    const noise = Math.random() * 2 - 1;
+    const noise = nextNoiseSample();
     lpState += lpFactor * (noise - lpState);
     const sample = opts.color ? lpState : noise;
     const env = envelopeAt(i, length, attack, release);
@@ -219,38 +282,95 @@ function bufferToSamples(buf) {
   return out;
 }
 
+function addChipArp(buf, opts) {
+  const stepMs = opts.stepMs ?? 34;
+  const durMs = opts.durMs ?? 64;
+  const wave = opts.wave ?? "square";
+  const gain = opts.gain ?? 0.1;
+  opts.notes.forEach((freq, index) => {
+    addTone(buf, {
+      startMs: opts.startMs + index * stepMs,
+      durMs,
+      freq,
+      wave,
+      gain,
+      attackMs: 1,
+      releaseMs: durMs * 0.75,
+    });
+  });
+}
+
+function addEcho(buf, delayMs, feedback, wet = 0.35) {
+  const delay = Math.max(1, Math.floor((delayMs / 1000) * audioSampleRate));
+
+  for (let i = delay; i < buf.length; i += 1) {
+    buf[i] += buf[i - delay] * feedback * wet;
+  }
+}
+
+function applyBitcrush(buf, levels = 48, holdSamples = 2) {
+  let held = 0;
+  const hold = Math.max(1, holdSamples);
+
+  for (let i = 0; i < buf.length; i += 1) {
+    if (i % hold === 0) {
+      held = Math.round(buf[i] * levels) / levels;
+    }
+    buf[i] = held;
+  }
+}
+
+function applySaturation(buf, drive = 1.5) {
+  const normalizer = Math.tanh(drive);
+
+  for (let i = 0; i < buf.length; i += 1) {
+    buf[i] = Math.tanh(buf[i] * drive) / normalizer;
+  }
+}
+
 function synthHit() {
-  const buf = makeBuffer(180);
-  addNoise(buf, { startMs: 0, durMs: 70, gain: 0.55, attackMs: 1, releaseMs: 60, color: "mid" });
-  addTone(buf, { startMs: 0, durMs: 90, freq: 110, wave: "saw", gain: 0.32, attackMs: 1, releaseMs: 80 });
-  addTone(buf, { startMs: 0, durMs: 140, freq: 320, freqEnd: 150, wave: "sine", gain: 0.2, releaseMs: 110 });
+  const buf = makeBuffer(220);
+  addNoise(buf, { startMs: 0, durMs: 72, gain: 0.7, attackMs: 1, releaseMs: 58, color: "mid" });
+  addTone(buf, { startMs: 0, durMs: 130, freq: 92, freqEnd: 42, wave: "saw", gain: 0.42, attackMs: 1, releaseMs: 100 });
+  addTone(buf, { startMs: 4, durMs: 150, freq: 520, freqEnd: 170, wave: "square", gain: 0.24, attackMs: 1, releaseMs: 120 });
+  addChipArp(buf, { startMs: 30, notes: [880, 660, 440], stepMs: 24, durMs: 48, gain: 0.08 });
+  applySaturation(buf, 1.7);
+  applyBitcrush(buf, 56, 2);
   return bufferToSamples(buf);
 }
 
 function synthCriticalHit() {
-  const buf = makeBuffer(300);
-  addNoise(buf, { startMs: 0, durMs: 110, gain: 0.65, attackMs: 1, releaseMs: 95, color: "mid" });
-  addTone(buf, { startMs: 0, durMs: 180, freq: 90, freqEnd: 45, wave: "saw", gain: 0.5, attackMs: 1, releaseMs: 150 });
-  addTone(buf, { startMs: 0, durMs: 240, freq: 660, freqEnd: 220, wave: "sine", gain: 0.28, releaseMs: 200 });
-  addTone(buf, { startMs: 30, durMs: 120, freq: 880, wave: "square", gain: 0.18, attackMs: 4, releaseMs: 90 });
-  addTone(buf, { startMs: 150, durMs: 130, freq: 196, freqEnd: 110, wave: "saw", gain: 0.22, releaseMs: 110 });
+  const buf = makeBuffer(420);
+  addNoise(buf, { startMs: 0, durMs: 125, gain: 0.8, attackMs: 1, releaseMs: 100, color: "mid" });
+  addTone(buf, { startMs: 0, durMs: 230, freq: 82, freqEnd: 34, wave: "saw", gain: 0.58, attackMs: 1, releaseMs: 190 });
+  addTone(buf, { startMs: 0, durMs: 260, freq: 720, freqEnd: 190, wave: "square", gain: 0.28, releaseMs: 220 });
+  addChipArp(buf, { startMs: 20, notes: [1320, 1760, 2200, 1760], stepMs: 28, durMs: 58, gain: 0.14 });
+  addTone(buf, { startMs: 160, durMs: 180, freq: 196, freqEnd: 82, wave: "saw", gain: 0.34, releaseMs: 150 });
+  addEcho(buf, 78, 0.42, 0.28);
+  applySaturation(buf, 2.1);
+  applyBitcrush(buf, 44, 2);
   return bufferToSamples(buf);
 }
 
 function synthMiss() {
-  const buf = makeBuffer(220);
-  addTone(buf, { startMs: 0, durMs: 220, freq: 740, freqEnd: 220, wave: "sine", gain: 0.32, attackMs: 5, releaseMs: 130 });
-  addTone(buf, { startMs: 0, durMs: 180, freq: 1480, freqEnd: 440, wave: "sine", gain: 0.12, attackMs: 5, releaseMs: 130 });
-  addNoise(buf, { startMs: 0, durMs: 40, gain: 0.18, attackMs: 1, releaseMs: 35, color: "high" });
+  const buf = makeBuffer(240);
+  addTone(buf, { startMs: 0, durMs: 220, freq: 1320, freqEnd: 260, wave: "triangle", gain: 0.32, attackMs: 4, releaseMs: 150 });
+  addTone(buf, { startMs: 12, durMs: 185, freq: 1760, freqEnd: 520, wave: "sine", gain: 0.16, attackMs: 4, releaseMs: 130 });
+  addNoise(buf, { startMs: 0, durMs: 70, gain: 0.24, attackMs: 1, releaseMs: 60, color: "high" });
+  addChipArp(buf, { startMs: 118, notes: [440, 330], stepMs: 30, durMs: 58, gain: 0.08, wave: "triangle" });
+  applyBitcrush(buf, 72, 2);
   return bufferToSamples(buf);
 }
 
 function synthFaint() {
-  const buf = makeBuffer(520);
-  addTone(buf, { startMs: 0, durMs: 520, freq: 440, freqEnd: 98, wave: "saw", gain: 0.3, attackMs: 8, releaseMs: 240 });
-  addTone(buf, { startMs: 0, durMs: 520, freq: 220, freqEnd: 49, wave: "sine", gain: 0.18, attackMs: 8, releaseMs: 240 });
-  addTone(buf, { startMs: 60, durMs: 460, freq: 660, freqEnd: 147, wave: "square", gain: 0.08, attackMs: 20, releaseMs: 200 });
-  addNoise(buf, { startMs: 380, durMs: 140, gain: 0.1, attackMs: 20, releaseMs: 110, color: "low" });
+  const buf = makeBuffer(640);
+  addTone(buf, { startMs: 0, durMs: 610, freq: 520, freqEnd: 86, wave: "saw", gain: 0.34, attackMs: 8, releaseMs: 280 });
+  addTone(buf, { startMs: 0, durMs: 610, freq: 260, freqEnd: 43, wave: "square", gain: 0.2, attackMs: 8, releaseMs: 280 });
+  addChipArp(buf, { startMs: 90, notes: [392, 330, 262, 196], stepMs: 72, durMs: 110, gain: 0.09, wave: "triangle" });
+  addNoise(buf, { startMs: 420, durMs: 190, gain: 0.16, attackMs: 20, releaseMs: 150, color: "low" });
+  addEcho(buf, 92, 0.36, 0.25);
+  applySaturation(buf, 1.35);
+  applyBitcrush(buf, 64, 3);
   return bufferToSamples(buf);
 }
 
@@ -386,12 +506,23 @@ const typeImpactRecipes = {
 function synthTypeImpact(type, critical) {
   const dur = critical ? 380 : 280;
   const buf = makeBuffer(dur);
+  const [low, high] = supportFreqPairs[type];
   typeImpactRecipes[type](buf, dur);
+  addChipArp(buf, {
+    startMs: critical ? 26 : 18,
+    notes: critical ? [high * 2, high * 2.5, high * 3, low * 3] : [high, high * 1.5, low * 2],
+    stepMs: critical ? 26 : 30,
+    durMs: critical ? 58 : 50,
+    gain: critical ? 0.14 : 0.09,
+  });
   if (critical) {
     addNoise(buf, { startMs: 0, durMs: dur * 0.4, gain: 0.32, attackMs: 1, releaseMs: dur * 0.32, color: "mid" });
     addTone(buf, { startMs: 0, durMs: dur * 0.85, freq: 90, freqEnd: 45, wave: "saw", gain: 0.3, releaseMs: dur * 0.7 });
     addTone(buf, { startMs: dur * 0.45, durMs: dur * 0.45, freq: 220, freqEnd: 110, wave: "square", gain: 0.16, releaseMs: dur * 0.35 });
+    addEcho(buf, 64, 0.4, 0.26);
   }
+  applySaturation(buf, critical ? 1.85 : 1.45);
+  applyBitcrush(buf, critical ? 48 : 60, critical ? 2 : 3);
   return bufferToSamples(buf);
 }
 
@@ -410,6 +541,16 @@ function synthTypeSupport(type) {
   addTone(buf, { startMs: 0, durMs: dur, freq: low, wave: "sine", gain: 0.22, attackMs: 60, releaseMs: 220 });
   addTone(buf, { startMs: 70, durMs: dur - 70, freq: high, wave: "sine", gain: 0.18, attackMs: 60, releaseMs: 220 });
   addTone(buf, { startMs: 140, durMs: dur - 140, freq: high * 1.5, wave: "triangle", gain: 0.08, attackMs: 60, releaseMs: 220 });
+  addChipArp(buf, {
+    startMs: 34,
+    notes: [low * 2, high * 2, high * 2.5],
+    stepMs: 58,
+    durMs: 96,
+    gain: 0.07,
+    wave: "triangle",
+  });
+  addEcho(buf, 110, 0.32, 0.22);
+  applyBitcrush(buf, 72, 2);
   return bufferToSamples(buf);
 }
 
@@ -603,4 +744,8 @@ function crc32(buffer) {
   return (crc ^ 0xffffffff) >>> 0;
 }
 
-await generateAudio();
+if (battleSfxOnly) {
+  await generateBattleAudio();
+} else {
+  await generateAudio();
+}

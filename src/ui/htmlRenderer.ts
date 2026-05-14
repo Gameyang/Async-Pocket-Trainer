@@ -781,6 +781,7 @@ function renderReadyScreen({
   shopTargetAction,
 }: ScreenRenderContext): string {
   const shopActions = selectReadyShopActions(frame, playerEntities);
+  const nextAction = frame.actions.find((action) => action.id === "encounter:next");
   const captureFeedback =
     frame.scene.capture?.result === "failure" || frame.scene.capture?.result === "success"
       ? frame.scene.capture
@@ -800,6 +801,7 @@ function renderReadyScreen({
               ? `<strong>${escapeHtml(createShopTargetLabel(shopTargetAction))}</strong><button type="button" class="shop-target-cancel" data-shop-target-cancel aria-label="대상 선택 취소">✕</button>`
               : ""
           }
+          ${nextAction ? renderShopStartAction(nextAction, frame) : ""}
         </div>
         ${renderShopTeamGrid(playerEntities, shopTargetAction, frame.scene.teamEffect)}
       </div>
@@ -814,6 +816,20 @@ function renderReadyScreen({
 
 function createShopTargetLabel(action: FrameAction): string {
   return action.action.type === "BUY_HEAL" ? `${action.label} 대상 선택` : action.label;
+}
+
+function renderShopStartAction(action: FrameAction, frame: GameFrame): string {
+  const disabled = action.enabled ? "" : " disabled";
+  const reason = action.reason ? ` title="${escapeHtml(action.reason)}"` : "";
+  const ariaLabel = createShopActionProfile(action, frame).title;
+
+  return `
+    <button type="button" class="shop-start-action" data-action-id="${escapeHtml(action.id)}" aria-label="${escapeHtml(ariaLabel)}"${disabled}${reason}>
+      ${renderActionIcon(action, "shop-start-icon")}
+      <span>${escapeHtml(action.label)}</span>
+      ${renderEncounterBoostBadges(frame)}
+    </button>
+  `;
 }
 
 function renderShopTeamGrid(
@@ -2387,7 +2403,7 @@ function syncBgm(audioState: AudioState, bgmKey: FrameBgmKey): void {
 
   const bgm = new Audio(url);
   bgm.loop = true;
-  bgm.volume = 0.18;
+  bgm.volume = 0.34;
   audioState.currentBgmKey = bgmKey;
   audioState.bgm = bgm;
   void bgm.play().catch(() => undefined);

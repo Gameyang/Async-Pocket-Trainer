@@ -54,7 +54,7 @@ export interface ShopActionProfile {
   meta: string;
 }
 
-const MAX_READY_SHOP_ACTIONS = 8;
+const MAX_READY_SHOP_ACTIONS = 9;
 
 export function getLatestVisualCue(frame: GameFrame): FrameVisualCue | undefined {
   return [...frame.visualCues].reverse().find((cue) => cue.type !== "phase.change");
@@ -657,11 +657,6 @@ export function selectReadyShopActions(
   frame: GameFrame,
   playerEntities: readonly FrameEntity[],
 ): FrameAction[] {
-  const next = findAction(frame.actions, "encounter:next");
-  const rest = findAction(frame.actions, "shop:rest");
-  const routeActions = ["route:elite", "route:supply", "route:normal"]
-    .map((id) => findAction(frame.actions, id))
-    .filter((action): action is FrameAction => action !== undefined && action.enabled);
   const needsRest =
     frame.hud.teamHpRatio < 0.75 || playerEntities.some((entity) => entity.hp.current <= 0);
   const totalBalls = Object.values(frame.hud.balls).reduce((total, count) => total + count, 0);
@@ -685,10 +680,7 @@ export function selectReadyShopActions(
     picks.push(action);
   };
 
-  add(next);
-  add(rest, true);
-
-  for (const action of [...routeActions, ...shopActions]) {
+  for (const action of shopActions) {
     if (picks.length >= MAX_READY_SHOP_ACTIONS) {
       break;
     }
@@ -773,10 +765,13 @@ export function selectCommandItems(
   pendingCapture: FrameEntity | undefined,
 ): CommandItem[] {
   if (frame.phase === "ready") {
-    return selectReadyShopActions(frame, playerEntities).map((action) => ({
-      type: "action",
-      action,
-    }));
+    const next = findAction(frame.actions, "encounter:next");
+    return [next, ...selectReadyShopActions(frame, playerEntities)]
+      .filter((action): action is FrameAction => Boolean(action))
+      .map((action) => ({
+        type: "action",
+        action,
+      }));
   }
 
   if (frame.phase === "teamDecision") {

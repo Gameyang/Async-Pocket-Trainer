@@ -351,7 +351,25 @@ export class HeadlessGameClient {
       pool.filter((entry) => isTeamUpgradeShopAction(entry.actionId)),
       pool.filter((entry) => activePremiumActionIds.has(entry.actionId)),
     ];
-    const chosen = groups.map((group) => createShopInventoryEntry(pickWeightedShopEntry(group, rng)));
+    const bonusGroups: ShopInventoryPoolEntry[][] = [
+      pool.filter(
+        (entry) =>
+          isRecoveryShopAction(entry.actionId) ||
+          isBallShopAction(entry.actionId) ||
+          entry.actionId.startsWith("shop:scout:"),
+      ),
+      pool.filter(
+        (entry) =>
+          isEncounterBoostShopAction(entry.actionId) || isTeamUpgradeShopAction(entry.actionId),
+      ),
+    ];
+    const pickedActionIds = new Set<string>();
+    const picked = [...groups, ...bonusGroups].map((group) => {
+      const entry = pickUniqueWeightedShopEntry(group, rng, pickedActionIds);
+      pickedActionIds.add(entry.actionId);
+      return entry;
+    });
+    const chosen = picked.map(createShopInventoryEntry);
 
     return {
       wave: this.state.currentWave,
@@ -1574,6 +1592,15 @@ function pickWeightedShopEntry(
   }
 
   return group[group.length - 1];
+}
+
+function pickUniqueWeightedShopEntry(
+  group: readonly ShopInventoryPoolEntry[],
+  rng: SeededRng,
+  excludedActionIds: ReadonlySet<string>,
+): ShopInventoryPoolEntry {
+  const available = group.filter((entry) => !excludedActionIds.has(entry.actionId));
+  return pickWeightedShopEntry(available.length > 0 ? available : group, rng);
 }
 
 function createShopInventoryEntry(entry: ShopInventoryPoolEntry): ShopInventoryEntry {

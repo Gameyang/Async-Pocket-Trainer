@@ -14,11 +14,11 @@ describe("frame presentation command selection", () => {
 
     expect(frame.phase).toBe("ready");
     expect(actionIds.length).toBeGreaterThan(3);
-    expect(actionIds.length).toBeLessThanOrEqual(8);
-    expect(actionIds).toContain("encounter:next");
+    expect(actionIds).toHaveLength(9);
+    expect(actionIds).not.toContain("encounter:next");
     expect(actionIds).toContain("shop:reroll");
     expect(actionIds.filter((id) => id.startsWith("shop:") && id !== "shop:reroll")).toHaveLength(
-      6,
+      8,
     );
   });
 
@@ -32,7 +32,7 @@ describe("frame presentation command selection", () => {
     const playerEntities = resolvePlayerEntities(frame);
     const actions = selectReadyShopActions(frame, playerEntities);
 
-    expect(actions.length).toBeLessThanOrEqual(8);
+    expect(actions.length).toBeLessThanOrEqual(9);
     expect(actions.some((action) => action.id.startsWith("shop:") && !action.enabled)).toBe(true);
   });
 

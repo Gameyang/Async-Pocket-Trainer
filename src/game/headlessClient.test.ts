@@ -43,14 +43,15 @@ describe("HeadlessGameClient", () => {
     expect(new Set(statKeys).size).toBeGreaterThan(1);
   });
 
-  it("rolls exactly one shop item from each inventory group", () => {
-    const client = new HeadlessGameClient({ seed: "shop-six-groups" });
+  it("rolls eight shop product items across every inventory group", () => {
+    const client = new HeadlessGameClient({ seed: "shop-nine-grid" });
     client.dispatch({ type: "START_RUN", starterSpeciesId: 1 });
 
     const inventory = client.getSnapshot().shopInventory;
-    expect(inventory?.entries).toHaveLength(6);
-    expect(new Set(inventory?.entries.map((entry) => shopInventoryGroup(entry.actionId))).size).toBe(
-      6,
+    const groups = new Set(inventory?.entries.map((entry) => shopInventoryGroup(entry.actionId)));
+    expect(inventory?.entries).toHaveLength(8);
+    expect(groups).toEqual(
+      new Set(["recovery", "balls", "scout", "encounter", "team", "premium"]),
     );
 
     const productActionIds = client
@@ -58,7 +59,7 @@ describe("HeadlessGameClient", () => {
       .actions.map((action) => action.id)
       .filter((id) => id.startsWith("shop:") && id !== "shop:reroll");
 
-    expect(productActionIds).toHaveLength(6);
+    expect(productActionIds).toHaveLength(8);
   });
 
   it("saves and loads a run snapshot without changing deterministic continuation", () => {
