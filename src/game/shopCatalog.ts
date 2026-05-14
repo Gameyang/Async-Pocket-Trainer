@@ -1,5 +1,6 @@
 import type {
   BallType,
+  ElementType,
   GameBalance,
   HealScope,
   HealTier,
@@ -7,6 +8,7 @@ import type {
   RarityBoostTier,
   ScoutKind,
   ScoutTier,
+  StatBoostTier,
 } from "./types";
 
 export interface RarityBoostProduct {
@@ -118,6 +120,84 @@ export function getLevelBoostProduct(tier: LevelBoostTier): LevelBoostProduct {
     min: levelBoostRanges[tier].min,
     max: levelBoostRanges[tier].max,
     cost: levelBoostCosts[tier],
+  };
+}
+
+export interface StatBoostProduct {
+  tier: StatBoostTier;
+  bonus: number;
+  cost: number;
+}
+
+const statBoostBonuses: Record<StatBoostTier, number> = {
+  1: 5,
+  2: 10,
+  3: 20,
+};
+
+const statBoostCosts: Record<StatBoostTier, number> = {
+  1: 18,
+  2: 35,
+  3: 65,
+};
+
+export const statBoostTiers: readonly StatBoostTier[] = [1, 2, 3];
+
+export function getStatBoostProduct(tier: StatBoostTier): StatBoostProduct {
+  return {
+    tier,
+    bonus: statBoostBonuses[tier],
+    cost: statBoostCosts[tier],
+  };
+}
+
+export interface StatRerollProduct {
+  cost: number;
+}
+
+export function getStatRerollProduct(): StatRerollProduct {
+  return { cost: 24 };
+}
+
+export interface TeachMoveProduct {
+  element: ElementType;
+  cost: number;
+}
+
+export const teachMoveElements: readonly ElementType[] = ["fire", "water", "electric", "grass"];
+
+const teachMoveCosts: Partial<Record<ElementType, number>> = {
+  fire: 32,
+  water: 30,
+  electric: 34,
+  grass: 28,
+};
+
+export function getTeachMoveProduct(element: ElementType): TeachMoveProduct {
+  return {
+    element,
+    cost: teachMoveCosts[element] ?? 32,
+  };
+}
+
+export interface TypeLockProduct {
+  element: ElementType;
+  cost: number;
+}
+
+export const typeLockElements: readonly ElementType[] = ["fire", "water", "dragon", "psychic"];
+
+const typeLockCosts: Partial<Record<ElementType, number>> = {
+  fire: 20,
+  water: 18,
+  dragon: 42,
+  psychic: 28,
+};
+
+export function getTypeLockProduct(element: ElementType): TypeLockProduct {
+  return {
+    element,
+    cost: typeLockCosts[element] ?? 22,
   };
 }
 

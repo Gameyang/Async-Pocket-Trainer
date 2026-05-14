@@ -3,13 +3,21 @@ import { getMove, getSpecies } from "../data/catalog";
 import { formatWave } from "../localization";
 import { scoreCreature, scoreTeam } from "../scoring";
 import type { SeededRng } from "../rng";
-import type { Creature, EncounterSnapshot, GameBalance, RouteId, Stats } from "../types";
+import type {
+  Creature,
+  ElementType,
+  EncounterSnapshot,
+  GameBalance,
+  RouteId,
+  Stats,
+} from "../types";
 import type { TrainerSnapshot, TrainerSnapshotCreature } from "../sync/trainerSnapshot";
 
 export interface EncounterBoostOptions {
   rarityBonus?: number;
   levelMin?: number;
   levelMax?: number;
+  lockedType?: ElementType;
 }
 
 function resolveBoostWave(baseWave: number, rng: SeededRng, boost?: EncounterBoostOptions): number {
@@ -39,6 +47,7 @@ export function createWildEncounter(
       balance,
       role: "wild",
       rarityBoost: boost?.rarityBonus ?? 0,
+      lockedType: boost?.lockedType,
     }),
     routeId,
     balance,

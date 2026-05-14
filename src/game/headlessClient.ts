@@ -1,22 +1,27 @@
 import { runAutoBattle } from "./battle/battleEngine";
 import { attemptCapture } from "./capture/captureSystem";
 import { createCreature, healTeam, normalizeCreatureBattleLoadout } from "./creatureFactory";
-import { defaultBalance, starterSpeciesIds } from "./data/catalog";
+import { defaultBalance, getMove, movesById, starterSpeciesIds } from "./data/catalog";
 import {
   DEFAULT_HEADLESS_TRAINER_NAME,
   formatWave,
   localizeBall,
+  localizeType,
   localizeWinner,
   withJosa,
 } from "./localization";
 import { SeededRng } from "./rng";
-import { chooseReplacementIndex, getTeamHealthRatio, scoreTeam } from "./scoring";
+import { chooseReplacementIndex, getTeamHealthRatio, scoreCreature, scoreTeam } from "./scoring";
 import {
   getBallCost,
   getHealProduct,
   getLevelBoostProduct,
   getRarityBoostProduct,
   getScoutProduct,
+  getStatBoostProduct,
+  getStatRerollProduct,
+  getTeachMoveProduct,
+  getTypeLockProduct,
 } from "./shopCatalog";
 import { ballTypes } from "./types";
 import { createGameFrame, type GameFrame } from "./view/frame";
@@ -31,6 +36,8 @@ import type { TrainerSnapshot } from "./sync/trainerSnapshot";
 import type {
   AutoPlayOptions,
   BallType,
+  Creature,
+  ElementType,
   EncounterBoost,
   EncounterSnapshot,
   GameAction,
@@ -40,11 +47,13 @@ import type {
   HealScope,
   HealTier,
   LevelBoostTier,
+  MoveDefinition,
   RarityBoostTier,
   RouteId,
   RunSummary,
   ScoutKind,
   ScoutTier,
+  StatBoostTier,
 } from "./types";
 
 export interface HeadlessClientOptions {
@@ -184,6 +193,18 @@ export class HeadlessGameClient {
         break;
       case "BUY_LEVEL_BOOST":
         this.buyLevelBoost(action.tier);
+        break;
+      case "BUY_STAT_BOOST":
+        this.buyStatBoost(action.tier, action.targetEntityId);
+        break;
+      case "BUY_STAT_REROLL":
+        this.buyStatReroll(action.targetEntityId);
+        break;
+      case "BUY_TEACH_MOVE":
+        this.buyTeachMove(action.element, action.targetEntityId);
+        break;
+      case "BUY_TYPE_LOCK":
+        this.buyTypeLock(action.element);
         break;
     }
 
@@ -658,6 +679,193 @@ export class HeadlessGameClient {
     );
   }
 
+  private resolveDiscountedCost(actionId: string, baseCost: number): number {
+    const deal = this.state.shopDeal;
+    if (deal?.wave === this.state.currentWave && deal.discountedActionIds.includes(actionId)) {
+      return Math.max(1, Math.round(baseCost * (1 - deal.discountRate)));
+    }
+    return baseCost;
+  }
+
+  private findTeamMember(targetEntityId: string | undefined): Creature | undefined {
+    if (!targetEntityId) {
+      return this.state.team[0];
+    }
+    return this.state.team.find((creature) => creature.instanceId === targetEntityId);
+  }
+
+  private buyStatBoost(tier: StatBoostTier, targetEntityId: string | undefined): void {
+    if (this.state.phase !== "ready") {
+      this.addEvent("stat_boost_ignored", "준비 상태에서만 사용할 수 있습니다.");
+      return;
+    }
+
+    const product = getStatBoostProduct(tier);
+    const cost = this.resolveDiscountedCost(`shop:stat-boost:${tier}`, product.cost);
+
+    if (this.state.money < cost) {
+      this.addEvent("stat_boost_denied", "능력치 보정에 필요한 코인이 부족합니다.");
+      return;
+    }
+
+    const target = this.findTeamMember(targetEntityId);
+    if (!target) {
+      this.addEvent("stat_boost_denied", "대상 포켓몬을 찾을 수 없습니다.");
+      return;
+    }
+
+    this.state.money -= cost;
+    const bonus = product.bonus;
+    target.stats = {
+      hp: target.stats.hp + bonus,
+      attack: target.stats.attack + bonus,
+      defense: target.stats.defense + bonus,
+      special: target.stats.special + bonus,
+      speed: target.stats.speed + bonus,
+    };
+    target.currentHp = Math.min(target.currentHp + bonus, target.stats.hp);
+    target.powerScore = scoreCreature({
+      stats: target.stats,
+      moves: target.moves,
+      types: target.types,
+    });
+    this.addEvent(
+      "stat_boost_applied",
+      `${withJosa(target.speciesName, "이/가")} 모든 능력치 +${bonus}을(를) 얻었습니다.`,
+      { target: target.speciesName, tier, bonus },
+    );
+  }
+
+  private buyStatReroll(targetEntityId: string | undefined): void {
+    if (this.state.phase !== "ready") {
+      this.addEvent("stat_reroll_ignored", "준비 상태에서만 사용할 수 있습니다.");
+      return;
+    }
+
+    const product = getStatRerollProduct();
+    const cost = this.resolveDiscountedCost("shop:stat-reroll", product.cost);
+
+    if (this.state.money < cost) {
+      this.addEvent("stat_reroll_denied", "능력치 재추첨에 필요한 코인이 부족합니다.");
+      return;
+    }
+
+    const target = this.findTeamMember(targetEntityId);
+    if (!target) {
+      this.addEvent("stat_reroll_denied", "대상 포켓몬을 찾을 수 없습니다.");
+      return;
+    }
+
+    this.state.money -= cost;
+    const rerollFactor = () => 0.94 + this.rng.nextFloat() * 0.2;
+    const newStats: typeof target.stats = {
+      hp: Math.max(5, Math.round(target.stats.hp * rerollFactor())),
+      attack: Math.max(5, Math.round(target.stats.attack * rerollFactor())),
+      defense: Math.max(5, Math.round(target.stats.defense * rerollFactor())),
+      special: Math.max(5, Math.round(target.stats.special * rerollFactor())),
+      speed: Math.max(5, Math.round(target.stats.speed * rerollFactor())),
+    };
+    const oldMaxHp = target.stats.hp;
+    target.stats = newStats;
+    target.currentHp = Math.max(
+      1,
+      Math.min(newStats.hp, Math.round((target.currentHp / Math.max(1, oldMaxHp)) * newStats.hp)),
+    );
+    target.powerScore = scoreCreature({
+      stats: target.stats,
+      moves: target.moves,
+      types: target.types,
+    });
+    this.addEvent(
+      "stat_reroll_applied",
+      `${withJosa(target.speciesName, "이/가")} 능력치를 다시 굴렸습니다.`,
+      { target: target.speciesName },
+    );
+  }
+
+  private buyTeachMove(element: ElementType, targetEntityId: string | undefined): void {
+    if (this.state.phase !== "ready") {
+      this.addEvent("teach_move_ignored", "준비 상태에서만 사용할 수 있습니다.");
+      return;
+    }
+
+    const product = getTeachMoveProduct(element);
+    const cost = this.resolveDiscountedCost(`shop:teach-move:${element}`, product.cost);
+
+    if (this.state.money < cost) {
+      this.addEvent("teach_move_denied", "기술 머신에 필요한 코인이 부족합니다.");
+      return;
+    }
+
+    const target = this.findTeamMember(targetEntityId);
+    if (!target) {
+      this.addEvent("teach_move_denied", "대상 포켓몬을 찾을 수 없습니다.");
+      return;
+    }
+
+    const learnedMove = pickStrongMoveByType(element);
+    if (!learnedMove) {
+      this.addEvent("teach_move_denied", "해당 속성의 기술을 찾을 수 없습니다.");
+      return;
+    }
+
+    const alreadyKnows = target.moves.some((existing) => existing.id === learnedMove.id);
+    if (alreadyKnows) {
+      this.addEvent(
+        "teach_move_denied",
+        `${target.speciesName}는 이미 ${learnedMove.name}을(를) 습득했습니다.`,
+      );
+      return;
+    }
+
+    this.state.money -= cost;
+    const replaceIndex = pickWeakestMoveIndex(target.moves);
+    const updatedMoves = target.moves.map((existing, index) =>
+      index === replaceIndex ? cloneMove(learnedMove) : existing,
+    );
+    target.moves = updatedMoves;
+    target.powerScore = scoreCreature({
+      stats: target.stats,
+      moves: updatedMoves,
+      types: target.types,
+    });
+    this.addEvent(
+      "teach_move_applied",
+      `${withJosa(target.speciesName, "이/가")} ${learnedMove.name}을(를) 익혔습니다.`,
+      { target: target.speciesName, move: learnedMove.id, element },
+    );
+  }
+
+  private buyTypeLock(element: ElementType): void {
+    if (this.state.phase !== "ready") {
+      this.addEvent("type_lock_ignored", "준비 상태에서만 사용할 수 있습니다.");
+      return;
+    }
+
+    const product = getTypeLockProduct(element);
+    const cost = this.resolveDiscountedCost(`shop:type-lock:${element}`, product.cost);
+
+    if (this.state.money < cost) {
+      this.addEvent("type_lock_denied", "타입 고정에 필요한 코인이 부족합니다.");
+      return;
+    }
+
+    this.state.money -= cost;
+    const existing =
+      this.state.encounterBoost?.wave === this.state.currentWave
+        ? this.state.encounterBoost
+        : { wave: this.state.currentWave };
+    this.state.encounterBoost = {
+      ...existing,
+      lockedType: element,
+    };
+    this.addEvent(
+      "type_lock_applied",
+      `다음 만남이 ${localizeType(element)} 속성으로 고정되었습니다.`,
+      { element },
+    );
+  }
+
   private buyScout(kind: ScoutKind, tier: ScoutTier): void {
     if (this.state.phase !== "ready") {
       this.addEvent("scout_ignored", "탐지는 다음 만남 준비 상태에서만 사용할 수 있습니다.");
@@ -849,6 +1057,7 @@ export class HeadlessGameClient {
     this.state.encounterBoost = undefined;
     this.state.pendingEncounter = undefined;
     this.state.pendingCapture = undefined;
+    this.state.shopDeal = undefined;
   }
 
   private addEvent(type: string, message: string, data?: Record<string, unknown>): void {
@@ -1077,4 +1286,47 @@ function signature(state: GameState): string {
     ...ballTypes.map((ball) => state.balls[ball]),
     state.events.length,
   ].join(":");
+}
+
+function pickStrongMoveByType(element: ElementType): MoveDefinition | undefined {
+  const candidates = Object.values(movesById).filter(
+    (move) => move.type === element && move.category !== "status" && move.power >= 60,
+  );
+
+  if (candidates.length === 0) {
+    return undefined;
+  }
+
+  candidates.sort((left, right) => {
+    if (right.power !== left.power) return right.power - left.power;
+    return (right.accuracy ?? 0) - (left.accuracy ?? 0);
+  });
+
+  return candidates[0];
+}
+
+function pickWeakestMoveIndex(moves: readonly MoveDefinition[]): number {
+  if (moves.length === 0) return 0;
+  let weakestIndex = 0;
+  let weakestPower = Number.POSITIVE_INFINITY;
+  for (let index = 0; index < moves.length; index += 1) {
+    const power = moves[index].power ?? 0;
+    if (power < weakestPower) {
+      weakestPower = power;
+      weakestIndex = index;
+    }
+  }
+  return weakestIndex;
+}
+
+function cloneMove(move: MoveDefinition): MoveDefinition {
+  const catalogMove = movesById[move.id];
+  const source = catalogMove ?? getMove(move.id);
+  return {
+    ...source,
+    flags: [...(source.flags ?? [])],
+    statChanges: (source.statChanges ?? []).map((change) => ({ ...change })),
+    meta: { ...source.meta },
+    statusEffect: source.statusEffect ? { ...source.statusEffect } : undefined,
+  };
 }

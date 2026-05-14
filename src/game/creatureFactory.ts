@@ -8,7 +8,7 @@ import {
 } from "./data/catalog";
 import { SeededRng, clamp } from "./rng";
 import { scoreCreature } from "./scoring";
-import type { Creature, GameBalance, MoveDefinition, SpeciesDefinition, Stats } from "./types";
+import type { Creature, ElementType, GameBalance, MoveDefinition, SpeciesDefinition, Stats } from "./types";
 
 export interface CreatureFactoryOptions {
   rng: SeededRng;
@@ -18,12 +18,19 @@ export interface CreatureFactoryOptions {
   level?: number;
   role: "starter" | "wild" | "trainer";
   rarityBoost?: number;
+  lockedType?: ElementType;
 }
 
 export function createCreature(options: CreatureFactoryOptions): Creature {
   const species = options.speciesId
     ? getSpecies(options.speciesId)
-    : pickSpeciesForWave(options.rng, options.wave, options.balance, options.rarityBoost ?? 0);
+    : pickSpeciesForWave(
+        options.rng,
+        options.wave,
+        options.balance,
+        options.rarityBoost ?? 0,
+        options.lockedType,
+      );
   const level = normalizeLevel(options.level ?? options.wave);
   const moves = pickMoves(species, level, options.rng);
   const growth =
@@ -110,16 +117,27 @@ function pickSpeciesForWave(
   wave: number,
   balance: GameBalance,
   rarityBoost: number,
+  lockedType?: ElementType,
 ): SpeciesDefinition {
   const baseBudget = 1 + Math.floor(wave / balance.wildRarityBudgetWaveDivisor);
   const budgetBoost = rarityBoost > 0 ? Math.ceil(rarityBoost * 4) : 0;
   const rarityBudget = clamp(baseBudget + budgetBoost, 1, 8);
   const baseMaxTotal = balance.wildBaseStatBudgetBase + wave * balance.wildBaseStatBudgetPerWave;
   const maxBaseTotal = baseMaxTotal + Math.round(rarityBoost * 220);
-  const candidates = speciesCatalog.filter((species) => {
-    return species.rarity <= rarityBudget && getBaseStatTotal(species) <= maxBaseTotal;
+  const matchesType = (species: SpeciesDefinition) =>
+    !lockedType || species.types.includes(lockedType);
+  const budgetCandidates = speciesCatalog.filter((species) => {
+    return (
+      species.rarity <= rarityBudget &&
+      getBaseStatTotal(species) <= maxBaseTotal &&
+      matchesType(species)
+    );
   });
-  const available = candidates.length > 0 ? candidates : speciesCatalog;
+  const typeCandidates = lockedType
+    ? speciesCatalog.filter((species) => species.types.includes(lockedType))
+    : [];
+  const available =
+    budgetCandidates.length > 0 ? budgetCandidates : typeCandidates.length > 0 ? typeCandidates : speciesCatalog;
   const weighted = available.flatMap((species) => {
     const baseWeight = Math.max(1, 10 - species.rarity + Math.floor(wave / 5));
     const boostWeight =

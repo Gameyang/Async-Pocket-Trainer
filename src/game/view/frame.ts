@@ -7,11 +7,18 @@ import {
   getLevelBoostProduct,
   getRarityBoostProduct,
   getScoutProduct,
+  getStatBoostProduct,
+  getStatRerollProduct,
+  getTeachMoveProduct,
+  getTypeLockProduct,
   healTiers,
   levelBoostTiers,
   rarityBoostTiers,
   scoutKinds,
   scoutTiers,
+  statBoostTiers,
+  teachMoveElements,
+  typeLockElements,
 } from "../shopCatalog";
 import {
   formatMoney,
@@ -188,6 +195,7 @@ export interface FrameAction {
   action: GameAction;
   targetEntityId?: string;
   cost?: number;
+  originalCost?: number;
   reason?: string;
 }
 
@@ -1143,13 +1151,96 @@ function captureBallAction(
 }
 
 function createReadyShopActions(state: GameState, balance: GameBalance): FrameAction[] {
-  return [
+  const baseActions = [
     ...createHealActions(state),
     ...createBallShopActions(state, balance),
     ...createScoutActions(state),
     ...createRarityBoostActions(state),
     ...createLevelBoostActions(state),
+    ...createStatBoostActions(state),
+    ...createStatRerollActions(state),
+    ...createTeachMoveActions(state),
+    ...createTypeLockActions(state),
   ];
+  return baseActions.map((action) => applyShopDeal(action, state));
+}
+
+function applyShopDeal(action: FrameAction, state: GameState): FrameAction {
+  const deal = state.shopDeal;
+  if (!deal || deal.wave !== state.currentWave || action.cost === undefined) {
+    return action;
+  }
+  if (!deal.discountedActionIds.includes(action.id)) {
+    return action;
+  }
+  const discounted = Math.max(1, Math.round(action.cost * (1 - deal.discountRate)));
+  return {
+    ...action,
+    cost: discounted,
+    originalCost: action.cost,
+    enabled: state.money >= discounted,
+    reason: state.money >= discounted ? undefined : "코인이 부족합니다",
+  };
+}
+
+function createStatBoostActions(state: GameState): FrameAction[] {
+  return statBoostTiers.map((tier) => {
+    const product = getStatBoostProduct(tier);
+    return {
+      id: `shop:stat-boost:${tier}`,
+      label: `능력치 +${product.bonus} ${formatMoney(product.cost)}`,
+      role: "secondary" as const,
+      enabled: state.money >= product.cost,
+      cost: product.cost,
+      action: { type: "BUY_STAT_BOOST" as const, tier },
+      reason: state.money >= product.cost ? undefined : "코인이 부족합니다",
+    };
+  });
+}
+
+function createStatRerollActions(state: GameState): FrameAction[] {
+  const product = getStatRerollProduct();
+  return [
+    {
+      id: "shop:stat-reroll",
+      label: `능력치 재추첨 ${formatMoney(product.cost)}`,
+      role: "secondary",
+      enabled: state.money >= product.cost,
+      cost: product.cost,
+      action: { type: "BUY_STAT_REROLL" },
+      reason: state.money >= product.cost ? undefined : "코인이 부족합니다",
+    },
+  ];
+}
+
+function createTeachMoveActions(state: GameState): FrameAction[] {
+  return teachMoveElements.map((element) => {
+    const product = getTeachMoveProduct(element);
+    return {
+      id: `shop:teach-move:${element}`,
+      label: `${localizeType(element)} 기술 머신 ${formatMoney(product.cost)}`,
+      role: "secondary" as const,
+      enabled: state.money >= product.cost,
+      cost: product.cost,
+      action: { type: "BUY_TEACH_MOVE" as const, element },
+      reason: state.money >= product.cost ? undefined : "코인이 부족합니다",
+    };
+  });
+}
+
+function createTypeLockActions(state: GameState): FrameAction[] {
+  return typeLockElements.map((element) => {
+    const product = getTypeLockProduct(element);
+    return {
+      id: `shop:type-lock:${element}`,
+      label: `${localizeType(element)} 고정 ${formatMoney(product.cost)}`,
+      role: "secondary" as const,
+      enabled: state.money >= product.cost,
+      cost: product.cost,
+      action: { type: "BUY_TYPE_LOCK" as const, element },
+      reason: state.money >= product.cost ? undefined : "코인이 부족합니다",
+    };
+  });
 }
 
 function createRarityBoostActions(state: GameState): FrameAction[] {

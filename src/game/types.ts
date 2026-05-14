@@ -47,6 +47,7 @@ export type ScoutKind = "rarity" | "power";
 export type ScoutTier = 1 | 2 | 3;
 export type RarityBoostTier = 1 | 2 | 3;
 export type LevelBoostTier = 1 | 2 | 3 | 4;
+export type StatBoostTier = 1 | 2 | 3;
 
 export interface SelectedRoute {
   id: RouteId;
@@ -58,6 +59,13 @@ export interface EncounterBoost {
   rarityBonus?: number;
   levelMin?: number;
   levelMax?: number;
+  lockedType?: ElementType;
+}
+
+export interface ShopDeal {
+  wave: number;
+  discountedActionIds: string[];
+  discountRate: number;
 }
 
 export interface BattleStatusState {
@@ -404,6 +412,7 @@ export interface GameState {
   team: Creature[];
   selectedRoute?: SelectedRoute;
   encounterBoost?: EncounterBoost;
+  shopDeal?: ShopDeal;
   supplyUsedAtWave?: number;
   pendingEncounter?: EncounterSnapshot;
   pendingCapture?: Creature;
@@ -426,7 +435,11 @@ export type GameAction =
   | { type: "BUY_BALL"; ball: BallType; quantity?: number }
   | { type: "BUY_SCOUT"; kind: ScoutKind; tier: ScoutTier }
   | { type: "BUY_RARITY_BOOST"; tier: RarityBoostTier }
-  | { type: "BUY_LEVEL_BOOST"; tier: LevelBoostTier };
+  | { type: "BUY_LEVEL_BOOST"; tier: LevelBoostTier }
+  | { type: "BUY_STAT_BOOST"; tier: StatBoostTier; targetEntityId?: string }
+  | { type: "BUY_STAT_REROLL"; targetEntityId?: string }
+  | { type: "BUY_TEACH_MOVE"; element: ElementType; targetEntityId?: string }
+  | { type: "BUY_TYPE_LOCK"; element: ElementType };
 
 export interface AutoPlayOptions {
   maxWaves: number;

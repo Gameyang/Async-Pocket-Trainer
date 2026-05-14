@@ -1420,6 +1420,8 @@ function actionEmoji(action: FrameAction): string {
       return LEVEL_BOOST_EMOJI[action.action.tier];
     case "SET_TRAINER_NAME":
       return "💾";
+    default:
+      return "?";
   }
 }
 
@@ -1670,15 +1672,13 @@ function syncAudio(audioState: AudioState, frame: GameFrame, playback: BattlePla
   syncBgm(audioState, frame.scene.bgmKey);
 
   const activeSequence = playback.activeEvent?.sequence;
-  for (const cue of frame.visualCues) {
-    if (
-      playback.isPlaying &&
-      (cue.type === "battle.hit" ||
-        cue.type === "battle.miss" ||
-        cue.type === "battle.support" ||
-        cue.type === "creature.faint") &&
-      cue.sequence !== activeSequence
-    ) {
+  const playableCues = frame.visualCues.filter((cue) =>
+    shouldPlaySfxCue(cue, playback, activeSequence),
+  );
+  const hasPriorityCue = playableCues.some((cue) => cue.type !== "phase.change");
+
+  for (const cue of playableCues) {
+    if (hasPriorityCue && cue.type === "phase.change") {
       continue;
     }
 
@@ -1689,6 +1689,31 @@ function syncAudio(audioState: AudioState, frame: GameFrame, playback: BattlePla
     audioState.playedCueIds.add(cue.id);
     playSfx(cue.soundKey);
   }
+}
+
+function shouldPlaySfxCue(
+  cue: FrameVisualCue,
+  playback: BattlePlaybackView,
+  activeSequence: number | undefined,
+): boolean {
+  if (playback.isPlaying) {
+    return isBattleSfxCue(cue) && cue.sequence === activeSequence;
+  }
+
+  if (playback.replayKey && isBattleSfxCue(cue)) {
+    return false;
+  }
+
+  return true;
+}
+
+function isBattleSfxCue(cue: FrameVisualCue): boolean {
+  return (
+    cue.type === "battle.hit" ||
+    cue.type === "battle.miss" ||
+    cue.type === "battle.support" ||
+    cue.type === "creature.faint"
+  );
 }
 
 function syncBgm(audioState: AudioState, bgmKey: FrameBgmKey): void {
@@ -1722,8 +1747,32 @@ function playSfx(soundKey: string): void {
   }
 
   const audio = new Audio(url);
-  audio.volume = 0.34;
+  audio.volume = resolveSfxVolume(soundKey);
   void audio.play().catch(() => undefined);
+}
+
+function resolveSfxVolume(soundKey: string): number {
+  if (soundKey.startsWith("sfx.battle.type.") || soundKey.startsWith("sfx.battle.support.")) {
+    return 0.56;
+  }
+
+  if (soundKey === "sfx.battle.criticalHit") {
+    return 0.58;
+  }
+
+  if (
+    soundKey === "sfx.battle.hit" ||
+    soundKey === "sfx.battle.miss" ||
+    soundKey === "sfx.creature.faint"
+  ) {
+    return 0.46;
+  }
+
+  if (soundKey === "sfx.phase.change") {
+    return 0.18;
+  }
+
+  return 0.34;
 }
 
 function escapeHtml(value: string): string {
