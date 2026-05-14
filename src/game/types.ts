@@ -337,6 +337,7 @@ export type BattleReplayEvent =
       targetId: string;
       move: string;
       moveType: ElementType;
+      moveCategory: MoveCategory;
       damage: number;
       effectiveness: number;
       critical: boolean;

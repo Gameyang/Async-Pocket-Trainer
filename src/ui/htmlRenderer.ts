@@ -1,4 +1,10 @@
-import { ballTypes, type BattleStatus, type ElementType, type GameAction } from "../game/types";
+import {
+  ballTypes,
+  type BattleStatus,
+  type ElementType,
+  type GameAction,
+  type MoveCategory,
+} from "../game/types";
 import type {
   FrameAction,
   FrameBattleReplayEvent,
@@ -27,6 +33,8 @@ import {
   type CommandItem,
   type ShopActionProfile,
 } from "./framePresentation";
+import { effectEngine } from "./effects/engine";
+import { resolveEffectDescriptor } from "./effects/mapping";
 
 const BATTLE_REPLAY_STEP_MS = 540;
 
@@ -116,6 +124,14 @@ interface BattleMotionTemplate {
   role: "user" | "target";
 }
 
+type BattleHitVisualCue = Extract<
+  FrameVisualCue,
+  { type: "battle.hit" | "battle.miss" }
+> & { type: "battle.hit" };
+type BattleEffectVisualCue =
+  | BattleHitVisualCue
+  | Extract<FrameVisualCue, { type: "battle.support" }>;
+
 interface ShopTargetState {
   action?: FrameAction;
 }
@@ -153,6 +169,11 @@ export function mountHtmlRenderer(
       playbackView,
       Boolean(options.onStarterReroll),
       shopTarget.action,
+    );
+    spawnActiveBattleEffect(
+      root,
+      playbackView.activeEvent,
+      findActiveVisualCue(frame, playbackView.activeEvent),
     );
     bindActions(root, client, frame, playbackView, audioState, shopTarget, render);
     bindShopTargetSelection(root, client, shopTarget, render);
@@ -685,6 +706,7 @@ function renderBattleScreen({
       <div class="battlefield" aria-hidden="true"></div>
       <div class="platform enemy" aria-hidden="true"></div>
       <div class="platform hero" aria-hidden="true"></div>
+      <div class="fx-overlay" aria-hidden="true"></div>
       ${renderTrainerBadge(frame.scene.trainer)}
       ${renderTeamRecordShift(frame.scene.trainer, "battle")}
       ${renderBattleMonster(activeOpponent, "enemy-mon", playback.activeEvent, activeCue)}
@@ -2083,6 +2105,81 @@ function getCueMoveType(activeCue: FrameVisualCue | undefined): ElementType | un
   }
 
   return undefined;
+}
+
+function spawnActiveBattleEffect(
+  root: HTMLElement,
+  activeEvent: FrameBattleReplayEvent | undefined,
+  activeCue: FrameVisualCue | undefined,
+): void {
+  if (!isSpawnableBattleCue(activeCue)) {
+    return;
+  }
+
+  const moveType = activeEvent?.moveType ?? getCueMoveType(activeCue);
+  const moveCategory = getEffectMoveCategory(activeEvent, activeCue);
+
+  if (!moveType || !moveCategory) {
+    return;
+  }
+
+  const sourceEntityId = activeCue.sourceEntityId ?? activeCue.entityId ?? activeCue.targetEntityId;
+  const targetEntityId = activeCue.targetEntityId ?? activeCue.entityId ?? activeCue.sourceEntityId;
+
+  if (!sourceEntityId || !targetEntityId) {
+    return;
+  }
+
+  const sourceEl = findBattleEntityElement(root, sourceEntityId);
+  const targetEl = findBattleEntityElement(root, targetEntityId);
+
+  if (!sourceEl || !targetEl) {
+    return;
+  }
+
+  const descriptor = resolveEffectDescriptor(
+    { type: moveType, category: moveCategory },
+    {
+      critical: activeCue.type === "battle.hit" ? activeCue.critical : activeEvent?.critical,
+      effectiveness:
+        activeCue.type === "battle.hit" ? activeCue.effectiveness : activeEvent?.effectiveness,
+      originSide: normalizeEffectSide(activeEvent?.sourceSide),
+      targetSide: normalizeEffectSide(activeEvent?.targetSide),
+    },
+  );
+
+  effectEngine.spawn(descriptor, sourceEl, targetEl, activeCue.id, activeCue.effectKey);
+}
+
+function getEffectMoveCategory(
+  activeEvent: FrameBattleReplayEvent | undefined,
+  activeCue: BattleEffectVisualCue,
+): MoveCategory | undefined {
+  return (
+    activeEvent?.moveCategory ??
+    activeCue.moveCategory ??
+    (activeCue.type === "battle.support" ? "status" : undefined)
+  );
+}
+
+function isSpawnableBattleCue(
+  activeCue: FrameVisualCue | undefined,
+): activeCue is BattleEffectVisualCue {
+  return activeCue?.type === "battle.hit" || activeCue?.type === "battle.support";
+}
+
+function normalizeEffectSide(
+  side: FrameBattleReplayEvent["sourceSide"] | undefined,
+): "player" | "enemy" | undefined {
+  return side === "player" || side === "enemy" ? side : undefined;
+}
+
+function findBattleEntityElement(root: HTMLElement, entityId: string): HTMLElement | undefined {
+  return (
+    root.querySelector<HTMLElement>(
+      `.screen-monster[data-entity-id="${cssEscape(entityId)}"]`,
+    ) ?? undefined
+  );
 }
 
 function renderMoveVfx(

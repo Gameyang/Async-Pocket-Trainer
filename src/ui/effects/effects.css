@@ -1,0 +1,527 @@
+:root {
+  --type-normal-primary: #bfb3a4;
+  --type-normal-secondary: #e3d9c8;
+  --type-normal-accent: #f7f1e3;
+  --type-fire-primary: #ff7044;
+  --type-fire-secondary: #ffba4a;
+  --type-fire-accent: #fff2c2;
+  --type-water-primary: #3aa6ff;
+  --type-water-secondary: #6fd8ff;
+  --type-water-accent: #d6f1ff;
+  --type-grass-primary: #6fc24a;
+  --type-grass-secondary: #b6e07a;
+  --type-grass-accent: #eaf9c5;
+  --type-electric-primary: #ffd83a;
+  --type-electric-secondary: #fff48a;
+  --type-electric-accent: #fffadf;
+  --type-poison-primary: #9c5cc4;
+  --type-poison-secondary: #c290da;
+  --type-poison-accent: #ecd9f4;
+  --type-ground-primary: #c69a5b;
+  --type-ground-secondary: #e2c089;
+  --type-ground-accent: #f5e8cc;
+  --type-flying-primary: #8fb6e8;
+  --type-flying-secondary: #c0d6f3;
+  --type-flying-accent: #e8f0fb;
+  --type-bug-primary: #9ec23a;
+  --type-bug-secondary: #c8db70;
+  --type-bug-accent: #ecf3c2;
+  --type-fighting-primary: #c64a4a;
+  --type-fighting-secondary: #e08080;
+  --type-fighting-accent: #f5cccc;
+  --type-psychic-primary: #ff5c9a;
+  --type-psychic-secondary: #ffa5c8;
+  --type-psychic-accent: #ffe2ee;
+  --type-rock-primary: #a8946a;
+  --type-rock-secondary: #cdb88e;
+  --type-rock-accent: #ece2c8;
+  --type-ghost-primary: #7a5cff;
+  --type-ghost-secondary: #b59cff;
+  --type-ghost-accent: #efe6ff;
+  --type-ice-primary: #6fd5e0;
+  --type-ice-secondary: #a8e8ee;
+  --type-ice-accent: #def6f8;
+  --type-dragon-primary: #4a6cff;
+  --type-dragon-secondary: #7e9bff;
+  --type-dragon-accent: #d8e1ff;
+  --type-dark-primary: #5a4a66;
+  --type-dark-secondary: #8c7a98;
+  --type-dark-accent: #d6cfdc;
+  --type-steel-primary: #8fa8b8;
+  --type-steel-secondary: #b8c9d4;
+  --type-steel-accent: #e2eaef;
+  --type-fairy-primary: #ff8fc8;
+  --type-fairy-secondary: #ffb8dc;
+  --type-fairy-accent: #ffe1f0;
+}
+
+.fx-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 50;
+  overflow: hidden;
+  contain: layout paint;
+}
+
+.fx-instance {
+  position: absolute;
+  pointer-events: none;
+  --fx-primary: var(--type-normal-primary);
+  --fx-secondary: var(--type-normal-secondary);
+  --fx-accent: var(--type-normal-accent);
+  --fx-duration: 420ms;
+  --fx-intensity: 0.72;
+}
+
+.fx-instance span {
+  position: absolute;
+  display: block;
+  pointer-events: none;
+}
+
+.fx-shape-strike {
+  transform: rotate(-18deg);
+  animation: fx-strike-life var(--fx-duration) ease-out forwards;
+}
+
+.fx-strike-slash {
+  inset: 42% 4%;
+  height: 9px;
+  border: 2px solid rgba(16, 23, 34, 0.72);
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, var(--fx-accent), var(--fx-primary));
+  box-shadow: 0 0 12px var(--fx-secondary);
+  transform-origin: left center;
+  animation: fx-strike-slash var(--fx-duration) ease-out forwards;
+}
+
+.fx-strike-flash,
+.fx-beam-flash {
+  inset: 24%;
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--fx-accent), transparent 68%);
+  mix-blend-mode: screen;
+  animation: fx-flash var(--fx-duration) ease-out forwards;
+}
+
+.fx-shape-projectile {
+  animation: fx-fade-life var(--fx-duration) ease-out forwards;
+}
+
+.fx-projectile-core {
+  width: 22px;
+  height: 16px;
+  margin: -8px 0 0 -11px;
+  border: 2px solid rgba(16, 23, 34, 0.62);
+  border-radius: 999px 999px 999px 3px;
+  background: radial-gradient(circle at 70% 35%, var(--fx-accent), var(--fx-primary) 70%);
+  box-shadow: 0 0 14px var(--fx-secondary);
+  transform: rotate(var(--fx-angle));
+}
+
+.fx-projectile-trail {
+  width: 42px;
+  height: 10px;
+  margin: -5px 0 0 -40px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, var(--fx-secondary), var(--fx-primary));
+  opacity: 0.75;
+  transform: rotate(var(--fx-angle));
+}
+
+.fx-projectile-impact {
+  width: 34px;
+  height: 34px;
+  margin: -17px 0 0 -17px;
+  border: 3px solid var(--fx-accent);
+  border-radius: 50%;
+  opacity: 0;
+}
+
+.fx-shape-projectile.fx-motion-linear .fx-projectile-core,
+.fx-shape-projectile.fx-motion-linear .fx-projectile-trail {
+  animation: fx-projectile-linear var(--fx-duration) cubic-bezier(0.16, 0.9, 0.2, 1) forwards;
+}
+
+.fx-shape-projectile.fx-motion-arc .fx-projectile-core,
+.fx-shape-projectile.fx-motion-arc .fx-projectile-trail {
+  animation: fx-projectile-arc var(--fx-duration) cubic-bezier(0.18, 0.84, 0.18, 1) forwards;
+}
+
+.fx-shape-projectile .fx-projectile-impact {
+  animation: fx-projectile-impact var(--fx-duration) ease-out forwards;
+}
+
+.fx-shape-beam {
+  transform-origin: left center;
+  animation: fx-beam-life var(--fx-duration) ease-out forwards;
+}
+
+.fx-beam-core,
+.fx-beam-glow {
+  left: 0;
+  top: 50%;
+  width: 100%;
+  transform-origin: left center;
+}
+
+.fx-beam-core {
+  height: 8px;
+  margin-top: -4px;
+  border: 2px solid rgba(16, 23, 34, 0.54);
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--fx-primary), var(--fx-secondary), var(--fx-accent));
+  box-shadow: 0 0 12px var(--fx-primary);
+  animation: fx-beam-core var(--fx-duration) ease-out forwards;
+}
+
+.fx-beam-glow {
+  height: 22px;
+  margin-top: -11px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, var(--fx-secondary), transparent);
+  filter: blur(4px);
+  opacity: 0.82;
+  animation: fx-beam-core var(--fx-duration) ease-out forwards;
+}
+
+.fx-shape-burst {
+  animation: fx-burst-life var(--fx-duration) ease-out forwards;
+}
+
+.fx-burst-ring,
+.fx-burst-core,
+.fx-burst-wave,
+.fx-shockwave {
+  inset: 18%;
+  border-radius: 50%;
+}
+
+.fx-burst-ring {
+  border: 4px solid var(--fx-secondary);
+  box-shadow: 0 0 16px var(--fx-primary);
+  animation: fx-ring-expand var(--fx-duration) ease-out forwards;
+}
+
+.fx-burst-core {
+  background: radial-gradient(circle, var(--fx-accent), var(--fx-primary) 52%, transparent 68%);
+  animation: fx-burst-core var(--fx-duration) ease-out forwards;
+}
+
+.fx-burst-wave,
+.fx-shockwave {
+  border: 3px solid var(--fx-primary);
+  opacity: 0.66;
+  animation: fx-shockwave var(--fx-duration) ease-out forwards;
+}
+
+.fx-shape-aura {
+  animation: fx-aura-life var(--fx-duration) ease-out forwards;
+}
+
+.fx-aura-glow,
+.fx-aura-ring {
+  inset: 10%;
+  border-radius: 50%;
+}
+
+.fx-aura-glow {
+  background:
+    radial-gradient(
+      circle,
+      color-mix(in srgb, var(--fx-secondary) 62%, transparent),
+      transparent 62%
+    ),
+    radial-gradient(circle, color-mix(in srgb, var(--fx-primary) 32%, transparent), transparent 72%);
+  animation: fx-motion-pulse var(--fx-duration) ease-in-out infinite;
+}
+
+.fx-aura-ring {
+  border: 3px solid color-mix(in srgb, var(--fx-accent) 72%, transparent);
+  box-shadow:
+    inset 0 0 14px var(--fx-secondary),
+    0 0 18px var(--fx-primary);
+}
+
+.fx-aura-particle,
+.fx-spark {
+  width: 8px;
+  height: 8px;
+  border: 2px solid rgba(16, 23, 34, 0.45);
+  border-radius: 50%;
+  background: var(--fx-accent);
+  box-shadow: 0 0 9px var(--fx-primary);
+}
+
+.fx-aura-particle {
+  left: 50%;
+  top: 50%;
+  transform: rotate(calc(var(--fx-particle-index) * 51deg)) translateX(42px);
+  animation: fx-aura-particle var(--fx-duration) ease-out forwards;
+}
+
+.fx-spark {
+  left: 50%;
+  top: 50%;
+  animation: fx-spark var(--fx-duration) ease-out forwards;
+  animation-delay: calc(var(--fx-particle-index) * 18ms);
+}
+
+.fx-motion-spin {
+  animation-name: fx-spin-life;
+}
+
+.fx-motion-shake {
+  animation-name: fx-shake-life;
+}
+
+@keyframes fx-strike-life {
+  0% {
+    opacity: 0;
+    transform: rotate(-18deg) scale(0.76);
+  }
+  22% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: rotate(-18deg) scale(1.12);
+  }
+}
+
+@keyframes fx-strike-slash {
+  0% {
+    transform: scaleX(0);
+  }
+  45% {
+    transform: scaleX(1);
+  }
+  100% {
+    transform: scaleX(1.05);
+  }
+}
+
+@keyframes fx-flash {
+  0%,
+  100% {
+    opacity: 0;
+    transform: scale(0.58);
+  }
+  24% {
+    opacity: calc(0.86 * var(--fx-intensity));
+    transform: scale(1.22);
+  }
+}
+
+@keyframes fx-fade-life {
+  0% {
+    opacity: 0;
+  }
+  12%,
+  82% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes fx-projectile-linear {
+  0% {
+    transform: translate(0, 0) rotate(var(--fx-angle)) scale(0.82);
+  }
+  100% {
+    transform: translate(var(--fx-dx), var(--fx-dy)) rotate(var(--fx-angle)) scale(1);
+  }
+}
+
+@keyframes fx-projectile-arc {
+  0% {
+    transform: translate(0, 0) rotate(var(--fx-angle)) scale(0.82);
+  }
+  54% {
+    transform: translate(var(--fx-mid-x), var(--fx-mid-y)) rotate(var(--fx-angle)) scale(1.06);
+  }
+  100% {
+    transform: translate(var(--fx-dx), var(--fx-dy)) rotate(var(--fx-angle)) scale(0.92);
+  }
+}
+
+@keyframes fx-projectile-impact {
+  0%,
+  58% {
+    opacity: 0;
+    transform: translate(var(--fx-dx), var(--fx-dy)) scale(0.2);
+  }
+  75% {
+    opacity: 0.85;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--fx-dx), var(--fx-dy)) scale(1.35);
+  }
+}
+
+@keyframes fx-beam-life {
+  0%,
+  100% {
+    opacity: 0;
+  }
+  14%,
+  78% {
+    opacity: 1;
+  }
+}
+
+@keyframes fx-beam-core {
+  0% {
+    transform: scaleX(0);
+  }
+  22% {
+    transform: scaleX(1);
+  }
+  72% {
+    transform: scaleX(1);
+    filter: brightness(1.15);
+  }
+  100% {
+    transform: scaleX(0.98);
+    filter: brightness(1);
+  }
+}
+
+@keyframes fx-burst-life {
+  0% {
+    opacity: 0;
+    transform: scale(0.84);
+  }
+  18% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.08);
+  }
+}
+
+@keyframes fx-ring-expand {
+  0% {
+    transform: scale(0.2);
+  }
+  100% {
+    transform: scale(1.42);
+  }
+}
+
+@keyframes fx-burst-core {
+  0% {
+    opacity: 0.92;
+    transform: scale(0.25);
+  }
+  60% {
+    opacity: 0.48;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.1);
+  }
+}
+
+@keyframes fx-shockwave {
+  0% {
+    opacity: 0.68;
+    transform: scale(0.18);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.62);
+  }
+}
+
+@keyframes fx-aura-life {
+  0%,
+  100% {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+  18%,
+  82% {
+    opacity: 0.95;
+    transform: scale(1);
+  }
+}
+
+@keyframes fx-motion-pulse {
+  0%,
+  100% {
+    opacity: 0.58;
+    transform: scale(0.88);
+  }
+  50% {
+    opacity: 0.96;
+    transform: scale(1.08);
+  }
+}
+
+@keyframes fx-spin-life {
+  0% {
+    opacity: 0;
+    transform: rotate(0deg) scale(0.86);
+  }
+  20%,
+  78% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: rotate(360deg) scale(1.06);
+  }
+}
+
+@keyframes fx-shake-life {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  20% {
+    transform: translate(3px, -2px);
+  }
+  38% {
+    transform: translate(-3px, 2px);
+  }
+  56% {
+    transform: translate(2px, 2px);
+  }
+  74% {
+    transform: translate(-2px, -1px);
+  }
+}
+
+@keyframes fx-aura-particle {
+  0% {
+    opacity: 0;
+    transform: rotate(calc(var(--fx-particle-index) * 51deg)) translateX(16px) scale(0.5);
+  }
+  40% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: rotate(calc(var(--fx-particle-index) * 51deg + 42deg)) translateX(58px) scale(0.9);
+  }
+}
+
+@keyframes fx-spark {
+  0% {
+    opacity: 0;
+    transform: rotate(calc(var(--fx-particle-index) * 42deg)) translateX(10px) scale(0.5);
+  }
+  30% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: rotate(calc(var(--fx-particle-index) * 42deg)) translateX(54px) scale(0.25);
+  }
+}

@@ -275,6 +275,7 @@ export type FrameVisualCue =
       effectiveness: number;
       critical: boolean;
       moveType?: ElementType;
+      moveCategory?: MoveCategory;
     }
   | {
       id: string;
@@ -288,6 +289,7 @@ export type FrameVisualCue =
       entityId?: string;
       label: string;
       moveType?: ElementType;
+      moveCategory?: MoveCategory;
     }
   | {
       id: string;
@@ -1673,6 +1675,7 @@ function toFrameBattleReplayEvent(
       )}`,
       move: event.move,
       moveType: event.moveType,
+      moveCategory: event.moveCategory,
       sourceSide: lookup.side(event.actorId),
       targetSide: lookup.side(event.targetId),
       sourceEntityId: event.actorId,
@@ -1884,6 +1887,7 @@ function battleReplayEventToCue(
       effectiveness: event.effectiveness,
       critical: event.critical,
       moveType: event.moveType,
+      moveCategory: event.moveCategory,
     };
   }
 
@@ -1900,6 +1904,7 @@ function battleReplayEventToCue(
       entityId: event.type === "move.effect" ? event.entityId : undefined,
       label: battleSupportLabel(event, lookup),
       moveType: event.moveType,
+      moveCategory: event.moveCategory,
     };
   }
 

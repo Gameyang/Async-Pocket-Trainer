@@ -138,7 +138,9 @@ describe("game frame contract", () => {
     expect(typedHitCue).toMatchObject({
       soundKey: `sfx.battle.type.${superEffectiveEvent?.moveType}`,
       moveType: superEffectiveEvent?.moveType,
+      moveCategory: superEffectiveEvent?.moveCategory,
     });
+    expect(superEffectiveEvent?.moveCategory).toMatch(/physical|special|status/);
     expect(criticalCue).toMatchObject({
       soundKey: expect.stringMatching(/^sfx\.battle\.type\.[a-z-]+\.critical$/),
       critical: true,
