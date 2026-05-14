@@ -1,4 +1,5 @@
-import { getSpecies } from "./data/catalog";
+import { getMove, getSpecies } from "./data/catalog";
+import { formatTrainerPoints } from "./localization";
 import type { GameBalance, GameState, MetaCurrencyState } from "./types";
 
 export interface AchievementAward {
@@ -32,6 +33,10 @@ export function ensureMetaCurrency(state: GameState): MetaCurrencyState {
   return state.metaCurrency;
 }
 
+export function isAchievementClaimed(meta: MetaCurrencyState | undefined, id: string): boolean {
+  return Boolean(meta?.claimedAchievements.includes(id));
+}
+
 function isClaimed(meta: MetaCurrencyState, id: string): boolean {
   return meta.claimedAchievements.includes(id);
 }
@@ -50,19 +55,79 @@ function awardAchievement(
   return { id, message, trainerPoints };
 }
 
-export function awardDexUnlock(meta: MetaCurrencyState, speciesId: number): AchievementAward | undefined {
-  const id = `dex:${speciesId}`;
+export function awardDexUnlock(
+  meta: MetaCurrencyState,
+  speciesId: number,
+): AchievementAward | undefined {
+  const id = getDexRewardAchievementId(speciesId);
   if (isClaimed(meta, id)) {
     return undefined;
   }
-  let rarity: number;
+  const reward = calculateDexUnlockReward(speciesId);
+  if (!reward) {
+    return undefined;
+  }
+  return awardAchievement(meta, id, reward, `도감 신규 등재 ${formatTrainerPoints(reward)}`);
+}
+
+export function awardSkillUnlock(
+  meta: MetaCurrencyState,
+  moveId: string,
+): AchievementAward | undefined {
+  const id = getSkillRewardAchievementId(moveId);
+  if (isClaimed(meta, id)) {
+    return undefined;
+  }
+  const reward = calculateSkillUnlockReward(moveId);
+  if (!reward) {
+    return undefined;
+  }
+  const move = getMove(moveId);
+  return awardAchievement(
+    meta,
+    id,
+    reward,
+    `${move.name} 기술 도감 보상 ${formatTrainerPoints(reward)}`,
+  );
+}
+
+export function getDexRewardAchievementId(speciesId: number): string {
+  return `dex:${speciesId}`;
+}
+
+export function getSkillRewardAchievementId(moveId: string): string {
+  return `skill:${moveId}`;
+}
+
+export function calculateDexUnlockReward(speciesId: number): number | undefined {
   try {
-    rarity = Math.max(1, getSpecies(speciesId).rarity);
+    return Math.max(1, getSpecies(speciesId).rarity) * 2;
   } catch {
     return undefined;
   }
-  const reward = rarity * 2;
-  return awardAchievement(meta, id, reward, `도감 신규 등재 +${reward} TP`);
+}
+
+export function calculateSkillUnlockReward(moveId: string): number | undefined {
+  let move;
+  try {
+    move = getMove(moveId);
+  } catch {
+    return undefined;
+  }
+
+  const powerScore =
+    move.category === "status" ? 2 : Math.max(1, Math.ceil(Math.max(20, move.power) / 25));
+  const effectScore =
+    move.statusEffect ||
+    move.statChanges.length > 0 ||
+    move.meta.drain > 0 ||
+    move.meta.healing > 0 ||
+    move.meta.flinchChance > 0 ||
+    move.meta.critRate > 0
+      ? 1
+      : 0;
+
+  return Math.max(1, Math.min(10, powerScore + effectScore));
 }
 
 export function awardCheckpointDefeat(
@@ -76,7 +141,12 @@ export function awardCheckpointDefeat(
   }
   const id = `checkpoint:${wave}`;
   const reward = Math.max(5, Math.floor(wave / 5) * 5);
-  return awardAchievement(meta, id, reward, `체크포인트 ${wave}웨이브 격파 +${reward} TP`);
+  return awardAchievement(
+    meta,
+    id,
+    reward,
+    `체크포인트 ${wave}웨이브 격파 ${formatTrainerPoints(reward)}`,
+  );
 }
 
 export function awardWaveMilestone(
@@ -87,7 +157,12 @@ export function awardWaveMilestone(
   if (!reward) {
     return undefined;
   }
-  return awardAchievement(meta, `wave:${wave}`, reward, `웨이브 ${wave} 도달 +${reward} TP`);
+  return awardAchievement(
+    meta,
+    `wave:${wave}`,
+    reward,
+    `웨이브 ${wave} 도달 ${formatTrainerPoints(reward)}`,
+  );
 }
 
 export function awardDailySheetWins(
@@ -96,7 +171,8 @@ export function awardDailySheetWins(
 ): AchievementAward | undefined {
   const previous = meta.lastSheetClaim;
   const sameTeam = previous?.teamId === options.teamId;
-  const wonDelta = sameTeam && previous ? options.totalWins - previous.totalWins : options.totalWins;
+  const wonDelta =
+    sameTeam && previous ? options.totalWins - previous.totalWins : options.totalWins;
 
   meta.lastSheetClaim = { ...options };
 
@@ -108,7 +184,7 @@ export function awardDailySheetWins(
   meta.trainerPoints += reward;
   return {
     id: `sheet-daily:${options.date}`,
-    message: `시트 트레이너 승리 보상 +${reward} TP`,
+    message: `시트 트레이너 승리 보상 ${formatTrainerPoints(reward)}`,
     trainerPoints: reward,
   };
 }

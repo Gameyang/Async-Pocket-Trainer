@@ -1,4 +1,11 @@
 import { getMove, getSpecies, starterSpeciesIds } from "../data/catalog";
+import {
+  calculateDexUnlockReward,
+  calculateSkillUnlockReward,
+  getDexRewardAchievementId,
+  getSkillRewardAchievementId,
+  isAchievementClaimed,
+} from "../achievements";
 import { normalizeCreatureMoves } from "../creatureFactory";
 import {
   ballActionSlug,
@@ -9,6 +16,7 @@ import {
   getRarityBoostProduct,
   getStatBoostProduct,
   getTeachMoveProduct,
+  getTeamSortProduct,
   getTypeLockProduct,
   hasPremiumOffer,
   healTiers,
@@ -18,11 +26,14 @@ import {
   shopStatKeys,
   statBoostTiers,
   teachMoveElements,
+  teamSortActionId,
+  teamSortOptions,
   typeLockElements,
 } from "../shopCatalog";
 import { SeededRng } from "../rng";
 import {
   formatMoney,
+  formatTrainerPoints,
   formatWave,
   GAME_TITLE,
   localizeBall,
@@ -33,6 +44,7 @@ import {
   localizeWinner,
   withJosa,
 } from "../localization";
+import { getLearnableLevelUpMoves } from "../moveLearning";
 import { getTeamHealthRatio, scoreCreature, scoreTeam } from "../scoring";
 import { ballTypes } from "../types";
 import type {
@@ -55,9 +67,11 @@ import type {
   RouteId,
   ShopStatKey,
   ShopInventory,
+  SortDirection,
   SpeciesDefinition,
   TeamRecordChange,
   TeamRecordSummary,
+  TeamSortKey,
   VolatileBattleStatus,
 } from "../types";
 
@@ -138,6 +152,16 @@ export interface FrameMoveSummary {
   effect: string;
 }
 
+export interface FrameMoveDexEntry {
+  moveId: string;
+  level: number;
+  unlocked: boolean;
+  rewardClaimable: boolean;
+  rewardClaimed: boolean;
+  rewardTrainerPoints: number;
+  move?: FrameMoveSummary;
+}
+
 export interface FrameCaptureScene {
   result: "choosing" | "success" | "failure";
   ball?: BallType;
@@ -175,6 +199,7 @@ export interface FrameEntity {
   assetPath: string;
   name: string;
   speciesId: number;
+  level: number;
   typeLabels: string[];
   hp: {
     current: number;
@@ -189,6 +214,7 @@ export interface FrameEntity {
     speed: number;
   };
   moves: FrameMoveSummary[];
+  moveDex: FrameMoveDexEntry[];
   scores: {
     power: number;
     rarity: number;
@@ -215,13 +241,16 @@ export interface FrameAction {
   originalCost?: number;
   tpCost?: number;
   requiresTarget?: boolean;
+  eligibleTargetIds?: string[];
   reason?: string;
 }
 
 export interface FrameTimelineEntry {
   id: string;
   wave: number;
+  type: string;
   text: string;
+  data?: Record<string, unknown>;
   tone: "neutral" | "success" | "warning" | "danger";
 }
 
@@ -328,8 +357,9 @@ export function createGameFrame(
   frameId: number,
 ): GameFrame {
   const captureScene = createCaptureScene(state);
+  const dexContext = createFrameDexContext(state);
   const playerEntities = state.team.map((creature, index) =>
-    toFrameEntity(creature, "player", index),
+    toFrameEntity(creature, "player", index, dexContext),
   );
   const opponentTeam =
     state.phase === "captureDecision"
@@ -344,10 +374,10 @@ export function createGameFrame(
               ? state.lastBattle.enemyTeam
               : [];
   const opponentEntities = opponentTeam.map((creature, index) =>
-    toFrameEntity(creature, "opponent", index),
+    toFrameEntity(creature, "opponent", index, dexContext),
   );
   const pendingCaptureEntity = state.pendingCapture
-    ? toFrameEntity(state.pendingCapture, "pendingCapture", 0)
+    ? toFrameEntity(state.pendingCapture, "pendingCapture", 0, dexContext)
     : undefined;
   const entities: FrameEntity[] = [];
   const occupiedEntitySlots = new Set<string>();
@@ -359,7 +389,7 @@ export function createGameFrame(
   };
   const addMissingEntity = (creature: Creature, owner: FrameEntity["owner"], slot: number) => {
     const resolvedSlot = resolveEntitySlot(owner, slot, occupiedEntitySlots);
-    addFrameEntity(toFrameEntity(creature, owner, resolvedSlot));
+    addFrameEntity(toFrameEntity(creature, owner, resolvedSlot, dexContext));
   };
 
   playerEntities.forEach(addFrameEntity);
@@ -596,6 +626,18 @@ const trainerPortraits = [
   "resources/trainers/sheet-rival.webp",
 ] as const;
 
+interface FrameDexContext {
+  unlockedMoveIds: ReadonlySet<string>;
+  claimedAchievementIds: ReadonlySet<string>;
+}
+
+function createFrameDexContext(state: GameState): FrameDexContext {
+  return {
+    unlockedMoveIds: new Set(state.unlockedMoveIds ?? []),
+    claimedAchievementIds: new Set(state.metaCurrency?.claimedAchievements ?? []),
+  };
+}
+
 function createStarterOptions(state: GameState): FrameStarterOption[] {
   if (state.phase !== "starterChoice") {
     return [];
@@ -745,7 +787,12 @@ function createBgmKey(state: GameState): FrameBgmKey {
   return "bgm.starterReady";
 }
 
-function toFrameEntity(creature: Creature, owner: FrameEntityOwner, slot: number): FrameEntity {
+function toFrameEntity(
+  creature: Creature,
+  owner: FrameEntityOwner,
+  slot: number,
+  dexContext: FrameDexContext,
+): FrameEntity {
   return {
     id: creature.instanceId,
     kind: "creature",
@@ -756,6 +803,7 @@ function toFrameEntity(creature: Creature, owner: FrameEntityOwner, slot: number
     assetPath: `resources/pokemon/${creature.speciesId.toString().padStart(4, "0")}.webp`,
     name: creature.speciesName,
     speciesId: creature.speciesId,
+    level: creature.level ?? 1,
     typeLabels: localizeTypes(creature.types),
     hp: {
       current: creature.currentHp,
@@ -765,6 +813,7 @@ function toFrameEntity(creature: Creature, owner: FrameEntityOwner, slot: number
     },
     stats: { ...creature.stats },
     moves: creature.moves.map(toFrameMoveSummary),
+    moveDex: createMoveDexEntries(creature, dexContext),
     scores: {
       power: creature.powerScore,
       rarity: creature.rarityScore,
@@ -789,6 +838,30 @@ function toFrameMoveSummary(move: MoveDefinition): FrameMoveSummary {
     priority: move.priority,
     effect: createMoveEffectText(move),
   };
+}
+
+function createMoveDexEntries(
+  creature: Creature,
+  dexContext: FrameDexContext,
+): FrameMoveDexEntry[] {
+  const species = getSpecies(creature.speciesId);
+
+  return species.levelUpMoves.map((entry) => {
+    const unlocked = dexContext.unlockedMoveIds.has(entry.moveId);
+    const rewardId = getSkillRewardAchievementId(entry.moveId);
+    const rewardTrainerPoints = calculateSkillUnlockReward(entry.moveId) ?? 0;
+    const rewardClaimed = dexContext.claimedAchievementIds.has(rewardId);
+
+    return {
+      moveId: entry.moveId,
+      level: entry.level,
+      unlocked,
+      rewardClaimable: unlocked && rewardTrainerPoints > 0 && !rewardClaimed,
+      rewardClaimed,
+      rewardTrainerPoints,
+      move: unlocked ? toFrameMoveSummary(getMove(entry.moveId)) : undefined,
+    };
+  });
 }
 
 function createMoveEffectText(move: MoveDefinition): string {
@@ -1067,13 +1140,18 @@ function isValidEntityLayout(entity: FrameEntity): boolean {
 
 function createFrameActions(state: GameState, balance: GameBalance): FrameAction[] {
   if (state.phase === "starterChoice") {
-    return starterSpeciesIds.map((speciesId) => ({
-      id: `start:${speciesId}`,
-      label: `${getSpecies(speciesId).name} 선택`,
-      role: "primary",
-      enabled: true,
-      action: { type: "START_RUN", starterSpeciesId: speciesId },
-    }));
+    return [
+      ...starterSpeciesIds.map(
+        (speciesId): FrameAction => ({
+          id: `start:${speciesId}`,
+          label: `${getSpecies(speciesId).name} 선택`,
+          role: "primary",
+          enabled: true,
+          action: { type: "START_RUN", starterSpeciesId: speciesId },
+        }),
+      ),
+      ...createDexRewardClaimActions(state),
+    ];
   }
 
   if (state.phase === "gameOver") {
@@ -1090,6 +1168,7 @@ function createFrameActions(state: GameState, balance: GameBalance): FrameAction
         action: { type: "RESOLVE_NEXT_ENCOUNTER" },
       },
       ...createReadyShopActions(state, balance),
+      ...createSkillRewardClaimActions(state),
     ];
   }
 
@@ -1147,6 +1226,48 @@ function createFrameActions(state: GameState, balance: GameBalance): FrameAction
   return [];
 }
 
+function createDexRewardClaimActions(state: GameState): FrameAction[] {
+  const meta = state.metaCurrency;
+  return (state.unlockedSpeciesIds ?? [])
+    .map((speciesId): FrameAction | undefined => {
+      const reward = calculateDexUnlockReward(speciesId);
+      const rewardId = getDexRewardAchievementId(speciesId);
+      if (!reward || isAchievementClaimed(meta, rewardId)) {
+        return undefined;
+      }
+
+      return {
+        id: `claim:dex:${speciesId}`,
+        label: `도감 보상 ${formatTrainerPoints(reward)}`,
+        role: "secondary",
+        enabled: true,
+        action: { type: "CLAIM_DEX_REWARD", speciesId },
+      };
+    })
+    .filter((action): action is FrameAction => Boolean(action));
+}
+
+function createSkillRewardClaimActions(state: GameState): FrameAction[] {
+  const meta = state.metaCurrency;
+  return (state.unlockedMoveIds ?? [])
+    .map((moveId): FrameAction | undefined => {
+      const reward = calculateSkillUnlockReward(moveId);
+      const rewardId = getSkillRewardAchievementId(moveId);
+      if (!reward || isAchievementClaimed(meta, rewardId)) {
+        return undefined;
+      }
+
+      return {
+        id: `claim:skill:${moveId}`,
+        label: `기술 도감 보상 ${formatTrainerPoints(reward)}`,
+        role: "secondary",
+        enabled: true,
+        action: { type: "CLAIM_SKILL_REWARD", moveId },
+      };
+    })
+    .filter((action): action is FrameAction => Boolean(action));
+}
+
 function createGameOverActions(state: GameState, balance: GameBalance): FrameAction[] {
   const teamRestartActions = state.team.slice(0, balance.maxTeamSize).map(
     (creature, index): FrameAction => ({
@@ -1197,6 +1318,7 @@ function createReadyShopActions(state: GameState, balance: GameBalance): FrameAc
     ...createLevelBoostActions(state),
     ...createStatBoostActions(state),
     ...createTeachMoveActions(state),
+    ...createTeamSortActions(state),
     ...createTypeLockActions(state),
     ...createPremiumActions(state),
   ];
@@ -1234,7 +1356,7 @@ function createRerollAction(state: GameState, rerollCount: number): FrameAction 
   const cost = computeRerollCost(rerollCount);
   return {
     id: "shop:reroll",
-    label: `상점 재구성 ${cost}코인`,
+    label: `상점 재구성 ${formatMoney(cost)}`,
     role: "secondary",
     enabled: state.money >= cost,
     cost,
@@ -1252,15 +1374,34 @@ function createPremiumActions(state: GameState): FrameAction[] {
   const offerIds = resolveActivePremiumOffers(state);
   return offerIds.map((offerId) => {
     const offer = getPremiumOffer(offerId);
+    const effect = offer.effect;
+    const eligibleTargetIds =
+      effect.kind === "teachMove"
+        ? state.team
+            .filter(
+              (creature) =>
+                getLearnableLevelUpMoves(creature, effect.element, {
+                  grade: effect.grade,
+                }).length > 0,
+            )
+            .map((creature) => creature.instanceId)
+        : undefined;
+    const targetBlocked = effect.kind === "teachMove" && eligibleTargetIds?.length === 0;
     return {
       id: `shop:${offerId}`,
-      label: `${offer.label} ${offer.tpCost}TP`,
+      label: `${offer.label.replace(/^TP\s+/, "")} ${formatTrainerPoints(offer.tpCost)}`,
       role: "secondary" as const,
-      enabled: tp >= offer.tpCost,
+      enabled: tp >= offer.tpCost && !targetBlocked,
       tpCost: offer.tpCost,
       requiresTarget: offer.targetRequired,
+      eligibleTargetIds,
       action: { type: "BUY_PREMIUM_SHOP_ITEM" as const, offerId },
-      reason: tp >= offer.tpCost ? undefined : "트레이너 포인트가 부족합니다",
+      reason:
+        tp < offer.tpCost
+          ? "보석이 부족합니다"
+          : targetBlocked
+            ? "배울 수 있는 팀원이 없습니다"
+            : undefined,
     };
   });
 }
@@ -1290,12 +1431,22 @@ function applyShopDeal(action: FrameAction, state: GameState): FrameAction {
     return action;
   }
   const discounted = Math.max(1, Math.round(action.cost * (1 - deal.discountRate)));
+  const targetBlocked = action.requiresTarget && action.eligibleTargetIds?.length === 0;
+  const blockedByActionState =
+    !action.enabled && action.reason !== undefined && action.reason !== "코인이 부족합니다";
   return {
     ...action,
     cost: discounted,
     originalCost: action.cost,
-    enabled: state.money >= discounted,
-    reason: state.money >= discounted ? undefined : "코인이 부족합니다",
+    enabled: state.money >= discounted && !targetBlocked && !blockedByActionState,
+    reason:
+      state.money < discounted
+        ? "코인이 부족합니다"
+        : blockedByActionState
+          ? action.reason
+        : targetBlocked
+          ? (action.reason ?? "배울 수 있는 팀원이 없습니다")
+          : undefined,
   };
 }
 
@@ -1312,6 +1463,49 @@ function formatShopStatLabel(stat: ShopStatKey): string {
     case "speed":
       return "스";
   }
+}
+
+function formatTeamSortLabel(sortBy: TeamSortKey, direction: SortDirection): string {
+  const sortLabel = sortBy === "power" ? "전투력" : "건강상태";
+  const directionLabel = direction === "asc" ? "오름차순" : "내림차순";
+  return `${sortLabel} ${directionLabel}`;
+}
+
+function wouldSortTeamOrderChange(
+  team: readonly Creature[],
+  sortBy: TeamSortKey,
+  direction: SortDirection,
+): boolean {
+  return sortTeamMemberIds(team, sortBy, direction).some(
+    (id, index) => id !== team[index]?.instanceId,
+  );
+}
+
+function sortTeamMemberIds(
+  team: readonly Creature[],
+  sortBy: TeamSortKey,
+  direction: SortDirection,
+): string[] {
+  const directionFactor = direction === "asc" ? 1 : -1;
+  return team
+    .map((creature, index) => ({
+      id: creature.instanceId,
+      index,
+      value: teamSortValue(creature, sortBy),
+    }))
+    .sort(
+      (left, right) =>
+        (left.value - right.value) * directionFactor || left.index - right.index,
+    )
+    .map((entry) => entry.id);
+}
+
+function teamSortValue(creature: Creature, sortBy: TeamSortKey): number {
+  if (sortBy === "power") {
+    return creature.powerScore;
+  }
+
+  return creature.stats.hp <= 0 ? 0 : creature.currentHp / creature.stats.hp;
 }
 
 function createStatBoostActions(state: GameState): FrameAction[] {
@@ -1335,15 +1529,55 @@ function createStatBoostActions(state: GameState): FrameAction[] {
 function createTeachMoveActions(state: GameState): FrameAction[] {
   return teachMoveElements.map((element) => {
     const product = getTeachMoveProduct(element);
+    const eligibleTargetIds = state.team
+      .filter((creature) => getLearnableLevelUpMoves(creature, element).length > 0)
+      .map((creature) => creature.instanceId);
+    const hasEligibleTarget = eligibleTargetIds.length > 0;
     return {
       id: `shop:teach-move:${element}`,
       label: `${localizeType(element)} 기술 머신 ${formatMoney(product.cost)}`,
       role: "secondary" as const,
-      enabled: state.money >= product.cost,
+      enabled: state.money >= product.cost && hasEligibleTarget,
       cost: product.cost,
       requiresTarget: true,
+      eligibleTargetIds,
       action: { type: "BUY_TEACH_MOVE" as const, element },
-      reason: state.money >= product.cost ? undefined : "코인이 부족합니다",
+      reason:
+        state.money < product.cost
+          ? "코인이 부족합니다"
+          : hasEligibleTarget
+            ? undefined
+            : "배울 수 있는 팀원이 없습니다",
+    };
+  });
+}
+
+function createTeamSortActions(state: GameState): FrameAction[] {
+  return teamSortOptions.map((option) => {
+    const product = getTeamSortProduct(option.sortBy, option.direction);
+    const actionId = teamSortActionId(option.sortBy, option.direction);
+    const wouldChange = wouldSortTeamOrderChange(
+      state.team,
+      option.sortBy,
+      option.direction,
+    );
+    const hasEnoughMoney = state.money >= product.cost;
+    return {
+      id: actionId,
+      label: `팀 정렬 ${formatTeamSortLabel(option.sortBy, option.direction)} ${formatMoney(product.cost)}`,
+      role: "secondary" as const,
+      enabled: hasEnoughMoney && wouldChange,
+      cost: product.cost,
+      action: {
+        type: "SORT_TEAM" as const,
+        sortBy: option.sortBy,
+        direction: option.direction,
+      },
+      reason: hasEnoughMoney
+        ? wouldChange
+          ? undefined
+          : "이미 해당 기준으로 정렬되어 있습니다"
+        : "코인이 부족합니다",
     };
   });
 }
@@ -1446,7 +1680,9 @@ function createTimeline(state: GameState): FrameTimelineEntry[] {
     .map((event) => ({
       id: `event:${event.id}`,
       wave: event.wave,
+      type: event.type,
       text: event.message,
+      data: event.data,
       tone: toneForEvent(event.type),
     }));
 }
@@ -1593,6 +1829,8 @@ function toFrameBattleReplayEvent(
       type: event.type,
       label: `${withJosa(`${actor}의 ${event.move}`, "이/가")} ${target}에게 빗나갔습니다.`,
       move: event.move,
+      moveType: event.moveType,
+      moveCategory: event.moveCategory,
       sourceSide: lookup.side(event.actorId),
       targetSide: lookup.side(event.targetId),
       sourceEntityId: event.actorId,
@@ -1833,6 +2071,8 @@ function battleReplayEventToCue(
       damage: 0,
       effectiveness: 1,
       critical: false,
+      moveType: event.moveType,
+      moveCategory: event.moveCategory,
     };
   }
 

@@ -1,5 +1,6 @@
 import {
   ballTypes,
+  type BallType,
   type BattleStatus,
   type ElementType,
   type GameAction,
@@ -12,11 +13,19 @@ import type {
   FrameCaptureScene,
   FrameEntity,
   FrameStarterOption,
+  FrameTimelineEntry,
   FrameTrainerScene,
   FrameVisualCue,
   GameFrame,
 } from "../game/view/frame";
-import { formatMoney, formatWave, localizeBattleStatus } from "../game/localization";
+import {
+  formatMoney,
+  formatTrainerPoints,
+  formatWave,
+  localizeBall,
+  localizeBattleStatus,
+  localizeType,
+} from "../game/localization";
 import {
   createBattleCueText,
   createBattleEventSummary,
@@ -35,8 +44,25 @@ import {
 } from "./framePresentation";
 import { effectEngine } from "./effects/engine";
 import { resolveEffectDescriptor } from "./effects/mapping";
+import { getElementPalette } from "./effects/palette";
 
 const BATTLE_REPLAY_STEP_MS = 540;
+const FEEDBACK_TOAST_DURATION_MS = 3600;
+const CURRENCY_BURST_DURATION_MS = 980;
+const CURRENCY_BURST_PARTICLES = [
+  { x: -58, y: 76, rotation: -190, delay: 0, duration: 840 },
+  { x: -34, y: 94, rotation: -120, delay: 35, duration: 900 },
+  { x: -12, y: 82, rotation: -70, delay: 15, duration: 820 },
+  { x: 18, y: 98, rotation: 95, delay: 25, duration: 930 },
+  { x: 46, y: 78, rotation: 165, delay: 5, duration: 860 },
+  { x: 68, y: 104, rotation: 230, delay: 45, duration: 960 },
+  { x: -72, y: 118, rotation: -250, delay: 80, duration: 920 },
+  { x: -44, y: 132, rotation: -180, delay: 105, duration: 980 },
+  { x: -6, y: 126, rotation: 140, delay: 70, duration: 910 },
+  { x: 34, y: 138, rotation: 210, delay: 95, duration: 970 },
+  { x: 74, y: 124, rotation: 285, delay: 75, duration: 940 },
+  { x: 4, y: 156, rotation: 360, delay: 120, duration: 980 },
+] as const;
 
 const pokemonAssetUrls = import.meta.glob<string>("../resources/pokemon/*.webp", {
   eager: true,
@@ -101,6 +127,23 @@ interface AppLifecycleState {
 
 interface TransientFeedbackState {
   shownReadyCaptureKeys: Set<string>;
+  shownToastKeys: Set<string>;
+  queuedToasts: ScheduledFeedbackToast[];
+  activeToast?: ActiveFeedbackToast;
+  toastTimerId?: number;
+  toastBaselineReady: boolean;
+}
+
+interface ScheduledFeedbackToast {
+  key: string;
+  kind: "reward" | "currency" | "item" | "warning";
+  title: string;
+  message: string;
+  tone: "success" | "warning" | "neutral";
+}
+
+interface ActiveFeedbackToast extends ScheduledFeedbackToast {
+  expiresAt: number;
 }
 
 interface AudioState {
@@ -138,6 +181,15 @@ type BattleEffectVisualCue =
 
 interface ShopTargetState {
   action?: FrameAction;
+  currencyBurstOrigin?: CurrencyBurstOrigin;
+}
+
+type SpendCurrencyKind = "coin" | "gem";
+
+interface CurrencyBurstOrigin {
+  x: number;
+  y: number;
+  kind: SpendCurrencyKind;
 }
 
 export function mountHtmlRenderer(
@@ -161,6 +213,9 @@ export function mountHtmlRenderer(
   };
   const transientFeedback: TransientFeedbackState = {
     shownReadyCaptureKeys: new Set(),
+    shownToastKeys: new Set(),
+    queuedToasts: [],
+    toastBaselineReady: false,
   };
   const shopTarget: ShopTargetState = {};
 
@@ -168,6 +223,7 @@ export function mountHtmlRenderer(
     const frame = client.getFrame();
     if (frame.phase !== "ready") {
       shopTarget.action = undefined;
+      shopTarget.currencyBurstOrigin = undefined;
     }
     updateBattlePlayback(battlePlayback, frame);
     const playbackView = createBattlePlaybackView(battlePlayback, frame);
@@ -179,6 +235,7 @@ export function mountHtmlRenderer(
       shopTarget.action,
       transientFeedback,
     );
+    positionActiveMoveVfx(root, playbackView.activeEvent);
     spawnActiveBattleEffect(
       root,
       playbackView.activeEvent,
@@ -192,6 +249,7 @@ export function mountHtmlRenderer(
     bindStarterDexSelection(root);
     syncAudio(audioState, frame, playbackView, lifecycle);
     scheduleBattlePlayback(battlePlayback, frame, render, lifecycle);
+    scheduleFeedbackToast(transientFeedback, render, lifecycle);
   };
 
   render();
@@ -262,21 +320,29 @@ function bindActions(
       if (action?.enabled && !playback.isPlaying) {
         if (requiresShopTarget(action)) {
           shopTarget.action = action;
+          shopTarget.currencyBurstOrigin = captureCurrencyBurstOrigin(action, button);
           render();
           return;
         }
 
+        const currencyBurstOrigin = captureCurrencyBurstOrigin(action, button);
         unlockAudio(audioState);
         busy = true;
         root.dataset.busy = "true";
+        let dispatched = false;
 
         try {
           await client.dispatch(action.action);
+          dispatched = true;
         } finally {
           busy = false;
           delete root.dataset.busy;
           shopTarget.action = undefined;
+          shopTarget.currencyBurstOrigin = undefined;
           render();
+          if (dispatched && currencyBurstOrigin) {
+            spawnCurrencySpendBurst(currencyBurstOrigin);
+          }
         }
       }
     });
@@ -293,6 +359,7 @@ function bindShopTargetSelection(
     .querySelector<HTMLButtonElement>("[data-shop-target-cancel]")
     ?.addEventListener("click", () => {
       shopTarget.action = undefined;
+      shopTarget.currencyBurstOrigin = undefined;
       render();
     });
 
@@ -311,16 +378,81 @@ function bindShopTargetSelection(
       }
 
       root.dataset.busy = "true";
+      const currencyBurstOrigin =
+        shopTarget.currencyBurstOrigin ?? captureCurrencyBurstOrigin(action, button);
+      let dispatched = false;
 
       try {
         await client.dispatch(payload);
+        dispatched = true;
       } finally {
         delete root.dataset.busy;
         shopTarget.action = undefined;
+        shopTarget.currencyBurstOrigin = undefined;
         render();
+        if (dispatched && currencyBurstOrigin) {
+          spawnCurrencySpendBurst(currencyBurstOrigin);
+        }
       }
     });
   });
+}
+
+function captureCurrencyBurstOrigin(
+  action: FrameAction,
+  element: Element,
+): CurrencyBurstOrigin | undefined {
+  const currency = getSpendCurrencyKind(action);
+  if (!currency) {
+    return undefined;
+  }
+
+  const rect = element.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0) {
+    return undefined;
+  }
+
+  return {
+    x: rect.left + rect.width / 2,
+    y: rect.top + rect.height / 2,
+    kind: currency,
+  };
+}
+
+function getSpendCurrencyKind(action: FrameAction): SpendCurrencyKind | undefined {
+  if (action.cost !== undefined && action.cost > 0) {
+    return "coin";
+  }
+
+  if (action.tpCost !== undefined && action.tpCost > 0) {
+    return "gem";
+  }
+
+  return undefined;
+}
+
+function spawnCurrencySpendBurst(origin: CurrencyBurstOrigin): void {
+  const burst = document.createElement("div");
+  burst.className = "currency-spend-burst coin-spend-burst";
+  burst.dataset.currency = origin.kind;
+  burst.setAttribute("aria-hidden", "true");
+  burst.style.left = `${Math.round(origin.x)}px`;
+  burst.style.top = `${Math.round(origin.y)}px`;
+
+  for (let index = 0; index < CURRENCY_BURST_PARTICLES.length; index += 1) {
+    const particle = CURRENCY_BURST_PARTICLES[index];
+    const item = document.createElement("span");
+    item.textContent = origin.kind === "gem" ? "💎" : "🪙";
+    item.style.setProperty("--currency-x", `${particle.x}px`);
+    item.style.setProperty("--currency-y", `${particle.y}px`);
+    item.style.setProperty("--currency-rot", `${particle.rotation}deg`);
+    item.style.setProperty("--currency-delay", `${particle.delay}ms`);
+    item.style.setProperty("--currency-duration", `${particle.duration}ms`);
+    burst.append(item);
+  }
+
+  document.body.append(burst);
+  window.setTimeout(() => burst.remove(), CURRENCY_BURST_DURATION_MS);
 }
 
 function buildTargetedPayload(action: FrameAction, targetEntityId: string): GameAction | undefined {
@@ -524,9 +656,11 @@ function renderFrame(
     teamRecord: statusView.teamRecord,
     transientFeedback,
   });
+  const feedbackToasts = renderFeedbackToastStack(frame, playback, transientFeedback);
   return `
     <main class="app-shell" data-frame-id="${frame.frameId}" data-protocol="${frame.protocolVersion}" data-phase="${frame.phase}" data-wave="${frame.hud.wave}" data-money="${frame.hud.money}" data-trainer-points="${frame.hud.trainerPoints}" ${renderBallDataAttributes(frame)} data-team-size="${playerEntities.length}" data-team-hp-ratio="${frame.hud.teamHpRatio}" data-timeline-count="${frame.timeline.length}" data-battle-playback="${playback.isPlaying ? "playing" : "idle"}" data-battle-sequence="${playback.activeEvent?.sequence ?? 0}" data-battle-event-type="${escapeHtml(playback.activeEvent?.type ?? "")}">
       ${screen}
+      ${feedbackToasts}
 
       ${
         frame.phase === "starterChoice" || frame.phase === "ready"
@@ -541,6 +675,361 @@ function renderBallDataAttributes(frame: GameFrame): string {
   return ballTypes
     .map((ball) => `data-${ballDataAttributeName(ball)}-balls="${frame.hud.balls[ball]}"`)
     .join(" ");
+}
+
+function renderFeedbackToastStack(
+  frame: GameFrame,
+  playback: BattlePlaybackView,
+  transientFeedback: TransientFeedbackState | undefined,
+): string {
+  const toast = updateFeedbackToastSchedule(frame, playback, transientFeedback);
+
+  if (!toast) {
+    return "";
+  }
+
+  return `
+    <div class="feedback-toast-rail" aria-live="polite" aria-atomic="true">
+      <div class="feedback-toast" data-toast-kind="${toast.kind}" data-toast-tone="${toast.tone}" data-toast-key="${escapeHtml(toast.key)}">
+        <span>${feedbackToastKindLabel(toast.kind)}</span>
+        <strong>${escapeHtml(toast.title)}</strong>
+        <p>${escapeHtml(toast.message)}</p>
+      </div>
+    </div>
+  `;
+}
+
+function updateFeedbackToastSchedule(
+  frame: GameFrame,
+  playback: BattlePlaybackView,
+  transientFeedback: TransientFeedbackState | undefined,
+): ActiveFeedbackToast | undefined {
+  if (!transientFeedback) {
+    return undefined;
+  }
+
+  const now = Date.now();
+
+  if (!transientFeedback.toastBaselineReady) {
+    frame.timeline.forEach((entry) => transientFeedback.shownToastKeys.add(entry.id));
+    transientFeedback.toastBaselineReady = true;
+    return transientFeedback.activeToast;
+  }
+
+  if (!playback.isPlaying) {
+    enqueueNewFeedbackToasts(frame, transientFeedback);
+  }
+
+  if (transientFeedback.activeToast && transientFeedback.activeToast.expiresAt <= now) {
+    transientFeedback.activeToast = undefined;
+  }
+
+  if (!transientFeedback.activeToast) {
+    const nextToast = transientFeedback.queuedToasts.shift();
+    transientFeedback.activeToast = nextToast
+      ? {
+          ...nextToast,
+          expiresAt: now + FEEDBACK_TOAST_DURATION_MS,
+        }
+      : undefined;
+  }
+
+  return transientFeedback.activeToast;
+}
+
+function enqueueNewFeedbackToasts(
+  frame: GameFrame,
+  transientFeedback: TransientFeedbackState,
+): void {
+  const newEntries = frame.timeline
+    .slice()
+    .reverse()
+    .filter((entry) => !transientFeedback.shownToastKeys.has(entry.id));
+
+  for (const entry of newEntries) {
+    transientFeedback.shownToastKeys.add(entry.id);
+    const toast = createFeedbackToast(entry);
+    if (toast) {
+      transientFeedback.queuedToasts.push(toast);
+    }
+  }
+}
+
+function scheduleFeedbackToast(
+  transientFeedback: TransientFeedbackState,
+  render: () => void,
+  lifecycle: AppLifecycleState,
+): void {
+  if (
+    lifecycle.suspended ||
+    transientFeedback.toastTimerId !== undefined ||
+    !transientFeedback.activeToast
+  ) {
+    return;
+  }
+
+  const delay = Math.max(80, transientFeedback.activeToast.expiresAt - Date.now());
+  transientFeedback.toastTimerId = window.setTimeout(() => {
+    transientFeedback.toastTimerId = undefined;
+    if (!lifecycle.suspended) {
+      render();
+    }
+  }, delay);
+}
+
+function createFeedbackToast(entry: FrameTimelineEntry): ScheduledFeedbackToast | undefined {
+  const data = entry.data ?? {};
+  const reward = readNumber(data.reward);
+  const trainerPoints = readNumber(data.trainerPoints);
+  const cost = readNumber(data.cost);
+  const targetName = readString(data.target);
+  const toastBase = {
+    key: entry.id,
+  };
+
+  if (entry.type === "battle_resolved" && reward > 0) {
+    return {
+      ...toastBase,
+      kind: "reward",
+      tone: "success",
+      title: `${formatMoney(reward)} 획득`,
+      message: "전투 승리 보상",
+    };
+  }
+
+  if (entry.type === "tp_earned" && trainerPoints > 0) {
+    return {
+      ...toastBase,
+      kind: "currency",
+      tone: "success",
+      title: `${formatTrainerPoints(trainerPoints)} 획득`,
+      message: "보석 획득",
+    };
+  }
+
+  if (entry.type === "ball_bought") {
+    const ball = readBallType(data.ball);
+    const quantity = readNumber(data.quantity);
+    return {
+      ...toastBase,
+      kind: "item",
+      tone: "success",
+      title: ball ? `${localizeBall(ball)} +${quantity || 1}` : "볼 구매 완료",
+      message: cost > 0 ? `${formatMoney(cost)} 사용` : "인벤토리에 추가되었습니다",
+    };
+  }
+
+  if (entry.type === "team_rested") {
+    return {
+      ...toastBase,
+      kind: "item",
+      tone: "success",
+      title: "팀 휴식 완료",
+      message: cost > 0 ? `${formatMoney(cost)} 사용` : "팀 HP가 회복되었습니다",
+    };
+  }
+
+  if (entry.type === "team_healed" || entry.type === "creature_healed") {
+    return {
+      ...toastBase,
+      kind: "item",
+      tone: "success",
+      title: entry.type === "team_healed" ? "전체 회복 사용" : "단일 회복 사용",
+      message: cost > 0 ? `${formatMoney(cost)} 사용` : "HP를 회복했습니다",
+    };
+  }
+
+  if (entry.type === "boost_applied") {
+    return {
+      ...toastBase,
+      kind: "item",
+      tone: "success",
+      title: "만남 보정 적용",
+      message: formatBoostToastMessage(data),
+    };
+  }
+
+  if (entry.type === "type_lock_applied") {
+    const element = readElementType(data.element);
+    return {
+      ...toastBase,
+      kind: "item",
+      tone: "success",
+      title: "타입 고정 적용",
+      message: element ? `${localizeType(element)} 타입으로 고정` : "다음 만남에 적용됩니다",
+    };
+  }
+
+  if (entry.type === "stat_boost_applied") {
+    const stat = formatShopStatLabel(data.stat);
+    const bonus = readNumber(data.bonus);
+    return {
+      ...toastBase,
+      kind: "item",
+      tone: "success",
+      title: "능력치 강화 완료",
+      message: `${targetName ? `${targetName} ` : ""}${stat}${bonus > 0 ? ` +${bonus}` : ""}`,
+    };
+  }
+
+  if (entry.type === "stat_reroll_applied") {
+    return {
+      ...toastBase,
+      kind: "item",
+      tone: "success",
+      title: "능력치 재구성 완료",
+      message: targetName ? `${targetName} 능력치 갱신` : "대상 능력치가 갱신되었습니다",
+    };
+  }
+
+  if (entry.type === "teach_move_applied") {
+    return {
+      ...toastBase,
+      kind: "item",
+      tone: "success",
+      title: "기술 머신 사용",
+      message: targetName ? `${targetName} 기술 갱신` : "새 기술을 익혔습니다",
+    };
+  }
+
+  if (entry.type === "premium_purchased") {
+    return {
+      ...toastBase,
+      kind: "item",
+      tone: "success",
+      title: "보석 상품 사용 완료",
+      message: "프리미엄 효과가 적용되었습니다",
+    };
+  }
+
+  if (entry.type === "shop_rerolled") {
+    return {
+      ...toastBase,
+      kind: "item",
+      tone: "success",
+      title: "상점 재구성 완료",
+      message: cost > 0 ? `${formatMoney(cost)} 사용` : "상품 목록을 갱신했습니다",
+    };
+  }
+
+  if (entry.type === "team_sorted") {
+    return {
+      ...toastBase,
+      kind: "item",
+      tone: "success",
+      title: "팀 정렬 완료",
+      message: cost > 0 ? `${formatMoney(cost)} 사용` : "팀 순서를 정리했습니다",
+    };
+  }
+
+  if (entry.type === "supply_resolved") {
+    const healedHp = readNumber(data.healedHp);
+    return {
+      ...toastBase,
+      kind: "item",
+      tone: "success",
+      title: "보급 처리 완료",
+      message: healedHp > 0 ? `HP ${healedHp} 회복` : "보급 상태를 확인했습니다",
+    };
+  }
+
+  if (entry.type === "capture_no_ball") {
+    return {
+      ...toastBase,
+      kind: "warning",
+      tone: "warning",
+      title: "사용 실패",
+      message: "선택한 볼이 없습니다",
+    };
+  }
+
+  if (entry.type.endsWith("_denied")) {
+    return {
+      ...toastBase,
+      kind: "warning",
+      tone: "warning",
+      title: "사용 실패",
+      message: createDeniedToastMessage(entry.type),
+    };
+  }
+
+  return undefined;
+}
+
+function feedbackToastKindLabel(kind: ActiveFeedbackToast["kind"]): string {
+  switch (kind) {
+    case "reward":
+      return "보상";
+    case "currency":
+      return "재화";
+    case "item":
+      return "아이템";
+    case "warning":
+      return "안내";
+  }
+}
+
+function formatBoostToastMessage(data: Record<string, unknown>): string {
+  if (data.kind === "rarity") {
+    const bonus = readNumber(data.bonus);
+    return bonus > 0 ? `희귀도 +${Math.round(bonus * 100)}%` : "희귀도 보정 적용";
+  }
+
+  if (data.kind === "level") {
+    const min = readNumber(data.min);
+    const max = readNumber(data.max);
+    return max > 0 ? `숙련도 +${min}~${max}` : "숙련도 보정 적용";
+  }
+
+  return "다음 만남에 적용됩니다";
+}
+
+function createDeniedToastMessage(type: string): string {
+  if (type.includes("premium")) {
+    return "보석 또는 조건이 부족합니다";
+  }
+
+  if (type.includes("heal") || type.includes("rest")) {
+    return "회복 조건을 확인하세요";
+  }
+
+  if (type.includes("ball") || type.includes("buy")) {
+    return "코인 또는 재고를 확인하세요";
+  }
+
+  if (type.includes("boost") || type.includes("type_lock")) {
+    return "보정 아이템 조건을 확인하세요";
+  }
+
+  if (type.includes("teach_move")) {
+    return "기술 머신 조건을 확인하세요";
+  }
+
+  if (type.includes("stat")) {
+    return "대상 또는 코인을 확인하세요";
+  }
+
+  if (type.includes("team_sort")) {
+    return "팀 정렬 조건을 확인하세요";
+  }
+
+  return "사용 조건을 확인하세요";
+}
+
+function readNumber(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function readString(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function readBallType(value: unknown): BallType | undefined {
+  return ballTypes.includes(value as BallType) ? (value as BallType) : undefined;
+}
+
+function readElementType(value: unknown): ElementType | undefined {
+  return typeof value === "string" && value in ELEMENT_KO ? (value as ElementType) : undefined;
 }
 
 function ballDataAttributeName(ball: (typeof ballTypes)[number]): string {
@@ -770,24 +1259,30 @@ function renderStarterScreen(
 
 function renderStarterOption(option: FrameStarterOption, actions: readonly FrameAction[]): string {
   const action = actions.find((candidate) => candidate.id === `start:${option.speciesId}`);
+  const claimAction = actions.find((candidate) => candidate.id === `claim:dex:${option.speciesId}`);
   const disabled = action ? "" : " disabled";
-  const state = action ? "unlocked" : "locked";
+  const state = action || claimAction ? "unlocked" : "locked";
   const dexNumber = option.speciesId.toString().padStart(3, "0");
-  const displayName = action ? option.name : "???";
-  const typeLine = action ? option.typeLabels.join(" / ") : "미발견";
+  const displayName = action || claimAction ? option.name : "???";
+  const typeLine = action || claimAction ? option.typeLabels.join(" / ") : "미발견";
+  const cardActionAttribute = claimAction
+    ? ` data-action-id="${escapeHtml(claimAction.id)}"`
+    : ` data-starter-pick="${option.speciesId}"`;
+  const cardDisabled = action || claimAction ? "" : disabled;
 
   return `
     <article class="starter-option" data-starter-id="${option.speciesId}" data-starter-state="${state}">
-      <button type="button" class="starter-option-card" data-starter-pick="${option.speciesId}"${disabled}>
+      <button type="button" class="starter-option-card"${cardActionAttribute}${cardDisabled}>
         ${action ? renderActionIcon(action, "starter-option-icon") : ""}
+        ${claimAction ? renderRewardAlertBadge(claimAction) : ""}
         <span class="starter-dex-number">#${dexNumber}</span>
         <img src="${resolveAssetPath(option.assetPath)}" alt="${escapeHtml(`${displayName} 포켓몬`)}" />
         <h2>${escapeHtml(displayName)}</h2>
         <p>${escapeHtml(typeLine)}</p>
-        ${action ? "<span>선택 가능</span>" : "<span>LOCKED</span>"}
+        ${claimAction ? "<span>💎 REWARD</span>" : action ? "<span>선택 가능</span>" : "<span>LOCKED</span>"}
       </button>
       ${
-        action
+        action && !claimAction
           ? `<div class="starter-option-actions" aria-label="${escapeHtml(`${option.name} 선택 확인`)}">
               <button type="button" class="starter-confirm" data-action-id="${escapeHtml(action.id)}">선택</button>
               <button type="button" class="starter-cancel" data-starter-cancel>취소</button>
@@ -796,6 +1291,13 @@ function renderStarterOption(option: FrameStarterOption, actions: readonly Frame
       }
     </article>
   `;
+}
+
+function renderRewardAlertBadge(source: FrameAction | string, amountOverride?: string): string {
+  const label = typeof source === "string" ? source : source.label;
+  const amount = amountOverride ?? label.match(/💎\s*\d+/)?.[0] ?? "!";
+
+  return `<span class="reward-alert-badge" aria-label="${escapeHtml(label)}"><strong>!</strong><em>${escapeHtml(amount)}</em></span>`;
 }
 
 function renderReadyScreen({
@@ -818,21 +1320,21 @@ function renderReadyScreen({
       <div class="shop-top-panel">
         <div class="shop-board">
           <span class="shop-money">${formatMoney(frame.hud.money)}</span>
-          <span class="shop-trainer-points" aria-label="트레이너 포인트">⭐ ${frame.hud.trainerPoints} TP</span>
+          <span class="shop-trainer-points" aria-label="보석">${formatTrainerPoints(frame.hud.trainerPoints)}</span>
           ${
             shopTargetAction
               ? `<strong>${escapeHtml(createShopTargetLabel(shopTargetAction))}</strong><button type="button" class="shop-target-cancel" data-shop-target-cancel aria-label="대상 선택 취소">✕</button>`
               : ""
           }
-          ${nextAction ? renderShopStartAction(nextAction, frame) : ""}
         </div>
         ${renderShopTeamGrid(playerEntities, shopTargetAction, frame.scene.teamEffect)}
       </div>
+      ${nextAction ? `<div class="shop-start-row">${renderShopStartAction(nextAction, frame)}</div>` : ""}
       <div class="shop-card-grid" data-shop-card-count="${shopActions.length}">
         ${shopActions.map((action) => renderShopActionCard(action, frame)).join("")}
       </div>
       ${captureFeedback ? renderCaptureOverlay(captureFeedback) : ""}
-      ${renderTeamDetailPopups(playerEntities)}
+      ${renderTeamDetailPopups(playerEntities, frame.actions)}
     </section>
   `;
 }
@@ -881,7 +1383,7 @@ function renderShopStartAction(action: FrameAction, frame: GameFrame): string {
   return `
     <button type="button" class="shop-start-action" data-action-id="${escapeHtml(action.id)}" aria-label="${escapeHtml(ariaLabel)}"${disabled}${reason}>
       ${renderActionIcon(action, "shop-start-icon")}
-      <span>${escapeHtml(action.label)}</span>
+      <span class="shop-start-label">${escapeHtml(action.label)}</span>
       ${renderEncounterBoostBadges(frame)}
     </button>
   `;
@@ -891,12 +1393,15 @@ function renderShopTeamGrid(
   playerEntities: readonly FrameEntity[],
   targetAction: FrameAction | undefined,
   teamEffect?: { entityId: string; kind: string; key: string },
+  options: { interactive?: boolean; showRewardBadges?: boolean } = {},
 ): string {
   const slots = Array.from({ length: 6 }, (_, index) => playerEntities[index]);
+  const interactive = options.interactive ?? true;
+  const showRewardBadges = options.showRewardBadges ?? true;
 
   return `
-    <div class="shop-team-grid" data-targeting="${targetAction ? "true" : "false"}">
-      ${slots.map((entity, index) => renderShopTeamSlot(entity, index, targetAction, teamEffect)).join("")}
+    <div class="shop-team-grid" data-targeting="${targetAction ? "true" : "false"}" data-interactive="${interactive ? "true" : "false"}">
+      ${slots.map((entity, index) => renderShopTeamSlot(entity, index, targetAction, teamEffect, { interactive, showRewardBadges })).join("")}
     </div>
   `;
 }
@@ -906,6 +1411,7 @@ function renderShopTeamSlot(
   index: number,
   targetAction: FrameAction | undefined,
   teamEffect?: { entityId: string; kind: string; key: string },
+  options: { interactive?: boolean; showRewardBadges?: boolean } = {},
 ): string {
   if (!entity) {
     return `
@@ -918,22 +1424,29 @@ function renderShopTeamSlot(
   const hpState = resolveHpState(entity.hp.ratio);
   const requiresHealable =
     targetAction?.action.type === "BUY_HEAL" && targetAction.action.scope === "single";
+  const targetAllowed =
+    !targetAction?.eligibleTargetIds || targetAction.eligibleTargetIds.includes(entity.id);
   const selectable =
-    Boolean(targetAction) && (!requiresHealable || entity.hp.current < entity.hp.max);
-  const disabled = targetAction && !selectable ? " disabled" : "";
-  const tag = "button";
-  const typeAttribute = ' type="button"';
-  const targetAttribute = targetAction ? ` data-shop-target-id="${escapeHtml(entity.id)}"` : "";
-  const detailAttribute = targetAction ? "" : ` data-team-detail-id="${escapeHtml(entity.id)}"`;
+    Boolean(targetAction) && targetAllowed && (!requiresHealable || entity.hp.current < entity.hp.max);
+  const interactive = options.interactive ?? true;
+  const disabled = interactive && targetAction && !selectable ? " disabled" : "";
+  const tag = interactive ? "button" : "div";
+  const typeAttribute = interactive ? ' type="button"' : "";
+  const targetAttribute =
+    interactive && targetAction ? ` data-shop-target-id="${escapeHtml(entity.id)}"` : "";
+  const detailAttribute =
+    interactive && !targetAction ? ` data-team-detail-id="${escapeHtml(entity.id)}"` : "";
   const moves = entity.moves.map((move) => `<span>${escapeHtml(move.name)}</span>`).join("");
   const effectAttribute =
     teamEffect && teamEffect.entityId === entity.id
       ? ` data-team-effect="${escapeHtml(teamEffect.kind)}" data-team-effect-key="${escapeHtml(teamEffect.key)}"`
       : "";
+  const rewardBadge = options.showRewardBadges ?? true ? renderShopTeamRewardBadge(entity) : "";
 
   return `
     <${tag}${typeAttribute} class="shop-team-slot" data-team-slot="${index + 1}" data-slot-state="${hpState}"${targetAttribute}${detailAttribute}${effectAttribute}${disabled}>
       <span class="shop-slot-number">${index + 1}</span>
+      ${rewardBadge}
       <img src="${resolveAssetPath(entity.assetPath)}" alt="${escapeHtml(`${entity.name} 포켓몬`)}" />
       <div class="shop-slot-main">
         <strong>${escapeHtml(entity.name)}</strong>
@@ -952,12 +1465,32 @@ function renderShopTeamSlot(
   `;
 }
 
-function renderTeamDetailPopups(playerEntities: readonly FrameEntity[]): string {
-  return playerEntities.map(renderTeamDetailPopup).join("");
+function renderShopTeamRewardBadge(entity: FrameEntity): string {
+  const pendingRewards = entity.moveDex.filter((entry) => entry.rewardClaimable);
+  if (pendingRewards.length === 0) {
+    return "";
+  }
+
+  const totalReward = pendingRewards.reduce(
+    (sum, entry) => sum + entry.rewardTrainerPoints,
+    0,
+  );
+
+  return renderRewardAlertBadge(
+    `${entity.name} 스킬 언락 보상 ${formatTrainerPoints(totalReward)}`,
+    formatTrainerPoints(totalReward),
+  );
 }
 
-function renderTeamDetailPopup(entity: FrameEntity): string {
-  const moves = entity.moves.map(renderTeamDetailMove).join("");
+function renderTeamDetailPopups(
+  playerEntities: readonly FrameEntity[],
+  actions: readonly FrameAction[],
+): string {
+  return playerEntities.map((entity) => renderTeamDetailPopup(entity, actions)).join("");
+}
+
+function renderTeamDetailPopup(entity: FrameEntity, actions: readonly FrameAction[]): string {
+  const moves = entity.moveDex.map((entry) => renderTeamDetailMove(entry, actions)).join("");
 
   return `
     <div class="team-detail-popup" data-entity-id="${escapeHtml(entity.id)}" role="dialog" aria-modal="true" aria-label="${escapeHtml(`${entity.name} 상세 보기`)}">
@@ -988,20 +1521,42 @@ function renderTeamDetailPopup(entity: FrameEntity): string {
   `;
 }
 
-function renderTeamDetailMove(move: FrameEntity["moves"][number]): string {
+function renderTeamDetailMove(
+  entry: FrameEntity["moveDex"][number],
+  actions: readonly FrameAction[],
+): string {
+  const move = entry.move;
+  const claimAction = entry.rewardClaimable
+    ? actions.find((candidate) => candidate.id === `claim:skill:${entry.moveId}`)
+    : undefined;
+  const contentTag = claimAction ? "button" : "div";
+  const actionAttribute = claimAction
+    ? ` type="button" data-action-id="${escapeHtml(claimAction.id)}"`
+    : "";
+
   return `
-    <li class="team-detail-move-card">
+    <li class="team-detail-move-card" data-move-state="${entry.unlocked ? "unlocked" : "locked"}" data-reward-state="${claimAction ? "claimable" : entry.rewardClaimed ? "claimed" : "none"}">
+      <${contentTag}${actionAttribute} class="move-detail-content">
+        ${claimAction ? renderRewardAlertBadge(claimAction) : ""}
       <div class="move-detail-head">
-        <strong>${escapeHtml(move.name)}</strong>
-        <span class="move-detail-type">${escapeHtml(move.type)}</span>
+          <strong>${escapeHtml(move?.name ?? "???")}</strong>
+          <span class="move-detail-type">${escapeHtml(move?.type ?? "LOCKED")}</span>
       </div>
       <dl class="move-detail-grid">
-        <div class="move-detail-category"><dt>분류</dt><dd>${escapeHtml(localizeMoveCategory(move.category))}</dd></div>
-        <div class="move-detail-power"><dt>위력</dt><dd>${escapeHtml(formatMovePower(move))}</dd></div>
-        <div class="move-detail-accuracy"><dt>명중</dt><dd>${escapeHtml(move.accuracyLabel)}</dd></div>
-        <div class="move-detail-priority"><dt>우선도</dt><dd>${escapeHtml(formatMovePriority(move.priority))}</dd></div>
+          <div class="move-detail-level"><dt>습득</dt><dd>Lv. ${entry.level}</dd></div>
+          ${
+            move
+              ? `<div class="move-detail-category"><dt>분류</dt><dd>${escapeHtml(localizeMoveCategory(move.category))}</dd></div>
+                <div class="move-detail-power"><dt>위력</dt><dd>${escapeHtml(formatMovePower(move))}</dd></div>
+                <div class="move-detail-accuracy"><dt>명중</dt><dd>${escapeHtml(move.accuracyLabel)}</dd></div>
+                <div class="move-detail-priority"><dt>우선도</dt><dd>${escapeHtml(formatMovePriority(move.priority))}</dd></div>`
+              : `<div class="move-detail-locked"><dt>정보</dt><dd>???</dd></div>`
+          }
       </dl>
-      <p class="move-detail-effect"><span>효과</span>${escapeHtml(move.effect)}</p>
+        <p class="move-detail-effect"><span>${move ? "효과" : "조건"}</span>${escapeHtml(
+          move ? move.effect : `Lv. ${entry.level}에 습득 가능`,
+        )}</p>
+      </${contentTag}>
     </li>
   `;
 }
@@ -1029,8 +1584,8 @@ function renderShopActionCard(action: FrameAction, frame: GameFrame): string {
   const disabled = action.enabled ? "" : " disabled";
   const reason = action.reason ? ` title="${escapeHtml(action.reason)}"` : "";
   const profile = createShopActionProfile(action, frame);
-  const titleLines = createCompactShopTitleLines(action, profile);
   const compactMeta = createCompactShopMeta(action, profile);
+  const detailText = profile.detail ? `: ${profile.detail}` : "";
   const ariaLabel = [profile.kicker, profile.title, profile.detail, profile.meta]
     .filter(Boolean)
     .join(" ");
@@ -1064,8 +1619,8 @@ function renderShopActionCard(action: FrameAction, frame: GameFrame): string {
   return `
     <button type="button" class="shop-card" data-action-id="${escapeHtml(action.id)}" data-shop-kind="${profile.kind}" data-role="${action.role}"${gradeAttribute}${featuredAttribute}${saleAttribute}${premiumAttribute}${soldOutAttribute} aria-label="${escapeHtml(ariaLabel)}"${disabled}${reason}>
       ${renderActionIcon(action)}
-      <strong>${titleLines.map((line) => `<span>${escapeHtml(line)}</span>`).join("")}</strong>
       <small>${escapeHtml(compactMeta)}</small>
+      <p class="shop-card-body"><strong>${escapeHtml(profile.title)}</strong>${escapeHtml(detailText)}</p>
       ${saleBadge}
       ${premiumBadge}
       ${inventoryBadge}
@@ -1107,14 +1662,6 @@ function renderShopCardInventoryBadge(action: FrameAction, frame: GameFrame): st
   }
   return "";
 }
-
-const HEAL_RATIO_BY_TIER: Record<1 | 2 | 3 | 4 | 5, number> = {
-  1: 20,
-  2: 35,
-  3: 50,
-  4: 75,
-  5: 100,
-};
 
 type ShopCardGrade = "common" | "uncommon" | "rare" | "epic" | "legendary";
 
@@ -1163,6 +1710,10 @@ function resolveShopCardGrade(action: FrameAction): ShopCardGrade | undefined {
     return "rare";
   }
 
+  if (action.action.type === "SORT_TEAM") {
+    return "common";
+  }
+
   if (action.action.type === "REROLL_SHOP_INVENTORY") {
     return "epic";
   }
@@ -1203,105 +1754,6 @@ function tierToGrade(tier: number): ShopCardGrade {
   if (tier === 3) return "rare";
   if (tier === 4) return "epic";
   return "legendary";
-}
-
-function createCompactShopTitleLines(action: FrameAction, profile: ShopActionProfile): string[] {
-  if (action.id === "encounter:next") {
-    return ["전투", "시작"];
-  }
-
-  if (action.action.type === "REST_TEAM") {
-    return ["전체 회복", "HP 100%"];
-  }
-
-  if (action.action.type === "BUY_HEAL") {
-    const ratio = HEAL_RATIO_BY_TIER[action.action.tier] ?? 0;
-    const scopeLabel = action.action.scope === "team" ? "전체 회복" : "단일 회복";
-    return [scopeLabel, `HP ${ratio}%`];
-  }
-
-  if (action.action.type === "BUY_SCOUT") {
-    const kindLabel = action.action.kind === "rarity" ? "희귀 탐지" : "강도 탐지";
-    const detail =
-      action.action.tier === 1 ? "기본 정보" : action.action.tier === 2 ? "상세 정보" : "정밀 분석";
-    return [kindLabel, detail];
-  }
-
-  if (action.action.type === "BUY_BALL") {
-    switch (action.action.ball) {
-      case "pokeBall":
-        return ["몬스터", "볼"];
-      case "greatBall":
-        return ["슈퍼", "볼"];
-      case "ultraBall":
-        return ["하이퍼", "볼"];
-      case "hyperBall":
-        return ["레전드", "볼"];
-      case "masterBall":
-        return ["마스터", "볼"];
-    }
-  }
-
-  if (action.action.type === "BUY_RARITY_BOOST") {
-    const map: Record<1 | 2 | 3, string> = { 1: "+10%", 2: "+25%", 3: "+50%" };
-    return ["희귀도", map[action.action.tier]];
-  }
-
-  if (action.action.type === "BUY_LEVEL_BOOST") {
-    const ranges: Record<1 | 2 | 3 | 4, string> = {
-      1: "+1~2",
-      2: "+1~3",
-      3: "+2~4",
-      4: "+3~6",
-    };
-    return ["숙련도", ranges[action.action.tier]];
-  }
-
-  if (action.action.type === "BUY_STAT_BOOST") {
-    const bonus: Record<1 | 2 | 3, string> = { 1: "+3", 2: "+6", 3: "+9" };
-    return [formatShopStatLabel(action.action.stat), bonus[action.action.tier]];
-  }
-
-  if (action.action.type === "BUY_STAT_REROLL") {
-    return ["능력치", "재추첨"];
-  }
-
-  if (action.action.type === "BUY_TEACH_MOVE") {
-    const typeLabel = ELEMENT_KO[action.action.element] ?? action.action.element;
-    return [`${typeLabel} 기술`, "머신"];
-  }
-
-  if (action.action.type === "BUY_TYPE_LOCK") {
-    const typeLabel = ELEMENT_KO[action.action.element] ?? action.action.element;
-    return [typeLabel, "고정"];
-  }
-
-  if (action.id === "route:supply") {
-    return ["보급", "루트"];
-  }
-
-  if (action.action.type === "BUY_PREMIUM_SHOP_ITEM") {
-    const [, ...parts] = action.action.offerId.replace(/^premium:/, "").split(":");
-    if (action.action.offerId.includes(":stat-boost:")) {
-      const stat = action.action.offerId.split(":")[2];
-      return ["TP", `${formatShopStatLabel(stat)} 강화`];
-    }
-    if (action.action.offerId.includes(":teach-move:")) {
-      const element = action.action.offerId.split(":")[2];
-      return ["TP", `${ELEMENT_KO[element] ?? element} 기술`];
-    }
-    if (action.action.offerId.includes(":type-lock:")) {
-      const element = action.action.offerId.split(":")[2];
-      return ["TP", `${ELEMENT_KO[element] ?? element} 고정`];
-    }
-    return ["TP", parts.join(" ") || "프리미엄"];
-  }
-
-  if (action.action.type === "REROLL_SHOP_INVENTORY") {
-    return ["상점", "재구성"];
-  }
-
-  return [profile.title];
 }
 
 const ELEMENT_KO: Partial<Record<string, string>> = {
@@ -1348,7 +1800,7 @@ function createCompactShopMeta(action: FrameAction, profile: ShopActionProfile):
   }
 
   if (action.tpCost !== undefined) {
-    return `⭐ ${action.tpCost} TP`;
+    return formatTrainerPoints(action.tpCost);
   }
 
   return profile.meta;
@@ -1549,38 +2001,10 @@ function renderCommandBand(
 }
 
 function renderBattleTeamStatusBand(playerEntities: readonly FrameEntity[]): string {
-  const slots = Array.from({ length: 6 }, (_, index) => playerEntities[index]);
-
   return `
-    <section class="battle-status-band" data-status-count="${playerEntities.length}" aria-label="전투 중 팀 상태">
-      ${slots.map((entity, index) => renderBattleStatusSlot(entity, index)).join("")}
+    <section class="battle-team-grid-panel" data-status-count="${playerEntities.length}" aria-label="전투 중 팀 상태">
+      ${renderShopTeamGrid(playerEntities, undefined, undefined, { interactive: false, showRewardBadges: false })}
     </section>
-  `;
-}
-
-function renderBattleStatusSlot(entity: FrameEntity | undefined, index: number): string {
-  if (!entity) {
-    return `
-      <div class="battle-status-slot" data-slot-state="empty" data-team-slot="${index + 1}">
-        <span class="battle-status-number">${index + 1}</span>
-      </div>
-    `;
-  }
-
-  const hpState = resolveHpState(entity.hp.ratio);
-  const fainted = entity.hp.current <= 0;
-  const slotState = fainted ? "fainted" : "filled";
-
-  return `
-    <div class="battle-status-slot" data-slot-state="${slotState}" data-hp-state="${hpState}" data-team-slot="${index + 1}">
-      <span class="battle-status-number">${index + 1}</span>
-      <img src="${resolveAssetPath(entity.assetPath)}" alt="${escapeHtml(`${entity.name} 포켓몬`)}" />
-      <div class="battle-status-body">
-        <strong>${escapeHtml(entity.name)}</strong>
-        <p>${entity.hp.current}/${entity.hp.max}</p>
-        <span class="slot-meter" data-hp-state="${hpState}"><span style="width: ${Math.round(entity.hp.ratio * 100)}%"></span></span>
-      </div>
-    </div>
   `;
 }
 
@@ -1823,8 +2247,10 @@ function actionEmoji(action: FrameAction): string {
       return ELEMENT_EMOJI[action.action.element] ?? "📘";
     case "BUY_TYPE_LOCK":
       return ELEMENT_EMOJI[action.action.element] ?? "🔒";
+    case "SORT_TEAM":
+      return action.action.direction === "asc" ? "⬆️" : "⬇️";
     case "BUY_PREMIUM_SHOP_ITEM":
-      return "⭐";
+      return "💎";
     case "BUY_PREMIUM_MASTERBALL":
       return "✨";
     case "BUY_PREMIUM_REVIVE_ALL":
@@ -2270,6 +2696,60 @@ function findBattleEntityElement(root: HTMLElement, entityId: string): HTMLEleme
   );
 }
 
+function positionActiveMoveVfx(
+  root: HTMLElement,
+  activeEvent: FrameBattleReplayEvent | undefined,
+): void {
+  const moveVfx = root.querySelector<HTMLElement>(".move-vfx");
+  const sourceEntityId = activeEvent?.sourceEntityId;
+  const targetEntityId = activeEvent?.targetEntityId ?? activeEvent?.entityId;
+
+  if (!moveVfx || !sourceEntityId || !targetEntityId) {
+    return;
+  }
+
+  const sourceEl = findBattleEntityElement(root, sourceEntityId);
+  const targetEl = findBattleEntityElement(root, targetEntityId);
+  const screenEl = root.querySelector<HTMLElement>('.screen[data-screen="battle"]');
+
+  if (!sourceEl || !targetEl || !screenEl) {
+    return;
+  }
+
+  const screenRect = screenEl.getBoundingClientRect();
+  const sourceRect = normalizeMeasuredRect(sourceEl.getBoundingClientRect());
+  const targetRect = normalizeMeasuredRect(targetEl.getBoundingClientRect());
+  const sourceX = sourceRect.left - screenRect.left + sourceRect.width / 2;
+  const sourceY = sourceRect.top - screenRect.top + sourceRect.height / 2;
+  const targetX = targetRect.left - screenRect.left + targetRect.width / 2;
+  const targetY = targetRect.top - screenRect.top + targetRect.height / 2;
+  const dx = targetX - sourceX;
+  const dy = targetY - sourceY;
+  const distance = Math.max(1, Math.hypot(dx, dy));
+  const angleDeg = Math.atan2(dy, dx) * (180 / Math.PI);
+
+  moveVfx.style.setProperty("--move-start-x", `${sourceX}px`);
+  moveVfx.style.setProperty("--move-start-y", `${sourceY}px`);
+  moveVfx.style.setProperty("--move-target-x", `${targetX}px`);
+  moveVfx.style.setProperty("--move-target-y", `${targetY}px`);
+  moveVfx.style.setProperty("--move-distance", `${distance}px`);
+  moveVfx.style.setProperty("--move-angle", `${angleDeg}deg`);
+  moveVfx.setAttribute("data-vfx-positioned", "true");
+}
+
+function normalizeMeasuredRect(
+  rect: DOMRect,
+): Pick<DOMRect, "left" | "top" | "width" | "height"> {
+  const fallbackSize = Math.max(rect.width, rect.height, 1);
+
+  return {
+    left: rect.left,
+    top: rect.top,
+    width: rect.width > 0 ? rect.width : fallbackSize,
+    height: rect.height > 0 ? rect.height : fallbackSize,
+  };
+}
+
 function renderMoveVfx(
   activeEvent: FrameBattleReplayEvent | undefined,
   activeCue: FrameVisualCue | undefined,
@@ -2288,17 +2768,30 @@ function renderMoveVfx(
   const lane = source?.owner === "opponent" ? "enemy-to-hero" : "hero-to-enemy";
   const targetLane = target?.owner === "player" ? "hero" : "enemy";
   const shape = resolveMoveVfxShape(moveType, activeEvent, activeCue);
+  const style = renderMoveVfxPaletteStyle(moveType);
   const sparks = Array.from(
     { length: 7 },
     (_, index) => `<span class="move-vfx-spark" style="--spark-index:${index}"></span>`,
   ).join("");
 
   return `
-    <div class="move-vfx" data-move-type="${escapeHtml(moveType)}" data-move-shape="${shape}" data-move-lane="${lane}" data-vfx-target-lane="${targetLane}" aria-hidden="true">
+    <div class="move-vfx" data-move-type="${escapeHtml(moveType)}" data-move-shape="${shape}" data-move-lane="${lane}" data-vfx-target-lane="${targetLane}" style="${style}" aria-hidden="true">
       <span class="move-vfx-core"></span>
       ${sparks}
     </div>
   `;
+}
+
+function renderMoveVfxPaletteStyle(moveType: ElementType): string {
+  const palette = getElementPalette(moveType);
+
+  return [
+    `--move-color:${palette.primary}`,
+    `--move-accent:${palette.accent}`,
+    `--fx-primary:${palette.primary}`,
+    `--fx-secondary:${palette.secondary}`,
+    `--fx-accent:${palette.accent}`,
+  ].join(";");
 }
 
 function shouldRenderMoveVfx(activeEvent: FrameBattleReplayEvent): boolean {

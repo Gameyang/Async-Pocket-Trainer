@@ -484,6 +484,8 @@ function executeMove(options: ExecuteMoveOptions): MoveOutcome {
       actorId: actor.instanceId,
       targetId: target.instanceId,
       move: move.name,
+      moveType: move.type,
+      moveCategory: move.category,
     });
     applyCrashDamage(actor, side, move, turn, pushReplay);
     return { damage: 0, effectiveness: 1, critical: false, missed: true };

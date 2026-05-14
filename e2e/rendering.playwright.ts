@@ -49,7 +49,11 @@ test("renders phase-specific screens with stable responsive layout", async ({ pa
   expect(shopCardCount).toBe(9);
   await expect(page.locator('.shop-card[data-action-id="encounter:next"]')).toHaveCount(0);
   await expect(page.locator('.shop-start-action[data-action-id="encounter:next"]')).toBeVisible();
+  await expect(page.locator(".shop-money")).toContainText("🪙");
+  await expect(page.locator(".shop-trainer-points")).toContainText("💎");
   await expect(page.locator(".shop-team-slot")).toHaveCount(6);
+  await expect(page.locator(".shop-team-slot .reward-alert-badge").first()).toBeVisible();
+  await expect(page.locator(".shop-team-slot .reward-alert-badge").first()).toContainText("💎");
   await expect(page.locator(".shop-slot-stats").first()).toBeVisible();
   await expect(page.locator(".shop-slot-moves span").first()).toBeVisible();
   await expect(page.locator(".command-band")).toHaveCount(0);
@@ -76,10 +80,22 @@ test("renders phase-specific screens with stable responsive layout", async ({ pa
   await expect(page.locator(".shop-screen")).toHaveAttribute("data-shop-targeting", "true");
   await page.locator("[data-shop-target-id]:not(:disabled)").first().click();
   await expect.poll(() => page.locator("#app").getAttribute("data-busy")).toBeNull();
+  await expect(page.locator(".coin-spend-burst span").first()).toBeVisible();
   await expect(page.locator(".shop-screen")).toHaveAttribute("data-shop-targeting", "false");
   await expect
     .poll(async () => (await readShellState(page)).money)
     .toBeLessThan(beforeTargetHeal.money);
+  const itemToast = page.locator('.feedback-toast[data-toast-kind="item"]').first();
+  await expect(itemToast).toBeVisible();
+  await expect(itemToast).toContainText("회복");
+  await expect(page.locator(".feedback-toast")).toHaveCount(1);
+
+  await openSnapshot(page, premiumGemShopSnapshot());
+  await assertPhaseScreen(page, "ready", ".ready-screen");
+  await expect(page.locator(".shop-trainer-points")).toContainText("💎");
+  await page.locator('[data-action-id="shop:premium:ball:ultraball"]').click();
+  await expect.poll(() => page.locator("#app").getAttribute("data-busy")).toBeNull();
+  await expect(page.locator('.currency-spend-burst[data-currency="gem"] span').first()).toBeVisible();
 
   await openSnapshot(page, captureDecisionSnapshot());
   await assertPhaseScreen(page, "captureDecision", ".encounter-panel");
@@ -144,6 +160,13 @@ test("confirms battle replay, capture feedback, and ball count rendering", async
   await expect(shell).toHaveAttribute("data-battle-playback", "playing");
   await expect(page.locator(".capture-overlay")).toHaveCount(0);
   await expect(page.locator("[data-replay-skip]")).toHaveCount(0);
+  await expect(page.locator(".battle-team-grid-panel .shop-team-grid")).toBeVisible();
+  await expect(page.locator(".battle-team-grid-panel .shop-team-slot")).toHaveCount(6);
+  await expect(page.locator(".battle-team-grid-panel .shop-slot-stats").first()).toBeVisible();
+  await expect(page.locator(".battle-team-grid-panel button.shop-team-slot")).toHaveCount(0);
+  await expect(page.locator(".battle-team-grid-panel [data-team-detail-id]")).toHaveCount(0);
+  await expect(page.locator(".battle-team-grid-panel .team-detail-popup")).toHaveCount(0);
+  await expect(page.locator(".battle-team-grid-panel .reward-alert-badge")).toHaveCount(0);
   await advanceBattleReplayUntilEvent(page, /^(damage\.apply|move\.miss|creature\.faint)$/);
   await expect(page.locator(".battle-float").first()).toBeVisible();
   const firstSequence = Number(await shell.getAttribute("data-battle-sequence"));
@@ -154,6 +177,7 @@ test("confirms battle replay, capture feedback, and ball count rendering", async
   await expect(page.locator(".screen-monster[data-battle-effect]").first()).toBeVisible();
   await waitForBattleReplay(page);
   if ((await readShellState(page)).phase === "captureDecision") {
+    await expect(page.locator('.feedback-toast[data-toast-kind="reward"]').first()).toBeVisible();
     await expect(page.locator('.capture-overlay[data-capture-result="choosing"]')).toBeVisible();
   }
 
@@ -393,7 +417,8 @@ async function pauseReplayClock(page: Page): Promise<void> {
 
 async function runReplayClock(page: Page, ticks: number): Promise<void> {
   await page.clock.runFor(ticks);
-  replayClockTimes.set(page, await page.evaluate(() => Date.now()));
+  const pageTime = await page.evaluate(() => Date.now()).catch(() => Date.now());
+  replayClockTimes.set(page, pageTime);
 }
 
 async function installAudioProbe(page: Page): Promise<void> {
@@ -456,21 +481,37 @@ async function seedStarterSpeciesCache(page: Page, speciesIds: number[]): Promis
 
 async function openSnapshot(page: Page, snapshot: HeadlessClientSnapshot): Promise<void> {
   await installReplayClock(page);
-  await page.goto("/");
-  await page.evaluate(
-    ({ key, value }) => {
-      localStorage.clear();
-      localStorage.setItem(key, value);
-    },
-    {
-      key: CLIENT_SNAPSHOT_STORAGE_KEY,
-      value: JSON.stringify(snapshot),
-    },
-  );
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await setClientSnapshotStorage(page, snapshot);
   await page.reload();
   await expect(page.locator(".app-shell")).toBeVisible();
   await pauseReplayClock(page);
   await waitForBattleReplay(page);
+}
+
+async function setClientSnapshotStorage(
+  page: Page,
+  snapshot: HeadlessClientSnapshot,
+): Promise<void> {
+  const payload = {
+    key: CLIENT_SNAPSHOT_STORAGE_KEY,
+    value: JSON.stringify(snapshot),
+  };
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      await page.evaluate(({ key, value }) => {
+        localStorage.clear();
+        localStorage.setItem(key, value);
+      }, payload);
+      return;
+    } catch (error) {
+      if (attempt === 2) {
+        throw error;
+      }
+      await page.waitForLoadState("domcontentloaded").catch(() => undefined);
+    }
+  }
 }
 
 async function resolveNonReadyPhase(page: Page): Promise<void> {
@@ -554,6 +595,7 @@ async function selectStarterAndConfirm(page: Page, speciesId = 4): Promise<void>
     page,
     '.starter-option[data-starter-selected="true"] [data-action-id^="start:"]',
   );
+  await expect(page.locator(".app-shell")).toHaveAttribute("data-phase", "ready");
 }
 
 async function waitForBattleReplay(page: Page): Promise<void> {
@@ -625,6 +667,27 @@ function shopTargetSelectionSnapshot(): HeadlessClientSnapshot {
       { actionId: "shop:greatball", stock: 2, initialStock: 2 },
       { actionId: "shop:rest", stock: 1, initialStock: 1 },
     ],
+  };
+  return snapshot;
+}
+
+function premiumGemShopSnapshot(): HeadlessClientSnapshot {
+  const client = new HeadlessGameClient({ seed: "e2e-premium-gem" });
+  client.dispatch({ type: "START_RUN", starterSpeciesId: 1 });
+  const snapshot = client.saveSnapshot();
+  const offerId = "premium:ball:ultraball";
+  snapshot.state.metaCurrency = {
+    ...(snapshot.state.metaCurrency ?? { claimedAchievements: [] }),
+    trainerPoints: 99,
+  };
+  snapshot.state.premiumOfferIds = {
+    wave: snapshot.state.currentWave,
+    ids: [offerId],
+  };
+  snapshot.state.shopInventory = {
+    wave: snapshot.state.currentWave,
+    rerollCount: 0,
+    entries: [{ actionId: `shop:${offerId}`, stock: 1, initialStock: 1 }],
   };
   return snapshot;
 }

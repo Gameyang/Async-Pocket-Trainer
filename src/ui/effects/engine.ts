@@ -191,13 +191,16 @@ function measureGeometry(
 function toEffectRect(rect: DOMRect, overlayRect: DOMRect): EffectRect {
   const x = rect.left - overlayRect.left;
   const y = rect.top - overlayRect.top;
+  const fallbackSize = Math.max(rect.width, rect.height, 1);
+  const width = rect.width > 0 ? rect.width : fallbackSize;
+  const height = rect.height > 0 ? rect.height : fallbackSize;
 
   return {
     x,
     y,
-    width: rect.width,
-    height: rect.height,
-    centerX: x + rect.width / 2,
-    centerY: y + rect.height / 2,
+    width,
+    height,
+    centerX: x + width / 2,
+    centerY: y + height / 2,
   };
 }

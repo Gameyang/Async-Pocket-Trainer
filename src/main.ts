@@ -13,7 +13,7 @@ import { CODE_SYNC_SETTINGS } from "./browser/syncSettings";
 import { loadTrainerPoints, saveTrainerPoints } from "./browser/trainerPointsStore";
 import { buildMetadata } from "./buildMetadata";
 import { HeadlessGameClient } from "./game/headlessClient";
-import { DEFAULT_BROWSER_TRAINER_NAME } from "./game/localization";
+import { DEFAULT_BROWSER_TRAINER_NAME, formatTrainerPoints } from "./game/localization";
 import type { GameAction, GameState, RunSummary } from "./game/types";
 import { mountHtmlRenderer } from "./ui/htmlRenderer";
 
@@ -51,7 +51,7 @@ if (app) {
     ),
     lastSheetClaim: persistedMeta.lastSheetClaim ?? snapshotMeta.lastSheetClaim,
   };
-  // Daily 접속 보너스 — 시트 누적 승수 fetch 통합은 후속, 일단 +3 TP 매일 한 번
+  // Daily 접속 보너스 — 시트 누적 승수 fetch 통합은 후속, 일단 +3 보석 매일 한 번
   const today = new Date().toISOString().slice(0, 10);
   let dailyBonusMessage: string | undefined;
   if (mergedMeta.lastSheetClaim?.date !== today) {
@@ -62,7 +62,7 @@ if (app) {
       totalWins: mergedMeta.lastSheetClaim?.totalWins ?? 0,
       teamId: mergedMeta.lastSheetClaim?.teamId,
     };
-    dailyBonusMessage = `오늘의 접속 보너스 +${dailyBonus} TP를 받았습니다.`;
+    dailyBonusMessage = `오늘의 접속 보너스 ${formatTrainerPoints(dailyBonus)}를 받았습니다.`;
   }
   client.setMetaCurrency(mergedMeta);
   saveTrainerPoints(storage, mergedMeta);
@@ -233,7 +233,7 @@ function showDailyBonusBanner(message: string): void {
   const banner = document.createElement("div");
   banner.className = "daily-bonus-banner";
   banner.setAttribute("role", "status");
-  banner.textContent = `⭐ ${message}`;
+  banner.textContent = `💎 ${message}`;
   banner.addEventListener("click", () => banner.remove(), { once: true });
   setTimeout(() => banner.remove(), 6000);
   document.body.appendChild(banner);

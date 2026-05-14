@@ -7,6 +7,7 @@ import type {
 } from "../game/view/frame";
 import {
   formatMoney,
+  formatTrainerPoints,
   formatWave,
   localizeBall,
   localizeBattleStatus,
@@ -752,6 +753,10 @@ function scoreReadyShopAction(
     return budgetFit + availability + onSale + 18;
   }
 
+  if (action.action.type === "SORT_TEAM") {
+    return budgetFit + availability + onSale + 16;
+  }
+
   if (action.action.type === "REROLL_SHOP_INVENTORY") {
     return 200 + (action.enabled ? 30 : 0);
   }
@@ -945,6 +950,16 @@ export function createShopActionProfile(action: FrameAction, frame: GameFrame): 
     };
   }
 
+  if (action.action.type === "SORT_TEAM") {
+    return {
+      kind: "team-sort",
+      kicker: "팀 정렬",
+      title: formatTeamSortLabel(action.action.sortBy, action.action.direction),
+      detail: "상단 팀 6마리 순서 정리",
+      meta: action.cost === undefined ? "선택" : formatMoney(action.cost),
+    };
+  }
+
   if (action.action.type === "REROLL_SHOP_INVENTORY") {
     return {
       kind: "reroll",
@@ -958,10 +973,10 @@ export function createShopActionProfile(action: FrameAction, frame: GameFrame): 
   if (action.action.type === "BUY_PREMIUM_SHOP_ITEM") {
     return {
       kind: "premium",
-      kicker: "TP 전용",
-      title: action.label.replace(/\s\d+TP$/, ""),
-      detail: "트레이너 포인트로만 구매",
-      meta: action.tpCost !== undefined ? `${action.tpCost} TP` : action.label,
+      kicker: "보석 전용",
+      title: action.label.replace(/^TP\s+/, "").replace(/\s💎\s*\d+$/, ""),
+      detail: "보석으로만 구매",
+      meta: action.tpCost !== undefined ? formatTrainerPoints(action.tpCost) : action.label,
     };
   }
 
@@ -1026,4 +1041,10 @@ function formatShopStatLabel(stat: unknown): string {
     default:
       return "능력치";
   }
+}
+
+function formatTeamSortLabel(sortBy: unknown, direction: unknown): string {
+  const sortLabel = sortBy === "power" ? "전투력" : "건강상태";
+  const directionLabel = direction === "asc" ? "오름차순" : "내림차순";
+  return `${sortLabel} ${directionLabel}`;
 }

@@ -45,6 +45,28 @@ describe("effect engine", () => {
     expect(dom.querySelectorAll(".fx-instance")).toHaveLength(2);
   });
 
+  it("applies element palettes and centers projectiles on zero-height sprites", () => {
+    const dom = installFakeDom();
+    const { source, target } = createBattleDom(dom);
+    const raf = createRafController();
+    const engine = createEffectEngine({
+      now: () => 0,
+      requestAnimationFrame: raf.requestAnimationFrame,
+      cancelAnimationFrame: raf.cancelAnimationFrame,
+    });
+    const descriptor = resolveEffectDescriptor({ category: "special", type: "poison" });
+
+    setRect(source as unknown as FakeElement, { left: 40, top: 240, width: 120, height: 0 });
+    engine.spawn(descriptor, source, target, "cue-1", "battle.hit");
+
+    const instance = dom.querySelector(".fx-instance");
+
+    expect(instance?.style.getPropertyValue("--fx-primary")).toBe("#9c5cc4");
+    expect(instance?.style.getPropertyValue("--fx-accent")).toBe("#ecd9f4");
+    expect(instance?.style.getPropertyValue("left")).toBe("100px");
+    expect(instance?.style.getPropertyValue("top")).toBe("300px");
+  });
+
   it("removes expired instances and stops scheduling frames when idle", () => {
     const dom = installFakeDom();
     const { source, target } = createBattleDom(dom);
@@ -134,8 +156,44 @@ function createRafController() {
 class FakeStyle {
   private readonly values = new Map<string, string>();
 
+  set left(value: string) {
+    this.setProperty("left", value);
+  }
+
+  get left(): string {
+    return this.getPropertyValue("left");
+  }
+
+  set top(value: string) {
+    this.setProperty("top", value);
+  }
+
+  get top(): string {
+    return this.getPropertyValue("top");
+  }
+
+  set width(value: string) {
+    this.setProperty("width", value);
+  }
+
+  get width(): string {
+    return this.getPropertyValue("width");
+  }
+
+  set height(value: string) {
+    this.setProperty("height", value);
+  }
+
+  get height(): string {
+    return this.getPropertyValue("height");
+  }
+
   setProperty(name: string, value: string): void {
     this.values.set(name, value);
+  }
+
+  getPropertyValue(name: string): string {
+    return this.values.get(name) ?? "";
   }
 }
 

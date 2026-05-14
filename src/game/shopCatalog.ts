@@ -10,7 +10,9 @@ import type {
   ScoutKind,
   ScoutTier,
   ShopStatKey,
+  SortDirection,
   StatBoostTier,
+  TeamSortKey,
 } from "./types";
 
 export interface RarityBoostProduct {
@@ -57,6 +59,12 @@ export interface TeachMoveProduct {
 
 export interface TypeLockProduct {
   element: ElementType;
+  cost: number;
+}
+
+export interface TeamSortProduct {
+  sortBy: TeamSortKey;
+  direction: SortDirection;
   cost: number;
 }
 
@@ -116,6 +124,12 @@ export const levelBoostTiers: readonly LevelBoostTier[] = [1, 2, 3, 4];
 export const statBoostTiers: readonly StatBoostTier[] = [1, 2, 3];
 export const teachMoveElements = shopElementTypes;
 export const typeLockElements = shopElementTypes;
+export const teamSortOptions: readonly TeamSortProduct[] = [
+  { sortBy: "power", direction: "asc", cost: 3 },
+  { sortBy: "power", direction: "desc", cost: 3 },
+  { sortBy: "health", direction: "asc", cost: 3 },
+  { sortBy: "health", direction: "desc", cost: 3 },
+];
 
 const healRatios: Record<HealTier, number> = {
   1: 0.2,
@@ -310,6 +324,24 @@ export function getTypeLockProduct(element: ElementType): TypeLockProduct {
   };
 }
 
+export function getTeamSortProduct(
+  sortBy: TeamSortKey,
+  direction: SortDirection,
+): TeamSortProduct {
+  return {
+    sortBy,
+    direction,
+    cost:
+      teamSortOptions.find(
+        (option) => option.sortBy === sortBy && option.direction === direction,
+      )?.cost ?? 3,
+  };
+}
+
+export function teamSortActionId(sortBy: TeamSortKey, direction: SortDirection): string {
+  return `shop:team-sort:${sortBy}:${direction}`;
+}
+
 export function getHealProduct(scope: HealScope, tier: HealTier): HealProduct {
   return {
     scope,
@@ -359,54 +391,54 @@ export function ballActionSlug(ball: BallType): string {
 
 function createPremiumOffers(): PremiumOffer[] {
   const offers: PremiumOffer[] = [
-    premiumOffer("premium:heal:single:3", 3, "TP 단일 회복 3단계", "포켓몬 1마리 HP 50%", 4, {
+    premiumOffer("premium:heal:single:3", 3, "단일 회복 3단계", "포켓몬 1마리 HP 50%", 4, {
       kind: "heal",
       scope: "single",
       healRatio: 0.5,
     }),
-    premiumOffer("premium:heal:team:3", 4, "TP 전체 회복 3단계", "팀 전체 HP 50%", 4, {
+    premiumOffer("premium:heal:team:3", 4, "전체 회복 3단계", "팀 전체 HP 50%", 4, {
       kind: "heal",
       scope: "team",
       healRatio: 0.5,
     }),
-    premiumOffer("premium:ball:ultraball", 5, "TP 울트라볼", "울트라볼 +1", 4, {
+    premiumOffer("premium:ball:ultraball", 5, "울트라볼", "울트라볼 +1", 4, {
       kind: "ball",
       ball: "ultraBall",
       quantity: 1,
     }),
-    premiumOffer("premium:ball:masterball:2", 16, "TP 마스터볼 2세트", "마스터볼 +2", 2, {
+    premiumOffer("premium:ball:masterball:2", 16, "마스터볼 2세트", "마스터볼 +2", 2, {
       kind: "ball",
       ball: "masterBall",
       quantity: 2,
     }),
-    premiumOffer("premium:ball:masterball:3", 24, "TP 마스터볼 3세트", "마스터볼 +3", 1, {
+    premiumOffer("premium:ball:masterball:3", 24, "마스터볼 3세트", "마스터볼 +3", 1, {
       kind: "ball",
       ball: "masterBall",
       quantity: 3,
     }),
-    premiumOffer("premium:rarity-boost:2", 4, "TP 희귀도 +25%", "일반 중간 등급과 동일", 4, {
+    premiumOffer("premium:rarity-boost:2", 4, "희귀도 +25%", "일반 중간 등급과 동일", 4, {
       kind: "rarityBoost",
       bonus: 0.25,
     }),
-    premiumOffer("premium:rarity-boost:4", 8, "TP 희귀도 +75%", "일반 최고 등급보다 높은 보정", 2, {
+    premiumOffer("premium:rarity-boost:4", 8, "희귀도 +75%", "일반 최고 등급보다 높은 보정", 2, {
       kind: "rarityBoost",
       bonus: 0.75,
     }),
-    premiumOffer("premium:rarity-boost:5", 12, "TP 희귀도 +100%", "일반 최고 등급보다 높은 보정", 1, {
+    premiumOffer("premium:rarity-boost:5", 12, "희귀도 +100%", "일반 최고 등급보다 높은 보정", 1, {
       kind: "rarityBoost",
       bonus: 1,
     }),
-    premiumOffer("premium:level-boost:2", 3, "TP 레벨 +1~3", "일반 중간 등급과 동일", 4, {
+    premiumOffer("premium:level-boost:2", 3, "레벨 +1~3", "일반 중간 등급과 동일", 4, {
       kind: "levelBoost",
       min: 1,
       max: 3,
     }),
-    premiumOffer("premium:level-boost:5", 8, "TP 레벨 +4~8", "일반 최고 등급보다 높은 보정", 2, {
+    premiumOffer("premium:level-boost:5", 8, "레벨 +4~8", "일반 최고 등급보다 높은 보정", 2, {
       kind: "levelBoost",
       min: 4,
       max: 8,
     }),
-    premiumOffer("premium:level-boost:6", 12, "TP 레벨 +6~10", "일반 최고 등급보다 높은 보정", 1, {
+    premiumOffer("premium:level-boost:6", 12, "레벨 +6~10", "일반 최고 등급보다 높은 보정", 1, {
       kind: "levelBoost",
       min: 6,
       max: 10,
@@ -419,7 +451,7 @@ function createPremiumOffers(): PremiumOffer[] {
       premiumOffer(
         `premium:stat-boost:${stat}:2`,
         3,
-        `TP ${label} +6`,
+        `${label} +6`,
         "일반 중간 등급과 동일",
         4,
         { kind: "statBoost", stat, bonus: 6 },
@@ -428,7 +460,7 @@ function createPremiumOffers(): PremiumOffer[] {
       premiumOffer(
         `premium:stat-boost:${stat}:4`,
         6,
-        `TP ${label} +12`,
+        `${label} +12`,
         "일반 최고 등급보다 높은 강화",
         2,
         { kind: "statBoost", stat, bonus: 12 },
@@ -437,7 +469,7 @@ function createPremiumOffers(): PremiumOffer[] {
       premiumOffer(
         `premium:stat-boost:${stat}:5`,
         8,
-        `TP ${label} +15`,
+        `${label} +15`,
         "일반 최고 등급보다 높은 강화",
         1,
         { kind: "statBoost", stat, bonus: 15 },
@@ -452,7 +484,7 @@ function createPremiumOffers(): PremiumOffer[] {
       premiumOffer(
         `premium:type-lock:${element}`,
         4,
-        `TP ${label} 고정`,
+        `${label} 고정`,
         "일반 타입 고정과 동일",
         3,
         { kind: "typeLock", element },
@@ -460,7 +492,7 @@ function createPremiumOffers(): PremiumOffer[] {
       premiumOffer(
         `premium:teach-move:${element}:1`,
         4,
-        `TP ${label} 기술`,
+        `${label} 기술`,
         "일반 기술머신과 동일",
         4,
         { kind: "teachMove", element, grade: 1 },
@@ -469,7 +501,7 @@ function createPremiumOffers(): PremiumOffer[] {
       premiumOffer(
         `premium:teach-move:${element}:2`,
         7,
-        `TP ${label} 상급 기술`,
+        `${label} 상급 기술`,
         "일반 기술머신보다 강한 기술",
         2,
         { kind: "teachMove", element, grade: 2 },
@@ -478,7 +510,7 @@ function createPremiumOffers(): PremiumOffer[] {
       premiumOffer(
         `premium:teach-move:${element}:3`,
         10,
-        `TP ${label} 최상급 기술`,
+        `${label} 최상급 기술`,
         "일반 기술머신보다 강한 기술",
         1,
         { kind: "teachMove", element, grade: 3 },

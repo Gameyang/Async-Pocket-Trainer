@@ -4,6 +4,7 @@ import { createCreature, healTeam, normalizeCreatureBattleLoadout } from "./crea
 import {
   defaultBalance,
   getMove,
+  getSpecies,
   movesById,
   starterSpeciesIds,
 } from "./data/catalog";
@@ -15,6 +16,7 @@ import {
   localizeWinner,
   withJosa,
 } from "./localization";
+import { getLearnableLevelUpMoves } from "./moveLearning";
 import { SeededRng } from "./rng";
 import { chooseReplacementIndex, getTeamHealthRatio, scoreCreature, scoreTeam } from "./scoring";
 import {
@@ -27,6 +29,7 @@ import {
   getStatBoostProduct,
   getStatRerollProduct,
   getTeachMoveProduct,
+  getTeamSortProduct,
   getTypeLockProduct,
   hasPremiumOffer,
   premiumOfferIds,
@@ -34,6 +37,8 @@ import {
   shopStatKeys,
   statBoostTiers,
   teachMoveElements,
+  teamSortActionId,
+  teamSortOptions,
   typeLockElements,
 } from "./shopCatalog";
 import { ballTypes } from "./types";
@@ -50,6 +55,7 @@ import { applyOpponentBattleOutcomeToSummary } from "./sync/teamBattleRecord";
 import {
   awardCheckpointDefeat,
   awardDexUnlock,
+  awardSkillUnlock,
   awardWaveMilestone,
   ensureMetaCurrency,
   type AchievementAward,
@@ -80,8 +86,10 @@ import type {
   ShopInventory,
   ShopInventoryEntry,
   ShopStatKey,
+  SortDirection,
   StatBoostTier,
   TeamEffectFlash,
+  TeamSortKey,
 } from "./types";
 import { computeRerollCost } from "./view/frame";
 
@@ -237,6 +245,9 @@ export class HeadlessGameClient {
       case "BUY_TYPE_LOCK":
         this.buyTypeLock(action.element);
         break;
+      case "SORT_TEAM":
+        this.sortTeam(action.sortBy, action.direction);
+        break;
       case "BUY_PREMIUM_SHOP_ITEM":
         this.buyPremiumShopItem(action.offerId, action.targetEntityId);
         break;
@@ -254,6 +265,12 @@ export class HeadlessGameClient {
         break;
       case "BUY_PREMIUM_DEX_UNLOCK":
         this.addEvent("premium_denied", "이전 프리미엄 상품은 더 이상 판매하지 않습니다.");
+        break;
+      case "CLAIM_DEX_REWARD":
+        this.claimDexReward(action.speciesId);
+        break;
+      case "CLAIM_SKILL_REWARD":
+        this.claimSkillReward(action.moveId);
         break;
       case "REROLL_SHOP_INVENTORY":
         this.rerollShopInventory();
@@ -328,6 +345,11 @@ export class HeadlessGameClient {
       ...teachMoveElements.map((element) => ({
         actionId: `shop:teach-move:${element}`,
         weight: getTypeWeightedShopWeight(element),
+        stock: 1,
+      })),
+      ...teamSortOptions.map((option) => ({
+        actionId: teamSortActionId(option.sortBy, option.direction),
+        weight: 8,
         stock: 1,
       })),
       ...premiumOfferIds.map((offerId) => ({
@@ -407,6 +429,75 @@ export class HeadlessGameClient {
     this.addEvent("tp_earned", award.message, { id: award.id, trainerPoints: award.trainerPoints });
   }
 
+  private claimDexReward(speciesId: number): void {
+    const unlocked = new Set(this.state.unlockedSpeciesIds ?? []);
+    if (!unlocked.has(speciesId)) {
+      this.addEvent("dex_reward_denied", "아직 발견하지 않은 포켓몬 도감 보상입니다.", {
+        speciesId,
+      });
+      return;
+    }
+
+    const meta = ensureMetaCurrency(this.state);
+    const award = awardDexUnlock(meta, speciesId);
+    if (!award) {
+      this.addEvent("dex_reward_denied", "이미 수령했거나 받을 수 없는 포켓몬 도감 보상입니다.", {
+        speciesId,
+      });
+      return;
+    }
+
+    this.recordAchievementAward(award);
+  }
+
+  private claimSkillReward(moveId: string): void {
+    const unlocked = new Set(this.state.unlockedMoveIds ?? []);
+    if (!unlocked.has(moveId)) {
+      this.addEvent("skill_reward_denied", "아직 발견하지 않은 기술 도감 보상입니다.", {
+        moveId,
+      });
+      return;
+    }
+
+    const meta = ensureMetaCurrency(this.state);
+    const award = awardSkillUnlock(meta, moveId);
+    if (!award) {
+      this.addEvent("skill_reward_denied", "이미 수령했거나 받을 수 없는 기술 도감 보상입니다.", {
+        moveId,
+      });
+      return;
+    }
+
+    this.recordAchievementAward(award);
+  }
+
+  private discoverOwnedDexEntries(creatures: readonly Creature[] = this.state.team): void {
+    const speciesIds = new Set(this.state.unlockedSpeciesIds ?? []);
+    const moveIds = new Set(this.state.unlockedMoveIds ?? []);
+    let changed = false;
+
+    for (const creature of creatures) {
+      if (!speciesIds.has(creature.speciesId)) {
+        speciesIds.add(creature.speciesId);
+        changed = true;
+      }
+
+      for (const move of creature.moves) {
+        if (!moveIds.has(move.id)) {
+          moveIds.add(move.id);
+          changed = true;
+        }
+      }
+    }
+
+    if (!changed) {
+      return;
+    }
+
+    this.state.unlockedSpeciesIds = Array.from(speciesIds);
+    this.state.unlockedMoveIds = Array.from(moveIds);
+  }
+
   private buyPremiumShopItem(offerId: PremiumOfferId, targetEntityId?: string): void {
     if (this.state.phase !== "ready") {
       this.addEvent("premium_ignored", "준비 상태에서만 프리미엄 상품을 구매할 수 있습니다.");
@@ -417,7 +508,7 @@ export class HeadlessGameClient {
     const meta = ensureMetaCurrency(this.state);
 
     if (meta.trainerPoints < offer.tpCost) {
-      this.addEvent("premium_denied", "트레이너 포인트가 부족합니다.");
+      this.addEvent("premium_denied", "보석이 부족합니다.");
       return;
     }
 
@@ -448,7 +539,7 @@ export class HeadlessGameClient {
         return;
       }
 
-      const learnedMove = pickStrongMoveByType(effect.element, effect.grade);
+      const learnedMove = pickLearnsetMoveByType(target, effect.element, this.rng, effect.grade);
       if (!learnedMove) {
         this.addEvent("premium_denied", "해당 속성의 기술을 찾을 수 없습니다.");
         return;
@@ -472,6 +563,7 @@ export class HeadlessGameClient {
         moves: target.moves,
         types: target.types,
       });
+      this.discoverOwnedDexEntries([target]);
       this.flashTeamEffect(target.instanceId, "teach-move");
       this.addEvent(
         "premium_purchased",
@@ -644,6 +736,7 @@ export class HeadlessGameClient {
 
     const previousMeta = this.state.metaCurrency;
     const previousUnlocked = this.state.unlockedSpeciesIds;
+    const previousUnlockedMoves = this.state.unlockedMoveIds;
     this.state = {
       version: 1,
       seed: this.state.seed,
@@ -658,7 +751,9 @@ export class HeadlessGameClient {
       events: [],
       metaCurrency: previousMeta,
       unlockedSpeciesIds: previousUnlocked,
+      unlockedMoveIds: previousUnlockedMoves,
     };
+    this.discoverOwnedDexEntries([starter]);
     this.state.shopDeal = this.generateShopDeal();
     this.state.shopInventory = this.generateShopInventory(0);
     this.nextEventId = 1;
@@ -680,6 +775,7 @@ export class HeadlessGameClient {
 
     const previousMeta = this.state.metaCurrency;
     const previousUnlocked = this.state.unlockedSpeciesIds;
+    const previousUnlockedMoves = this.state.unlockedMoveIds;
     this.state = {
       version: 1,
       seed: this.state.seed,
@@ -693,6 +789,7 @@ export class HeadlessGameClient {
       events: [],
       metaCurrency: previousMeta,
       unlockedSpeciesIds: previousUnlocked,
+      unlockedMoveIds: previousUnlockedMoves,
     };
     this.nextEventId = 1;
   }
@@ -909,16 +1006,7 @@ export class HeadlessGameClient {
     );
 
     if (accepted) {
-      const meta = ensureMetaCurrency(this.state);
-      const unlocked = new Set(this.state.unlockedSpeciesIds ?? []);
-      if (!unlocked.has(captured.speciesId)) {
-        unlocked.add(captured.speciesId);
-        this.state.unlockedSpeciesIds = Array.from(unlocked);
-      }
-      const dexAward = awardDexUnlock(meta, captured.speciesId);
-      if (dexAward) {
-        this.recordAchievementAward(dexAward);
-      }
+      this.discoverOwnedDexEntries([captured]);
     }
 
     this.advanceWave();
@@ -1235,7 +1323,7 @@ export class HeadlessGameClient {
       return;
     }
 
-    const learnedMove = pickStrongMoveByType(element);
+    const learnedMove = pickLearnsetMoveByType(target, element, this.rng);
     if (!learnedMove) {
       this.addEvent("teach_move_denied", "해당 속성의 기술을 찾을 수 없습니다.");
       return;
@@ -1261,6 +1349,7 @@ export class HeadlessGameClient {
       moves: updatedMoves,
       types: target.types,
     });
+    this.discoverOwnedDexEntries([target]);
     this.flashTeamEffect(target.instanceId, "teach-move");
     this.addEvent(
       "teach_move_applied",
@@ -1296,6 +1385,47 @@ export class HeadlessGameClient {
       "type_lock_applied",
       `다음 만남이 ${localizeType(element)} 속성으로 고정되었습니다.`,
       { element },
+    );
+  }
+
+  private sortTeam(sortBy: TeamSortKey, direction: SortDirection): void {
+    if (this.state.phase !== "ready") {
+      this.addEvent("team_sort_ignored", "준비 상태에서만 팀 순서를 정렬할 수 있습니다.");
+      return;
+    }
+
+    const product = getTeamSortProduct(sortBy, direction);
+    const cost = this.resolveDiscountedCost(
+      teamSortActionId(sortBy, direction),
+      product.cost,
+    );
+
+    if (this.state.money < cost) {
+      this.addEvent("team_sort_denied", "팀 정렬에 필요한 코인이 부족합니다.");
+      return;
+    }
+
+    const sorted = sortTeamMembers(this.state.team, sortBy, direction);
+    if (isSameTeamOrder(this.state.team, sorted)) {
+      this.addEvent("team_sort_denied", "이미 해당 기준으로 정렬되어 있습니다.", {
+        sortBy,
+        direction,
+      });
+      return;
+    }
+
+    this.state.money -= cost;
+    this.state.team = sorted;
+    this.flashTeamEffect(sorted[0]?.instanceId, "team-reroll");
+    this.addEvent(
+      "team_sorted",
+      `${teamSortLabel(sortBy, direction)}으로 팀 순서를 정렬했습니다.`,
+      {
+        sortBy,
+        direction,
+        cost,
+        order: sorted.map((creature) => creature.instanceId),
+      },
     );
   }
 
@@ -1509,6 +1639,7 @@ export class HeadlessGameClient {
       "shop:level-boost:2",
       ...shopStatKeys.map((stat) => `shop:stat-boost:${stat}:2`),
       ...teachMoveElements.map((element) => `shop:teach-move:${element}`),
+      ...teamSortOptions.map((option) => teamSortActionId(option.sortBy, option.direction)),
       ...typeLockElements.map((element) => `shop:type-lock:${element}`),
     ];
     const dealRng = new SeededRng(`${this.state.seed}:deal:${this.state.currentWave}`);
@@ -1572,7 +1703,42 @@ function normalizeStateBattleLoadouts(state: GameState): GameState {
     };
   }
 
-  return normalized;
+  return normalizeStateDexEntries(normalized);
+}
+
+function normalizeStateDexEntries(state: GameState): GameState {
+  const speciesIds = new Set<number>();
+  const moveIds = new Set<string>();
+
+  for (const speciesId of state.unlockedSpeciesIds ?? []) {
+    if (isValidSpeciesId(speciesId)) {
+      speciesIds.add(speciesId);
+    }
+  }
+
+  for (const moveId of state.unlockedMoveIds ?? []) {
+    if (isValidMoveId(moveId)) {
+      moveIds.add(moveId);
+    }
+  }
+
+  for (const creature of state.team) {
+    if (isValidSpeciesId(creature.speciesId)) {
+      speciesIds.add(creature.speciesId);
+    }
+
+    for (const move of creature.moves) {
+      if (isValidMoveId(move.id)) {
+        moveIds.add(move.id);
+      }
+    }
+  }
+
+  return {
+    ...state,
+    unlockedSpeciesIds: Array.from(speciesIds),
+    unlockedMoveIds: Array.from(moveIds),
+  };
 }
 
 export function cloneClientSnapshot(snapshot: HeadlessClientSnapshot): HeadlessClientSnapshot {
@@ -1613,6 +1779,32 @@ function normalizeBalls(balls: Partial<Record<BallType, number>> | undefined): G
 
 function normalizeBallCount(value: number | undefined): number {
   return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : 0;
+}
+
+function isValidSpeciesId(speciesId: number): boolean {
+  if (!Number.isInteger(speciesId) || speciesId <= 0) {
+    return false;
+  }
+
+  try {
+    getSpecies(speciesId);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function isValidMoveId(moveId: string): boolean {
+  if (!moveId) {
+    return false;
+  }
+
+  try {
+    getMove(moveId);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function countBalls(balls: GameState["balls"]): number {
@@ -1709,7 +1901,51 @@ function isEncounterBoostShopAction(actionId: string): boolean {
 }
 
 function isTeamUpgradeShopAction(actionId: string): boolean {
-  return actionId.startsWith("shop:stat-boost:") || actionId.startsWith("shop:teach-move:");
+  return (
+    actionId.startsWith("shop:stat-boost:") ||
+    actionId.startsWith("shop:teach-move:") ||
+    actionId.startsWith("shop:team-sort:")
+  );
+}
+
+function sortTeamMembers(
+  team: readonly Creature[],
+  sortBy: TeamSortKey,
+  direction: SortDirection,
+): Creature[] {
+  const directionFactor = direction === "asc" ? 1 : -1;
+  return team
+    .map((creature, index) => ({
+      creature,
+      index,
+      value: teamSortValue(creature, sortBy),
+    }))
+    .sort(
+      (left, right) =>
+        (left.value - right.value) * directionFactor || left.index - right.index,
+    )
+    .map((entry) => entry.creature);
+}
+
+function teamSortValue(creature: Creature, sortBy: TeamSortKey): number {
+  if (sortBy === "power") {
+    return creature.powerScore;
+  }
+
+  return creature.stats.hp <= 0 ? 0 : creature.currentHp / creature.stats.hp;
+}
+
+function isSameTeamOrder(left: readonly Creature[], right: readonly Creature[]): boolean {
+  return (
+    left.length === right.length &&
+    left.every((creature, index) => creature.instanceId === right[index]?.instanceId)
+  );
+}
+
+function teamSortLabel(sortBy: TeamSortKey, direction: SortDirection): string {
+  const sortLabel = sortBy === "power" ? "전투력" : "건강상태";
+  const directionLabel = direction === "asc" ? "오름차순" : "내림차순";
+  return `${sortLabel} ${directionLabel}`;
 }
 
 function createCaptureJoinCreature(creature: Creature): Creature {
@@ -1878,6 +2114,8 @@ function inferShopActionId(action: GameAction): string | undefined {
       return `shop:teach-move:${action.element}`;
     case "BUY_TYPE_LOCK":
       return `shop:type-lock:${action.element}`;
+    case "SORT_TEAM":
+      return teamSortActionId(action.sortBy, action.direction);
     case "BUY_PREMIUM_SHOP_ITEM":
       return `shop:${action.offerId}`;
     case "BUY_PREMIUM_MASTERBALL":
@@ -1910,27 +2148,15 @@ function ballActionSlugFor(ball: BallType): string {
   }
 }
 
-function pickStrongMoveByType(element: ElementType, grade: 1 | 2 | 3 = 1): MoveDefinition | undefined {
-  const candidates = Object.values(movesById).filter(
-    (move) => move.type === element && move.category !== "status" && move.power >= 40,
-  );
+function pickLearnsetMoveByType(
+  creature: Creature,
+  element: ElementType,
+  rng: SeededRng,
+  grade?: 1 | 2 | 3,
+): MoveDefinition | undefined {
+  const candidates = getLearnableLevelUpMoves(creature, element, { grade });
 
-  if (candidates.length === 0) {
-    return undefined;
-  }
-
-  candidates.sort((left, right) => {
-    if (right.power !== left.power) return right.power - left.power;
-    return (right.accuracy ?? 0) - (left.accuracy ?? 0);
-  });
-
-  const rankedIndex =
-    grade === 3
-      ? 0
-      : grade === 2
-        ? Math.min(candidates.length - 1, Math.floor(candidates.length * 0.2))
-        : Math.min(candidates.length - 1, Math.floor(candidates.length * 0.45));
-  return candidates[rankedIndex];
+  return candidates.length > 0 ? rng.pick(candidates) : undefined;
 }
 
 function pickWeakestMoveIndex(moves: readonly MoveDefinition[]): number {

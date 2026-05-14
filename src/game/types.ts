@@ -50,6 +50,8 @@ export type RarityBoostTier = 1 | 2 | 3;
 export type LevelBoostTier = 1 | 2 | 3 | 4;
 export type StatBoostTier = 1 | 2 | 3;
 export type ShopStatKey = "hp" | "attack" | "defense" | "special" | "speed";
+export type TeamSortKey = "power" | "health";
+export type SortDirection = "asc" | "desc";
 
 export interface SelectedRoute {
   id: RouteId;
@@ -300,6 +302,8 @@ export type BattleReplayEvent =
       actorId: string;
       targetId: string;
       move: string;
+      moveType: ElementType;
+      moveCategory: MoveCategory;
     }
   | {
       sequence: number;
@@ -483,6 +487,7 @@ export interface GameState {
   shopInventory?: ShopInventory;
   metaCurrency?: MetaCurrencyState;
   unlockedSpeciesIds?: number[];
+  unlockedMoveIds?: string[];
   premiumOfferIds?: { wave: number; ids: PremiumOfferId[] };
   lastTeamEffect?: TeamEffectFlash;
   supplyUsedAtWave?: number;
@@ -512,12 +517,15 @@ export type GameAction =
   | { type: "BUY_STAT_REROLL"; targetEntityId?: string }
   | { type: "BUY_TEACH_MOVE"; element: ElementType; targetEntityId?: string }
   | { type: "BUY_TYPE_LOCK"; element: ElementType }
+  | { type: "SORT_TEAM"; sortBy: TeamSortKey; direction: SortDirection }
   | { type: "BUY_PREMIUM_SHOP_ITEM"; offerId: PremiumOfferId; targetEntityId?: string }
   | { type: "BUY_PREMIUM_MASTERBALL" }
   | { type: "BUY_PREMIUM_REVIVE_ALL" }
   | { type: "BUY_PREMIUM_COIN_BAG" }
   | { type: "BUY_PREMIUM_TEAM_REROLL"; targetEntityId?: string }
   | { type: "BUY_PREMIUM_DEX_UNLOCK" }
+  | { type: "CLAIM_DEX_REWARD"; speciesId: number }
+  | { type: "CLAIM_SKILL_REWARD"; moveId: string }
   | { type: "REROLL_SHOP_INVENTORY" };
 
 export interface AutoPlayOptions {

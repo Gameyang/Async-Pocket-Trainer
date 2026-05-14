@@ -25,6 +25,10 @@ describe("battle damage rules", () => {
     expect(result.log).toHaveLength(2);
     expect(result.log.every((entry) => entry.missed)).toBe(true);
     expect(result.replay.filter((event) => event.type === "move.miss")).toHaveLength(2);
+    expect(result.replay.filter((event) => event.type === "move.miss")).toEqual([
+      expect.objectContaining({ moveType: "normal", moveCategory: "physical" }),
+      expect.objectContaining({ moveType: "normal", moveCategory: "physical" }),
+    ]);
   });
 
   it("marks critical hits and increases damage", () => {

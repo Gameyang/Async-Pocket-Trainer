@@ -104,6 +104,7 @@ function entity(id: string, owner: FrameEntity["owner"], slot: number, power: nu
     assetPath: "resources/pokemon/0001.webp",
     name: id,
     speciesId: 1,
+    level: 1,
     typeLabels: ["노말"],
     hp: {
       current: 100,
@@ -130,6 +131,7 @@ function entity(id: string, owner: FrameEntity["owner"], slot: number, power: nu
         effect: "추가 효과 없이 피해를 줍니다.",
       },
     ],
+    moveDex: [],
     scores: {
       power,
       rarity: 1,

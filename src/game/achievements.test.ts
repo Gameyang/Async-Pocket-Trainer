@@ -4,6 +4,7 @@ import { defaultBalance } from "./data/catalog";
 import {
   awardCheckpointDefeat,
   awardDexUnlock,
+  awardSkillUnlock,
   awardWaveMilestone,
   emptyMetaCurrency,
 } from "./achievements";
@@ -26,6 +27,16 @@ describe("achievements", () => {
     const dragonite = awardDexUnlock(meta, 149);
     expect(dragonite?.trainerPoints).toBeGreaterThanOrEqual(charmander?.trainerPoints ?? 0);
     expect(meta.trainerPoints).toBeGreaterThan(before);
+  });
+
+  it("awards skill unlock rewards once per move", () => {
+    const meta = emptyMetaCurrency();
+    const first = awardSkillUnlock(meta, "tackle");
+    const second = awardSkillUnlock(meta, "tackle");
+
+    expect(first?.trainerPoints).toBeGreaterThan(0);
+    expect(second).toBeUndefined();
+    expect(meta.claimedAchievements).toContain("skill:tackle");
   });
 
   it("only rewards checkpoint multiples", () => {

@@ -57,7 +57,11 @@ export function formatWave(wave: number): string {
 }
 
 export function formatMoney(money: number): string {
-  return `${money}코인`;
+  return `🪙 ${money}`;
+}
+
+export function formatTrainerPoints(points: number): string {
+  return `💎 ${points}`;
 }
 
 export function localizeBall(ball: BallType): string {

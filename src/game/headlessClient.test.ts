@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { HeadlessGameClient, type HeadlessClientSnapshot } from "./headlessClient";
+import { getMove, getSpecies } from "./data/catalog";
 import { createTrainerSnapshot } from "./sync/trainerSnapshot";
 
 describe("HeadlessGameClient", () => {
@@ -41,6 +42,163 @@ describe("HeadlessGameClient", () => {
     });
 
     expect(new Set(statKeys).size).toBeGreaterThan(1);
+  });
+
+  it("keeps dex and skill TP rewards pending until the player claims them", () => {
+    const client = new HeadlessGameClient({ seed: "manual-dex-rewards" });
+
+    client.dispatch({ type: "START_RUN", starterSpeciesId: 1 });
+    const started = client.getSnapshot();
+    const starterMoveId = started.team[0].moves[0].id;
+
+    expect(started.unlockedSpeciesIds).toContain(1);
+    expect(started.unlockedMoveIds).toContain(starterMoveId);
+    expect(client.getMetaCurrency().trainerPoints).toBe(0);
+    expect(client.getFrame().entities[0].moveDex).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          moveId: starterMoveId,
+          unlocked: true,
+          rewardClaimable: true,
+        }),
+      ]),
+    );
+
+    dispatchFrameAction(client, `claim:skill:${starterMoveId}`);
+    const afterSkillClaim = client.getMetaCurrency().trainerPoints;
+    expect(afterSkillClaim).toBeGreaterThan(0);
+    expect(client.getFrame().actions.map((action) => action.id)).not.toContain(
+      `claim:skill:${starterMoveId}`,
+    );
+
+    const gameOverSnapshot = client.saveSnapshot();
+    gameOverSnapshot.state.phase = "gameOver";
+    client.loadSnapshot(gameOverSnapshot);
+    dispatchFrameAction(client, "restart:starter-choice");
+    dispatchFrameAction(client, "claim:dex:1");
+
+    expect(client.getMetaCurrency().trainerPoints).toBeGreaterThan(afterSkillClaim);
+    expect(client.getFrame().actions.map((action) => action.id)).not.toContain("claim:dex:1");
+  });
+
+  it("teaches moves only from the target species learnset and disables invalid targets", () => {
+    const client = new HeadlessGameClient({ seed: "learnset-tm-targets" });
+    client.dispatch({ type: "START_RUN", starterSpeciesId: 1 });
+    const charmanderClient = new HeadlessGameClient({ seed: "learnset-tm-targets-charmander" });
+    charmanderClient.dispatch({ type: "START_RUN", starterSpeciesId: 4 });
+
+    const saved = client.saveSnapshot();
+    saved.state.money = 500;
+    saved.state.team = [saved.state.team[0], charmanderClient.getSnapshot().team[0]];
+    saved.state.shopInventory = {
+      wave: saved.state.currentWave,
+      rerollCount: 0,
+      entries: [{ actionId: "shop:teach-move:fire", stock: 1, initialStock: 1 }],
+    };
+    client.loadSnapshot(saved);
+
+    const [bulbasaur, charmander] = client.getSnapshot().team;
+    const fireAction = client.getFrame().actions.find((action) => action.id === "shop:teach-move:fire");
+
+    expect(fireAction?.enabled).toBe(true);
+    expect(fireAction?.eligibleTargetIds).toEqual([charmander.instanceId]);
+
+    const beforeDeniedMoney = client.getSnapshot().money;
+    client.dispatch({
+      type: "BUY_TEACH_MOVE",
+      element: "fire",
+      targetEntityId: bulbasaur.instanceId,
+    });
+    expect(client.getSnapshot().money).toBe(beforeDeniedMoney);
+    expect(client.getSnapshot().events.at(-1)?.type).toBe("teach_move_denied");
+
+    client.dispatch({
+      type: "BUY_TEACH_MOVE",
+      element: "fire",
+      targetEntityId: charmander.instanceId,
+    });
+    const learnedMoveId = client.getSnapshot().events.at(-1)?.data?.move;
+    const charmanderLearnset = new Set(getSpecies(charmander.speciesId).levelUpMoves.map((entry) => entry.moveId));
+
+    expect(typeof learnedMoveId).toBe("string");
+    expect(charmanderLearnset.has(String(learnedMoveId))).toBe(true);
+    expect(getMove(String(learnedMoveId)).type).toBe("fire");
+  });
+
+  it("sorts team order through shop sorting items", () => {
+    const client = new HeadlessGameClient({ seed: "team-sort-shop" });
+    const charmanderClient = new HeadlessGameClient({ seed: "team-sort-shop-charmander" });
+    const squirtleClient = new HeadlessGameClient({ seed: "team-sort-shop-squirtle" });
+    client.dispatch({ type: "START_RUN", starterSpeciesId: 1 });
+    charmanderClient.dispatch({ type: "START_RUN", starterSpeciesId: 4 });
+    squirtleClient.dispatch({ type: "START_RUN", starterSpeciesId: 7 });
+
+    const saved = client.saveSnapshot();
+    const bulbasaur = saved.state.team[0];
+    const charmander = charmanderClient.getSnapshot().team[0];
+    const squirtle = squirtleClient.getSnapshot().team[0];
+    saved.state.money = 20;
+    saved.state.team = [
+      {
+        ...bulbasaur,
+        instanceId: "sort-low",
+        powerScore: 10,
+        currentHp: Math.max(1, Math.floor(bulbasaur.stats.hp * 0.3)),
+      },
+      {
+        ...charmander,
+        instanceId: "sort-high",
+        powerScore: 30,
+        currentHp: Math.max(1, Math.floor(charmander.stats.hp * 0.9)),
+      },
+      {
+        ...squirtle,
+        instanceId: "sort-mid",
+        powerScore: 20,
+        currentHp: Math.max(1, Math.floor(squirtle.stats.hp * 0.6)),
+      },
+    ];
+    saved.state.shopInventory = {
+      wave: saved.state.currentWave,
+      rerollCount: 0,
+      entries: [
+        { actionId: "shop:team-sort:power:desc", stock: 1, initialStock: 1 },
+        { actionId: "shop:team-sort:health:asc", stock: 1, initialStock: 1 },
+      ],
+    };
+    client.loadSnapshot(saved);
+
+    const expectedPowerDescendingOrder = client
+      .getSnapshot()
+      .team.slice()
+      .sort((left, right) => right.powerScore - left.powerScore)
+      .map((creature) => creature.instanceId);
+    dispatchFrameAction(client, "shop:team-sort:power:desc");
+    expect(client.getSnapshot().team.map((creature) => creature.instanceId)).toEqual(
+      expectedPowerDescendingOrder,
+    );
+    expect(client.getSnapshot().money).toBe(17);
+    expect(client.getSnapshot().events.at(-1)?.type).toBe("team_sorted");
+    expect(
+      client
+        .getSnapshot()
+        .shopInventory?.entries.find((entry) => entry.actionId === "shop:team-sort:power:desc")
+        ?.stock,
+    ).toBe(0);
+
+    const expectedHealthAscendingOrder = client
+      .getSnapshot()
+      .team.slice()
+      .sort(
+        (left, right) =>
+          left.currentHp / left.stats.hp - right.currentHp / right.stats.hp,
+      )
+      .map((creature) => creature.instanceId);
+    dispatchFrameAction(client, "shop:team-sort:health:asc");
+    expect(client.getSnapshot().team.map((creature) => creature.instanceId)).toEqual(
+      expectedHealthAscendingOrder,
+    );
+    expect(client.getSnapshot().money).toBe(14);
   });
 
   it("rolls eight shop product items across every inventory group", () => {
@@ -336,7 +494,11 @@ function shopInventoryGroup(actionId: string): string {
   ) {
     return "encounter";
   }
-  if (actionId.startsWith("shop:stat-boost:") || actionId.startsWith("shop:teach-move:")) {
+  if (
+    actionId.startsWith("shop:stat-boost:") ||
+    actionId.startsWith("shop:teach-move:") ||
+    actionId.startsWith("shop:team-sort:")
+  ) {
     return "team";
   }
   if (actionId.startsWith("shop:premium:")) return "premium";

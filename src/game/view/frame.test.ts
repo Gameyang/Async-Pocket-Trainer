@@ -115,6 +115,10 @@ describe("game frame contract", () => {
     const supportEvent = support.battleReplay.events.find(
       (event) => event.sequence === supportCue?.sequence,
     );
+    const missCue = missed.visualCues.find((cue) => cue.type === "battle.miss");
+    const missEvent = missed.battleReplay.events.find(
+      (event) => event.sequence === missCue?.sequence,
+    );
 
     expect(superEffective.visualCues).toContainEqual(
       expect.objectContaining({
@@ -141,6 +145,13 @@ describe("game frame contract", () => {
       moveCategory: superEffectiveEvent?.moveCategory,
     });
     expect(superEffectiveEvent?.moveCategory).toMatch(/physical|special|status/);
+    expect(missCue).toMatchObject({
+      moveType: missEvent?.moveType,
+      moveCategory: missEvent?.moveCategory,
+    });
+    expect(missEvent?.moveType).toMatch(
+      /normal|fire|water|grass|electric|poison|ground|flying|bug|fighting|psychic|rock|ghost|ice|dragon|dark|steel|fairy/,
+    );
     expect(criticalCue).toMatchObject({
       soundKey: expect.stringMatching(/^sfx\.battle\.type\.[a-z-]+\.critical$/),
       critical: true,
