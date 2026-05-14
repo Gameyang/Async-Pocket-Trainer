@@ -19,6 +19,7 @@
     "assets:generate": "node scripts/generate-local-assets.mjs",
     "headless": "tsx src/tools/headless-run.ts",
     "replay:seed": "tsx src/tools/seed-replay.ts",
+    "sheets:seed-trainers": "tsx src/tools/seed-sheet-trainers.ts",
     "qa:headless": "tsx src/tools/headless-run.ts --runs 12 --waves 15 --strategy greedy",
     "qa:summary": "tsx src/tools/headless-run.ts --summary",
     "qa:compare": "tsx src/tools/balance-compare.ts",
