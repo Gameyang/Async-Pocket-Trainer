@@ -33,6 +33,7 @@ if (app) {
       });
   const syncController = new BrowserSyncController(client, CODE_SYNC_SETTINGS, {
     playerId: getBrowserPlayerId(storage),
+    storage,
   });
   if (loaded.error) {
     console.warn("Recovered browser save data after validation error:", loaded.error);

@@ -10,6 +10,19 @@ import {
   type SheetTrainerRow,
   type TrainerSnapshot,
 } from "./trainerSnapshot";
+import {
+  DEFAULT_TEAM_BATTLE_RECORD_RANGE,
+  matchesTeamBattleRecordQuery,
+  parseSheetTeamBattleRecordRow,
+  serializeTeamBattleRecord,
+  SHEET_TEAM_BATTLE_RECORD_COLUMNS,
+  sheetTeamBattleRecordRowFromValues,
+  sheetTeamBattleRecordRowToValues,
+  type SheetTeamBattleRecordRow,
+  type TeamBattleRecord,
+  type TeamBattleRecordQuery,
+  type TeamRecordSyncAdapter,
+} from "./teamBattleRecord";
 
 export const SHEET_TRAINER_ROW_COLUMNS = [
   "version",
@@ -26,6 +39,7 @@ export const SHEET_TRAINER_ROW_COLUMNS = [
 export interface GoogleSheetsTrainerAdapterOptions {
   spreadsheetId: string;
   range: string;
+  teamRecordRange?: string;
   apiKey?: string;
   accessToken?: string;
   fetch?: FetchLike;
@@ -48,9 +62,10 @@ export interface FetchResponseLike {
   json(): Promise<unknown>;
 }
 
-export class GoogleSheetsTrainerAdapter implements TrainerSyncAdapter {
+export class GoogleSheetsTrainerAdapter implements TrainerSyncAdapter, TeamRecordSyncAdapter {
   private readonly spreadsheetId: string;
   private readonly range: string;
+  private readonly teamRecordRange: string;
   private readonly apiKey?: string;
   private readonly accessToken?: string;
   private readonly fetchImpl: FetchLike;
@@ -59,6 +74,10 @@ export class GoogleSheetsTrainerAdapter implements TrainerSyncAdapter {
   constructor(options: GoogleSheetsTrainerAdapterOptions) {
     this.spreadsheetId = requireNonEmpty(options.spreadsheetId, "spreadsheetId");
     this.range = requireNonEmpty(options.range, "range");
+    this.teamRecordRange = requireNonEmpty(
+      options.teamRecordRange ?? DEFAULT_TEAM_BATTLE_RECORD_RANGE,
+      "teamRecordRange",
+    );
     this.apiKey = options.apiKey;
     this.accessToken = options.accessToken;
     this.fetchImpl = options.fetch ?? getGlobalFetch();
@@ -116,6 +135,47 @@ export class GoogleSheetsTrainerAdapter implements TrainerSyncAdapter {
     return rng.pick(snapshots);
   }
 
+  async appendTeamBattleRecord(
+    record: TeamBattleRecord,
+  ): Promise<SheetTeamBattleRecordRow> {
+    const row = serializeTeamBattleRecord(record);
+    const url = this.createValuesUrl(`${this.encodedTeamRecordRange()}:append`, {
+      valueInputOption: "RAW",
+      insertDataOption: "INSERT_ROWS",
+    });
+    await this.requestJson(url, {
+      method: "POST",
+      body: JSON.stringify({
+        values: [sheetTeamBattleRecordRowToValues(row)],
+      }),
+    });
+    return { ...row };
+  }
+
+  async listTeamBattleRows(
+    query: TeamBattleRecordQuery = {},
+  ): Promise<SheetTeamBattleRecordRow[]> {
+    const url = this.createValuesUrl(this.encodedTeamRecordRange(), {
+      majorDimension: "ROWS",
+    });
+    const payload = await this.requestJson(url);
+    const values = parseValuesResponse(payload);
+
+    return values
+      .filter((rowValues, index) => !isTeamBattleHeaderRow(rowValues, index))
+      .flatMap((rowValues) => {
+        const row = trySheetTeamBattleRecordRowFromValues(rowValues);
+        return row ? [row] : [];
+      })
+      .filter((row) => matchesTeamBattleRecordQuery(row, query))
+      .map((row) => ({ ...row }));
+  }
+
+  async listTeamBattleRecords(query: TeamBattleRecordQuery = {}): Promise<TeamBattleRecord[]> {
+    const rows = await this.listTeamBattleRows(query);
+    return rows.map(parseSheetTeamBattleRecordRow);
+  }
+
   private async requestJson(
     url: string,
     init: {
@@ -163,6 +223,10 @@ export class GoogleSheetsTrainerAdapter implements TrainerSyncAdapter {
   private encodedRange(): string {
     return encodeURIComponent(this.range);
   }
+
+  private encodedTeamRecordRange(): string {
+    return encodeURIComponent(this.teamRecordRange);
+  }
 }
 
 export function sheetTrainerRowToValues(row: SheetTrainerRow): string[] {
@@ -207,6 +271,16 @@ export function trySheetTrainerRowFromValues(
   }
 }
 
+export function trySheetTeamBattleRecordRowFromValues(
+  values: readonly unknown[],
+): SheetTeamBattleRecordRow | undefined {
+  try {
+    return sheetTeamBattleRecordRowFromValues(values);
+  } catch {
+    return undefined;
+  }
+}
+
 function parseValuesResponse(payload: unknown): unknown[][] {
   if (typeof payload !== "object" || payload === null || !("values" in payload)) {
     return [];
@@ -229,6 +303,15 @@ function isHeaderRow(values: readonly unknown[], index: number): boolean {
   return (
     index === 0 &&
     SHEET_TRAINER_ROW_COLUMNS.every((column, columnIndex) => values[columnIndex] === column)
+  );
+}
+
+function isTeamBattleHeaderRow(values: readonly unknown[], index: number): boolean {
+  return (
+    index === 0 &&
+    SHEET_TEAM_BATTLE_RECORD_COLUMNS.every(
+      (column, columnIndex) => values[columnIndex] === column,
+    )
   );
 }
 

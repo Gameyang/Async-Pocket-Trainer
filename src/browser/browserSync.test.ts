@@ -56,6 +56,42 @@ describe("browser sync controller", () => {
     expect(sync.getStatus()).toMatchObject({ state: "synced", candidateCount: 1 });
   });
 
+  it("records sheet trainer battle outcomes in local cache and syncs the event log", async () => {
+    const opponent = buildOpponentSnapshot();
+    const adapter = new LocalTrainerSheetAdapter([serializeTrainerSnapshot(opponent)]);
+    const storage = createMemoryStorage();
+    const client = readyAtCheckpoint("team-record-sync");
+    const sync = new BrowserSyncController(client, enabledSettings, {
+      adapter,
+      storage,
+      playerId: "player-a",
+      now: () => "2026-05-12T00:00:00.000Z",
+    });
+
+    await sync.beforeDispatch({ type: "RESOLVE_NEXT_ENCOUNTER" });
+    client.dispatch({ type: "RESOLVE_NEXT_ENCOUNTER" });
+    await sync.afterDispatch({ type: "RESOLVE_NEXT_ENCOUNTER" });
+
+    const records = await adapter.listTeamBattleRecords({ challengerPlayerId: "player-a" });
+    const battle = client.getSnapshot().lastBattle;
+
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({
+      challengerPlayerId: "player-a",
+      opponentPlayerId: "opponent-a",
+      battleWinner: battle?.winner,
+      opponentResult: battle?.winner === "player" ? "loss" : "win",
+    });
+    expect(battle?.opponentTeamRecordChange).toBeDefined();
+    expect(sync.getStatus()).toMatchObject({
+      state: "synced",
+      pendingTeamRecordCount: 0,
+    });
+    expect([...storage.values.values()].some((value) => value.includes(records[0].recordId))).toBe(
+      true,
+    );
+  });
+
   it("stays offline when sync is enabled without credentials", async () => {
     const client = readyAtCheckpoint("offline-sync");
     const sync = new BrowserSyncController(
@@ -234,4 +270,21 @@ function toCsv(rows: readonly ReturnType<typeof serializeTrainerSnapshot>[]): st
 
 function csvCell(value: string): string {
   return `"${value.replaceAll('"', '""')}"`;
+}
+
+function createMemoryStorage(initial: Record<string, string> = {}) {
+  const values = new Map(Object.entries(initial));
+
+  return {
+    values,
+    getItem(key: string) {
+      return values.get(key) ?? null;
+    },
+    setItem(key: string, value: string) {
+      values.set(key, value);
+    },
+    removeItem(key: string) {
+      values.delete(key);
+    },
+  };
 }

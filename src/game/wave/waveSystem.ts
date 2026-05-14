@@ -12,6 +12,7 @@ import type {
   Stats,
 } from "../types";
 import type { TrainerSnapshot, TrainerSnapshotCreature } from "../sync/trainerSnapshot";
+import { createOpponentTeamContext } from "../sync/teamBattleRecord";
 
 export interface EncounterBoostOptions {
   rarityBonus?: number;
@@ -115,6 +116,7 @@ export function createTrainerEncounterFromSnapshot(
     routeId,
     wave: snapshot.wave,
     opponentName: `${routeLabel(routeId)}${snapshot.trainerName} 기록 (${scoreTeam(team)})`,
+    opponentTeam: createOpponentTeamContext(snapshot, scoreTeam(team)),
     enemyTeam: team,
   };
 }

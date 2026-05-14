@@ -33,6 +33,7 @@ import {
   replaceTeamAfterCapture,
 } from "./wave/waveSystem";
 import type { TrainerSnapshot } from "./sync/trainerSnapshot";
+import { applyOpponentBattleOutcomeToSummary } from "./sync/teamBattleRecord";
 import type {
   AutoPlayOptions,
   BallType,
@@ -53,6 +54,7 @@ import type {
   RunSummary,
   ScoutKind,
   ScoutTier,
+  ShopDeal,
   StatBoostTier,
 } from "./types";
 
@@ -303,6 +305,7 @@ export class HeadlessGameClient {
       selectedRoute: undefined,
       events: [],
     };
+    this.state.shopDeal = this.generateShopDeal();
     this.nextEventId = 1;
     this.addEvent(
       "run_started",
@@ -385,18 +388,26 @@ export class HeadlessGameClient {
     }
 
     const encounter = this.createEncounter(routeId);
+    const battleResult = runAutoBattle({
+      kind: encounter.kind,
+      playerTeam: this.state.team,
+      enemyTeam: encounter.enemyTeam,
+      rng: this.rng,
+      damageScale: this.balance.battleDamageScale,
+      normalizeLoadouts: true,
+    });
     const battle = {
-      ...runAutoBattle({
-        kind: encounter.kind,
-        playerTeam: this.state.team,
-        enemyTeam: encounter.enemyTeam,
-        rng: this.rng,
-        damageScale: this.balance.battleDamageScale,
-        normalizeLoadouts: true,
-      }),
+      ...battleResult,
       encounterSource: encounter.source,
       encounterRoute: encounter.routeId,
       opponentName: encounter.opponentName,
+      opponentTeam: encounter.opponentTeam,
+      opponentTeamRecordChange: encounter.opponentTeam?.record
+        ? applyOpponentBattleOutcomeToSummary(
+            encounter.opponentTeam.record,
+            battleWinnerToOpponentOutcome(battleResult.winner),
+          )
+        : undefined,
     };
 
     this.state.team = battle.playerTeam;
@@ -1057,7 +1068,43 @@ export class HeadlessGameClient {
     this.state.encounterBoost = undefined;
     this.state.pendingEncounter = undefined;
     this.state.pendingCapture = undefined;
-    this.state.shopDeal = undefined;
+    this.state.shopDeal = this.generateShopDeal();
+  }
+
+  private generateShopDeal(): ShopDeal {
+    const pool: string[] = [
+      "shop:rest",
+      "shop:heal:single:3",
+      "shop:heal:single:4",
+      "shop:heal:team:3",
+      "shop:heal:team:4",
+      "shop:pokeball",
+      "shop:greatball",
+      "shop:ultraball",
+      "shop:hyperball",
+      "shop:scout:rarity:2",
+      "shop:scout:power:2",
+      "shop:rarity-boost:2",
+      "shop:level-boost:2",
+      "shop:stat-boost:2",
+      "shop:stat-reroll",
+      "shop:teach-move:fire",
+      "shop:teach-move:water",
+      "shop:teach-move:electric",
+      "shop:teach-move:grass",
+      "shop:type-lock:fire",
+      "shop:type-lock:water",
+      "shop:type-lock:dragon",
+    ];
+    const dealRng = new SeededRng(`${this.state.seed}:deal:${this.state.currentWave}`);
+    const shuffled = dealRng.shuffle(pool);
+    const dealCount = 1 + Math.floor(dealRng.nextFloat() * 2);
+    const discountRate = 0.2 + Math.floor(dealRng.nextFloat() * 3) * 0.05;
+    return {
+      wave: this.state.currentWave,
+      discountedActionIds: shuffled.slice(0, dealCount),
+      discountRate,
+    };
   }
 
   private addEvent(type: string, message: string, data?: Record<string, unknown>): void {
@@ -1250,6 +1297,10 @@ function routeName(routeId: RouteId): string {
     case "supply":
       return "보급로";
   }
+}
+
+function battleWinnerToOpponentOutcome(winner: "player" | "enemy"): "win" | "loss" {
+  return winner === "enemy" ? "win" : "loss";
 }
 
 function assertValidClientSnapshot(snapshot: HeadlessClientSnapshot): void {

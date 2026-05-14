@@ -1,5 +1,14 @@
 import { scoreTeam } from "../scoring";
-import { ballTypes, type BallType, type Creature, type GamePhase, type GameState, type RunSummary, type Stats } from "../types";
+import {
+  ballTypes,
+  type BallType,
+  type Creature,
+  type GamePhase,
+  type GameState,
+  type RunSummary,
+  type Stats,
+  type TeamRecordSummary,
+} from "../types";
 
 export const TRAINER_SNAPSHOT_VERSION = 1;
 
@@ -25,6 +34,7 @@ export interface TrainerSnapshot {
   teamPower: number;
   team: TrainerSnapshotCreature[];
   runSummary: RunSummary;
+  teamRecord?: TeamRecordSummary;
 }
 
 export interface SheetTrainerRow {

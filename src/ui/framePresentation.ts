@@ -709,34 +709,54 @@ function scoreReadyShopAction(
   const overBudget = Math.max(0, cost - money);
   const budgetFit = cost <= money ? cost : money - overBudget * 0.65 - 24;
   const availability = action.enabled ? 40 : 0;
+  const onSale =
+    action.originalCost !== undefined && action.cost !== undefined && action.originalCost > action.cost
+      ? 45
+      : 0;
 
   if (action.action.type === "REST_TEAM") {
-    return budgetFit + availability + (needsRest ? 140 : 30);
+    return budgetFit + availability + onSale + (needsRest ? 140 : 30);
   }
 
   if (action.action.type === "BUY_HEAL") {
     const scopeBonus = action.action.scope === "team" ? 18 : 10;
-    return budgetFit + availability + (needsRest ? 110 : 20) + scopeBonus;
+    return budgetFit + availability + onSale + (needsRest ? 110 : 20) + scopeBonus;
   }
 
   if (action.action.type === "BUY_BALL") {
-    return budgetFit + availability + (totalBalls <= 2 ? 100 : 45);
+    return budgetFit + availability + onSale + (totalBalls <= 2 ? 100 : 45);
   }
 
   if (action.action.type === "BUY_SCOUT") {
     const kindBonus = action.action.kind === "power" ? 8 : 12;
-    return budgetFit + availability + 25 + kindBonus;
+    return budgetFit + availability + onSale + 25 + kindBonus;
   }
 
   if (action.action.type === "BUY_RARITY_BOOST") {
-    return budgetFit + availability + 15 + action.action.tier * 4;
+    return budgetFit + availability + onSale + 15 + action.action.tier * 4;
   }
 
   if (action.action.type === "BUY_LEVEL_BOOST") {
-    return budgetFit + availability + 12 + action.action.tier * 4;
+    return budgetFit + availability + onSale + 12 + action.action.tier * 4;
   }
 
-  return budgetFit;
+  if (action.action.type === "BUY_STAT_BOOST") {
+    return budgetFit + availability + onSale + 20 + action.action.tier * 6;
+  }
+
+  if (action.action.type === "BUY_STAT_REROLL") {
+    return budgetFit + availability + onSale + 14;
+  }
+
+  if (action.action.type === "BUY_TEACH_MOVE") {
+    return budgetFit + availability + onSale + 24;
+  }
+
+  if (action.action.type === "BUY_TYPE_LOCK") {
+    return budgetFit + availability + onSale + 18;
+  }
+
+  return budgetFit + onSale;
 }
 
 export function selectCommandItems(
@@ -878,6 +898,46 @@ export function createShopActionProfile(action: FrameAction, frame: GameFrame): 
       kicker: "숙련도",
       title: "숙련도 보정",
       detail: "다음 만남 레벨 상승",
+      meta: action.cost === undefined ? "선택" : formatMoney(action.cost),
+    };
+  }
+
+  if (action.action.type === "BUY_STAT_BOOST") {
+    return {
+      kind: "stat-boost",
+      kicker: "능력치",
+      title: "능력치 강화",
+      detail: "선택 포켓몬 전 능력치 상승",
+      meta: action.cost === undefined ? "선택" : formatMoney(action.cost),
+    };
+  }
+
+  if (action.action.type === "BUY_STAT_REROLL") {
+    return {
+      kind: "stat-reroll",
+      kicker: "재추첨",
+      title: "능력치 재추첨",
+      detail: "선택 포켓몬 능력치 재계산",
+      meta: action.cost === undefined ? "선택" : formatMoney(action.cost),
+    };
+  }
+
+  if (action.action.type === "BUY_TEACH_MOVE") {
+    return {
+      kind: "teach-move",
+      kicker: "기술 머신",
+      title: "기술 머신",
+      detail: "선택 포켓몬에 강한 기술 학습",
+      meta: action.cost === undefined ? "선택" : formatMoney(action.cost),
+    };
+  }
+
+  if (action.action.type === "BUY_TYPE_LOCK") {
+    return {
+      kind: "type-lock",
+      kicker: "타입 고정",
+      title: "타입 고정",
+      detail: "다음 만남 속성 고정",
       meta: action.cost === undefined ? "선택" : formatMoney(action.cost),
     };
   }

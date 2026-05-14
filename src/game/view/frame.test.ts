@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { HeadlessGameClient } from "../headlessClient";
+import { createTeamRecordSummary, createTrainerTeamId } from "../sync/teamBattleRecord";
 import { createTrainerSnapshot } from "../sync/trainerSnapshot";
 import { validateFrameContract } from "./frame";
 
@@ -175,6 +176,11 @@ describe("game frame contract", () => {
       runSummary: opponent.getRunSummary(),
       wave: 5,
     });
+    opponentSnapshot.teamRecord = createTeamRecordSummary(
+      createTrainerTeamId(opponentSnapshot),
+      3,
+      1,
+    );
     const client = new HeadlessGameClient({
       seed: "frame-sheet-challenger",
       trainerSnapshots: [opponentSnapshot],
@@ -195,7 +201,12 @@ describe("game frame contract", () => {
       label: expect.any(String),
       trainerName: expect.stringContaining("Sheet Rival"),
       portraitPath: "resources/trainers/sheet-rival.webp",
+      record: expect.objectContaining({
+        wins: 3,
+        losses: 1,
+      }),
     });
+    expect(frame.scene.trainer?.recordChange?.deltaWinRate).toBeDefined();
   });
 });
 

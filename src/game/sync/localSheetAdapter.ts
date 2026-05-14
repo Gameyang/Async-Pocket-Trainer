@@ -5,6 +5,15 @@ import {
   type SheetTrainerRow,
   type TrainerSnapshot,
 } from "./trainerSnapshot";
+import {
+  matchesTeamBattleRecordQuery,
+  parseSheetTeamBattleRecordRow,
+  serializeTeamBattleRecord,
+  type SheetTeamBattleRecordRow,
+  type TeamBattleRecord,
+  type TeamBattleRecordQuery,
+  type TeamRecordSyncAdapter,
+} from "./teamBattleRecord";
 
 export interface TrainerRowQuery {
   wave: number;
@@ -20,12 +29,20 @@ export interface TrainerSyncAdapter {
   pickSnapshot(query: TrainerRowQuery, rng: SeededRng): Promise<TrainerSnapshot | undefined>;
 }
 
-export class LocalTrainerSheetAdapter implements TrainerSyncAdapter {
+export class LocalTrainerSheetAdapter implements TrainerSyncAdapter, TeamRecordSyncAdapter {
   private readonly rows: SheetTrainerRow[] = [];
+  private readonly teamBattleRows: SheetTeamBattleRecordRow[] = [];
 
-  constructor(initialRows: readonly SheetTrainerRow[] = []) {
+  constructor(
+    initialRows: readonly SheetTrainerRow[] = [],
+    initialTeamBattleRows: readonly SheetTeamBattleRecordRow[] = [],
+  ) {
     for (const row of initialRows) {
       this.appendValidatedRow(row);
+    }
+
+    for (const row of initialTeamBattleRows) {
+      this.appendValidatedTeamBattleRow(row);
     }
   }
 
@@ -54,9 +71,35 @@ export class LocalTrainerSheetAdapter implements TrainerSyncAdapter {
     return rng.pick(snapshots);
   }
 
+  async appendTeamBattleRecord(
+    record: TeamBattleRecord,
+  ): Promise<SheetTeamBattleRecordRow> {
+    const row = serializeTeamBattleRecord(record);
+    this.appendValidatedTeamBattleRow(row);
+    return cloneTeamBattleRow(row);
+  }
+
+  async listTeamBattleRows(
+    query: TeamBattleRecordQuery = {},
+  ): Promise<SheetTeamBattleRecordRow[]> {
+    return this.teamBattleRows
+      .filter((row) => matchesTeamBattleRecordQuery(row, query))
+      .map(cloneTeamBattleRow);
+  }
+
+  async listTeamBattleRecords(query: TeamBattleRecordQuery = {}): Promise<TeamBattleRecord[]> {
+    const rows = await this.listTeamBattleRows(query);
+    return rows.map(parseSheetTeamBattleRecordRow);
+  }
+
   private appendValidatedRow(row: SheetTrainerRow): void {
     parseSheetTrainerRow(row);
     this.rows.push(cloneRow(row));
+  }
+
+  private appendValidatedTeamBattleRow(row: SheetTeamBattleRecordRow): void {
+    parseSheetTeamBattleRecordRow(row);
+    this.teamBattleRows.push(cloneTeamBattleRow(row));
   }
 }
 
@@ -81,5 +124,9 @@ export function matchesTrainerRowQuery(row: SheetTrainerRow, query: TrainerRowQu
 }
 
 function cloneRow(row: SheetTrainerRow): SheetTrainerRow {
+  return { ...row };
+}
+
+function cloneTeamBattleRow(row: SheetTeamBattleRecordRow): SheetTeamBattleRecordRow {
   return { ...row };
 }

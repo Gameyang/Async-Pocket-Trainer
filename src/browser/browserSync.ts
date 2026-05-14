@@ -17,9 +17,22 @@ import {
   isCheckpointWave,
   type TrainerSnapshot,
 } from "../game/sync/trainerSnapshot";
+import {
+  createTeamBattleRecord,
+  createTrainerTeamId,
+  DEFAULT_TEAM_BATTLE_RECORD_SHEET_NAME,
+  summarizeTeamBattleRecords,
+  type TeamBattleRecord,
+  type TeamRecordSyncAdapter,
+} from "../game/sync/teamBattleRecord";
 import { formatWave } from "../game/localization";
 import type { GameAction, GameState, RunSummary } from "../game/types";
+import type { StorageLike } from "./clientStorage";
 import { hasSyncCredentials, type SyncSettings } from "./syncSettings";
+import {
+  createTeamBattleRecordCacheKey,
+  TeamBattleRecordCache,
+} from "./teamBattleRecordCache";
 
 export type BrowserSyncState = "disabled" | "offline" | "ready" | "syncing" | "synced" | "error";
 
@@ -29,12 +42,15 @@ export interface BrowserSyncStatus {
   lastSyncedAt?: string;
   lastError?: string;
   candidateCount?: number;
+  pendingTeamRecordCount?: number;
 }
 
 export interface BrowserSyncControllerOptions {
   adapter?: TrainerSyncAdapter;
+  teamRecordAdapter?: TeamRecordSyncAdapter;
   fetch?: FetchLike & PublicCsvFetchLike & AppsScriptFetchLike;
   playerId?: string;
+  storage?: StorageLike;
   now?: () => string;
 }
 
@@ -47,11 +63,14 @@ export interface BrowserCheckpointSubmitOptions {
 
 export class BrowserSyncController {
   private adapter?: TrainerSyncAdapter;
+  private teamRecordAdapter?: TeamRecordSyncAdapter;
   private appsScriptSubmitter?: AppsScriptSubmitter;
   private readonly injectedAdapter?: TrainerSyncAdapter;
+  private readonly injectedTeamRecordAdapter?: TeamRecordSyncAdapter;
   private readonly fetchImpl?: FetchLike & PublicCsvFetchLike & AppsScriptFetchLike;
   private readonly playerId: string;
   private readonly now: () => string;
+  private readonly teamRecordCache: TeamBattleRecordCache;
   private settings: SyncSettings;
   private appendedCheckpoints = new Set<string>();
   private status: BrowserSyncStatus = {
@@ -65,9 +84,14 @@ export class BrowserSyncController {
     options: BrowserSyncControllerOptions = {},
   ) {
     this.injectedAdapter = options.adapter;
+    this.injectedTeamRecordAdapter = options.teamRecordAdapter;
     this.fetchImpl = options.fetch;
     this.playerId = options.playerId ?? "browser-player";
     this.now = options.now ?? (() => new Date().toISOString());
+    this.teamRecordCache = new TeamBattleRecordCache(
+      options.storage,
+      createTeamBattleRecordCacheKey(this.playerId),
+    );
     this.settings = settings;
     this.rebuildAdapter();
   }
@@ -112,10 +136,11 @@ export class BrowserSyncController {
         wave: state.currentWave,
         excludePlayerId: this.playerId,
       });
+      await this.refreshTeamBattleRecords();
       const picked = pickTrainerSnapshot(candidates, state.seed, state.currentWave, state.rngState);
 
       if (picked) {
-        this.client.addTrainerSnapshot(picked);
+        this.client.addTrainerSnapshot(this.withTeamRecordSummary(picked));
       }
 
       this.status = {
@@ -123,14 +148,33 @@ export class BrowserSyncController {
         message: picked ? `${picked.trainerName} 불러옴` : "시트 트레이너가 없습니다",
         lastSyncedAt: this.now(),
         candidateCount: candidates.length,
+        pendingTeamRecordCount: this.teamRecordCache.listPendingRecords().length,
       };
     } catch (error) {
       this.status = toErrorStatus(error, "트레이너 목록 불러오기 실패");
     }
   }
 
-  async afterDispatch(_action: GameAction): Promise<void> {
-    return;
+  async afterDispatch(action: GameAction): Promise<void> {
+    if (action.type !== "RESOLVE_NEXT_ENCOUNTER") {
+      return;
+    }
+
+    const record = createTeamBattleRecord(this.client.getSnapshot(), {
+      playerId: this.playerId,
+      createdAt: this.now(),
+    });
+
+    if (!record) {
+      return;
+    }
+
+    this.teamRecordCache.upsertPending(record, this.now());
+    this.status = {
+      ...this.status,
+      pendingTeamRecordCount: this.teamRecordCache.listPendingRecords().length,
+    };
+    await this.flushTeamBattleRecords();
   }
 
   async submitCheckpointRecord(
@@ -184,6 +228,101 @@ export class BrowserSyncController {
     return this.getStatus();
   }
 
+  async flushTeamBattleRecords(): Promise<BrowserSyncStatus> {
+    const pending = this.teamRecordCache.listPendingRecords();
+
+    if (pending.length === 0) {
+      return this.getStatus();
+    }
+
+    const submitter = this.resolveTeamRecordSubmitter();
+    if (!submitter) {
+      this.status = {
+        ...this.status,
+        state: this.settings.enabled ? "offline" : "disabled",
+        message: this.settings.enabled
+          ? "팀 전적은 로컬에 저장됨. 업로드 설정이 필요합니다."
+          : "팀 전적은 로컬에 저장됨. 동기화 꺼짐",
+        pendingTeamRecordCount: pending.length,
+      };
+      return this.getStatus();
+    }
+
+    for (const record of pending) {
+      try {
+        await submitter(record);
+        this.teamRecordCache.markSynced(record.recordId, this.now());
+      } catch (error) {
+        this.teamRecordCache.markError(record.recordId, error, this.now());
+        this.status = toErrorStatus(error, "팀 전적 업로드 실패");
+        this.status.pendingTeamRecordCount = this.teamRecordCache.listPendingRecords().length;
+        return this.getStatus();
+      }
+    }
+
+    this.status = {
+      ...this.status,
+      state: "synced",
+      message: "팀 전적 동기화 완료",
+      lastSyncedAt: this.now(),
+      pendingTeamRecordCount: this.teamRecordCache.listPendingRecords().length,
+    };
+    return this.getStatus();
+  }
+
+  private async refreshTeamBattleRecords(): Promise<void> {
+    if (!this.settings.enabled || !this.teamRecordAdapter) {
+      return;
+    }
+
+    try {
+      const records = await this.teamRecordAdapter.listTeamBattleRecords();
+      this.teamRecordCache.mergeSyncedRecords(records, this.now());
+    } catch (error) {
+      this.status = {
+        ...this.status,
+        lastError: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  private withTeamRecordSummary(snapshot: TrainerSnapshot): TrainerSnapshot {
+    const teamId = createTrainerTeamId(snapshot);
+    const record = summarizeTeamBattleRecords(this.teamRecordCache.listRecords(), teamId);
+
+    return {
+      ...snapshot,
+      teamRecord: record,
+    };
+  }
+
+  private resolveTeamRecordSubmitter():
+    | ((record: TeamBattleRecord) => Promise<unknown>)
+    | undefined {
+    if (!this.settings.enabled) {
+      return undefined;
+    }
+
+    if (this.settings.mode === "publicCsv") {
+      if (this.appsScriptSubmitter) {
+        return (record) => this.appsScriptSubmitter?.submitTeamBattleRecord(record) ?? Promise.resolve();
+      }
+
+      if (this.injectedTeamRecordAdapter) {
+        return (record) =>
+          this.injectedTeamRecordAdapter?.appendTeamBattleRecord(record) ?? Promise.resolve();
+      }
+
+      return undefined;
+    }
+
+    if (!this.teamRecordAdapter) {
+      return undefined;
+    }
+
+    return (record) => this.teamRecordAdapter?.appendTeamBattleRecord(record) ?? Promise.resolve();
+  }
+
   private resolveReadyAdapter(): TrainerSyncAdapter | undefined {
     if (!this.settings.enabled) {
       this.status = {
@@ -209,6 +348,7 @@ export class BrowserSyncController {
 
   private rebuildAdapter(): void {
     this.appsScriptSubmitter = undefined;
+    this.teamRecordAdapter = undefined;
 
     if (!this.settings.enabled) {
       this.adapter = undefined;
@@ -235,15 +375,31 @@ export class BrowserSyncController {
           this.settings.spreadsheetId,
           sheetNameFromRange(this.settings.range),
         );
+      const teamRecordCsvUrl =
+        this.settings.publicTeamRecordCsvUrl ||
+        (this.settings.spreadsheetId
+          ? createPublicSheetCsvUrl(
+              this.settings.spreadsheetId,
+              sheetNameFromRange(
+                this.settings.teamRecordRange ?? DEFAULT_TEAM_BATTLE_RECORD_SHEET_NAME,
+              ),
+            )
+          : undefined);
       this.adapter =
         this.injectedAdapter ??
         new PublicCsvTrainerAdapter({
           csvUrl,
+          teamRecordCsvUrl,
           fetch: this.fetchImpl,
         });
+      this.teamRecordAdapter =
+        this.injectedTeamRecordAdapter ?? asTeamRecordSyncAdapter(this.adapter);
       this.appsScriptSubmitter = this.settings.appsScriptSubmitUrl
         ? new AppsScriptSubmitter({
             submitUrl: this.settings.appsScriptSubmitUrl,
+            teamRecordSheetName: sheetNameFromRange(
+              this.settings.teamRecordRange ?? DEFAULT_TEAM_BATTLE_RECORD_SHEET_NAME,
+            ),
             fetch: this.fetchImpl,
           })
         : undefined;
@@ -272,10 +428,13 @@ export class BrowserSyncController {
       new GoogleSheetsTrainerAdapter({
         spreadsheetId: this.settings.spreadsheetId,
         range: this.settings.range,
+        teamRecordRange: this.settings.teamRecordRange,
         apiKey: this.settings.apiKey,
         accessToken: this.settings.accessToken,
         fetch: this.fetchImpl,
       });
+    this.teamRecordAdapter =
+      this.injectedTeamRecordAdapter ?? asTeamRecordSyncAdapter(this.adapter);
     this.status = {
       state: "ready",
       message: "동기화 준비됨",
@@ -344,6 +503,20 @@ function pickTrainerSnapshot(
   }
 
   return new SeededRng(`${seed}:browser-sync:${wave}:${rngState}`).pick([...candidates]);
+}
+
+function asTeamRecordSyncAdapter(adapter: unknown): TeamRecordSyncAdapter | undefined {
+  if (
+    typeof adapter === "object" &&
+    adapter !== null &&
+    "appendTeamBattleRecord" in adapter &&
+    "listTeamBattleRows" in adapter &&
+    "listTeamBattleRecords" in adapter
+  ) {
+    return adapter as TeamRecordSyncAdapter;
+  }
+
+  return undefined;
 }
 
 function toErrorStatus(error: unknown, fallback: string): BrowserSyncStatus {

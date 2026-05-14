@@ -3,6 +3,7 @@ import type { StorageLike } from "./clientStorage";
 export const SYNC_SETTINGS_STORAGE_KEY = "apt:sync-settings:v1";
 export const DEFAULT_PUBLIC_SPREADSHEET_ID = "14ra0Y0zLORpru3nmT-obu3yD1UuO2kAJP4aJ5IIA0M4";
 export const DEFAULT_PUBLIC_SHEET_NAME = "APT_WAVE_TEAMS";
+export const DEFAULT_TEAM_RECORD_SHEET_NAME = "APT_TEAM_RECORDS";
 export const CODE_APPS_SCRIPT_SUBMIT_URL: string =
   "https://script.google.com/macros/s/AKfycbzHULATi4RpggbJ5BJGKdmcUEf3ZPMB6-zhhl1BRV5KQTKnnw9Ym0VHQGAM5hmisxpl/exec";
 
@@ -13,7 +14,9 @@ export interface SyncSettings {
   mode: SyncMode;
   spreadsheetId: string;
   range: string;
+  teamRecordRange?: string;
   publicCsvUrl?: string;
+  publicTeamRecordCsvUrl?: string;
   appsScriptSubmitUrl?: string;
   apiKey?: string;
   accessToken?: string;
@@ -24,6 +27,7 @@ export const DEFAULT_SYNC_SETTINGS: SyncSettings = {
   mode: "publicCsv",
   spreadsheetId: DEFAULT_PUBLIC_SPREADSHEET_ID,
   range: DEFAULT_PUBLIC_SHEET_NAME,
+  teamRecordRange: DEFAULT_TEAM_RECORD_SHEET_NAME,
 };
 
 export const CODE_SYNC_SETTINGS: SyncSettings = {
@@ -31,6 +35,7 @@ export const CODE_SYNC_SETTINGS: SyncSettings = {
   mode: "publicCsv",
   spreadsheetId: DEFAULT_PUBLIC_SPREADSHEET_ID,
   range: `${DEFAULT_PUBLIC_SHEET_NAME}!A:I`,
+  teamRecordRange: `${DEFAULT_TEAM_RECORD_SHEET_NAME}!A:S`,
   ...(CODE_APPS_SCRIPT_SUBMIT_URL ? { appsScriptSubmitUrl: CODE_APPS_SCRIPT_SUBMIT_URL } : {}),
 };
 
@@ -76,7 +81,12 @@ export function normalizeSyncSettings(value: unknown): SyncSettings {
   const mode = readMode(source.mode, source);
   const spreadsheetId = readString(source.spreadsheetId, "spreadsheetId");
   const range = readString(source.range, "range");
+  const teamRecordRange = readOptionalString(source.teamRecordRange, "teamRecordRange");
   const publicCsvUrl = readOptionalString(source.publicCsvUrl, "publicCsvUrl");
+  const publicTeamRecordCsvUrl = readOptionalString(
+    source.publicTeamRecordCsvUrl,
+    "publicTeamRecordCsvUrl",
+  );
   const appsScriptSubmitUrl = readOptionalString(source.appsScriptSubmitUrl, "appsScriptSubmitUrl");
   const apiKey = readOptionalString(source.apiKey, "apiKey");
   const accessToken = readOptionalString(source.accessToken, "accessToken");
@@ -86,7 +96,9 @@ export function normalizeSyncSettings(value: unknown): SyncSettings {
     mode,
     spreadsheetId,
     range: range || DEFAULT_SYNC_SETTINGS.range,
+    teamRecordRange: teamRecordRange || DEFAULT_SYNC_SETTINGS.teamRecordRange,
     ...(publicCsvUrl ? { publicCsvUrl } : {}),
+    ...(publicTeamRecordCsvUrl ? { publicTeamRecordCsvUrl } : {}),
     ...(appsScriptSubmitUrl ? { appsScriptSubmitUrl } : {}),
     ...(apiKey ? { apiKey } : {}),
     ...(accessToken ? { accessToken } : {}),

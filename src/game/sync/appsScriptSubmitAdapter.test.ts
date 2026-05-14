@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { HeadlessGameClient } from "../headlessClient";
 import { sheetTrainerRowToValues } from "./googleSheetsAdapter";
+import { sheetTeamBattleRecordRowToValues, type TeamBattleRecord } from "./teamBattleRecord";
 import { createTrainerSnapshot, serializeTrainerSnapshot } from "./trainerSnapshot";
 import { AppsScriptSubmitter, type AppsScriptFetchLike } from "./appsScriptSubmitAdapter";
 
@@ -37,6 +38,28 @@ describe("AppsScriptSubmitter", () => {
       snapshot: JSON.parse(JSON.stringify(snapshot)),
     });
   });
+
+  it("posts team battle records with sheet routing metadata", async () => {
+    const requests: SubmitRequest[] = [];
+    const submitter = new AppsScriptSubmitter({
+      submitUrl: "https://script.google.com/macros/s/deploy-id/exec",
+      fetch: createFetch(requests),
+    });
+    const record = buildTeamBattleRecord();
+
+    await expect(submitter.submitTeamBattleRecord(record)).resolves.toEqual({
+      ok: true,
+      opaque: true,
+    });
+
+    expect(JSON.parse(requests[0].init.body ?? "{}")).toMatchObject({
+      kind: "teamBattleRecord",
+      sheetName: "APT_TEAM_RECORDS",
+      row: record,
+      values: sheetTeamBattleRecordRowToValues(record),
+      record,
+    });
+  });
 });
 
 interface SubmitRequest {
@@ -69,4 +92,28 @@ function buildSnapshot() {
     runSummary: client.getRunSummary(),
     wave: 5,
   });
+}
+
+function buildTeamBattleRecord(): TeamBattleRecord {
+  return {
+    version: 1,
+    recordId: "battle-apps-script-a",
+    createdAt: "2026-05-12T00:10:00.000Z",
+    opponentTeamId: "team-apps-script-a",
+    opponentPlayerId: "opponent-a",
+    opponentTrainerName: "Apps Rival",
+    opponentWave: 5,
+    opponentCreatedAt: "2026-05-12T00:00:00.000Z",
+    opponentSeed: "apps-rival",
+    opponentTeamPower: 110,
+    challengerPlayerId: "player-a",
+    challengerTrainerName: "Player A",
+    challengerSeed: "apps-challenger",
+    battleWave: 5,
+    battleWinner: "player",
+    opponentResult: "loss",
+    challengerTeamPower: 140,
+    turns: 5,
+    source: "browser",
+  };
 }

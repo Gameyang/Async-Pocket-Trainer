@@ -31,6 +31,18 @@ describe("renderer contract boundaries", () => {
     expect(source).toContain("resolveTrainerAssetPath(trainer.portraitPath)");
   });
 
+  it("keeps battle feedback using visible damage glyphs and move VFX hooks", () => {
+    const source = readSource("htmlRenderer.ts");
+
+    expect(source).toContain("damage-atlas");
+    expect(source).toContain("damage-glyph");
+    expect(source).toContain("move-vfx");
+    expect(source).toContain("data-move-shape");
+    expect(source).toContain("data-move-type");
+    expect(source).toContain("data-motion-clip");
+    expect(source).toContain("resolveBattleMotionTemplate");
+  });
+
   it("does not advertise an installable PWA shell on static GitHub Pages", () => {
     const index = readFileSync(new URL("../../index.html", import.meta.url), "utf8");
 

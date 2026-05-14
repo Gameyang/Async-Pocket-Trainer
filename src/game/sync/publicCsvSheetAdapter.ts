@@ -10,11 +10,22 @@ import {
   type SheetTrainerRow,
   type TrainerSnapshot,
 } from "./trainerSnapshot";
+import {
+  matchesTeamBattleRecordQuery,
+  parseSheetTeamBattleRecordRow,
+  SHEET_TEAM_BATTLE_RECORD_COLUMNS,
+  trySheetTeamBattleRecordRowFromValues,
+  type SheetTeamBattleRecordRow,
+  type TeamBattleRecord,
+  type TeamBattleRecordQuery,
+  type TeamRecordSyncAdapter,
+} from "./teamBattleRecord";
 
 export const DEFAULT_PUBLIC_SHEET_NAME = "APT_WAVE_TEAMS";
 
 export interface PublicCsvTrainerAdapterOptions {
   csvUrl: string;
+  teamRecordCsvUrl?: string;
   fetch?: PublicCsvFetchLike;
 }
 
@@ -33,12 +44,16 @@ export interface PublicCsvResponseLike {
   text(): Promise<string>;
 }
 
-export class PublicCsvTrainerAdapter implements TrainerSyncAdapter {
+export class PublicCsvTrainerAdapter implements TrainerSyncAdapter, TeamRecordSyncAdapter {
   private readonly csvUrl: string;
+  private readonly teamRecordCsvUrl?: string;
   private readonly fetchImpl: PublicCsvFetchLike;
 
   constructor(options: PublicCsvTrainerAdapterOptions) {
     this.csvUrl = requireNonEmpty(options.csvUrl, "csvUrl");
+    this.teamRecordCsvUrl = options.teamRecordCsvUrl
+      ? requireNonEmpty(options.teamRecordCsvUrl, "teamRecordCsvUrl")
+      : undefined;
     this.fetchImpl = options.fetch ?? getGlobalFetch();
   }
 
@@ -84,6 +99,46 @@ export class PublicCsvTrainerAdapter implements TrainerSyncAdapter {
     }
 
     return rng.pick(snapshots);
+  }
+
+  async appendTeamBattleRecord(_record: TeamBattleRecord): Promise<SheetTeamBattleRecordRow> {
+    throw new Error(
+      "Public CSV team record sync is read-only. Use Google API or a submit endpoint to append.",
+    );
+  }
+
+  async listTeamBattleRows(
+    query: TeamBattleRecordQuery = {},
+  ): Promise<SheetTeamBattleRecordRow[]> {
+    if (!this.teamRecordCsvUrl) {
+      return [];
+    }
+
+    const response = await this.fetchImpl(this.teamRecordCsvUrl, {
+      method: "GET",
+      headers: {
+        Accept: "text/csv",
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`공개 팀 기록 CSV 요청 실패: ${response.status} ${response.statusText}`);
+    }
+
+    return parseCsvRows(await response.text())
+      .filter((row) => row.some((cell) => cell.trim().length > 0))
+      .filter((row, index) => !isTeamRecordHeaderRow(row, index))
+      .flatMap((rowValues) => {
+        const row = trySheetTeamBattleRecordRowFromValues(rowValues);
+        return row ? [row] : [];
+      })
+      .filter((row) => matchesTeamBattleRecordQuery(row, query))
+      .map((row) => ({ ...row }));
+  }
+
+  async listTeamBattleRecords(query: TeamBattleRecordQuery = {}): Promise<TeamBattleRecord[]> {
+    const rows = await this.listTeamBattleRows(query);
+    return rows.map(parseSheetTeamBattleRecordRow);
   }
 }
 
@@ -180,6 +235,15 @@ function isHeaderRow(values: readonly string[], index: number): boolean {
   return (
     index === 0 &&
     SHEET_TRAINER_ROW_COLUMNS.every(
+      (column, columnIndex) => normalizeHeader(values[columnIndex]) === column,
+    )
+  );
+}
+
+function isTeamRecordHeaderRow(values: readonly string[], index: number): boolean {
+  return (
+    index === 0 &&
+    SHEET_TEAM_BATTLE_RECORD_COLUMNS.every(
       (column, columnIndex) => normalizeHeader(values[columnIndex]) === column,
     )
   );

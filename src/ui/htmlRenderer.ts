@@ -1,4 +1,4 @@
-import { ballTypes, type BattleStatus, type GameAction } from "../game/types";
+import { ballTypes, type BattleStatus, type ElementType, type GameAction } from "../game/types";
 import type {
   FrameAction,
   FrameBattleReplayEvent,
@@ -92,6 +92,23 @@ interface AudioState {
   currentBgmKey?: FrameBgmKey;
   bgm?: HTMLAudioElement;
   playedCueIds: Set<string>;
+}
+
+type BattleMotionClip =
+  | "use-strike"
+  | "use-launch"
+  | "use-beam"
+  | "use-burst"
+  | "use-aura"
+  | "take-hit"
+  | "take-heavy"
+  | "take-guard"
+  | "take-status"
+  | "evade";
+
+interface BattleMotionTemplate {
+  clip: BattleMotionClip;
+  role: "user" | "target";
 }
 
 interface ShopTargetState {
@@ -201,19 +218,19 @@ function bindShopTargetSelection(
       const targetEntityId = button.dataset.shopTargetId;
       const action = shopTarget.action;
 
-      if (!targetEntityId || !action || action.action.type !== "BUY_HEAL") {
+      if (!targetEntityId || !action) {
+        return;
+      }
+
+      const payload = buildTargetedPayload(action, targetEntityId);
+      if (!payload) {
         return;
       }
 
       root.dataset.busy = "true";
 
       try {
-        await client.dispatch({
-          type: "BUY_HEAL",
-          scope: action.action.scope,
-          tier: action.action.tier,
-          targetEntityId,
-        });
+        await client.dispatch(payload);
       } finally {
         delete root.dataset.busy;
         shopTarget.action = undefined;
@@ -223,8 +240,36 @@ function bindShopTargetSelection(
   });
 }
 
+function buildTargetedPayload(action: FrameAction, targetEntityId: string): GameAction | undefined {
+  if (action.action.type === "BUY_HEAL") {
+    return {
+      type: "BUY_HEAL",
+      scope: action.action.scope,
+      tier: action.action.tier,
+      targetEntityId,
+    };
+  }
+  if (action.action.type === "BUY_STAT_BOOST") {
+    return { type: "BUY_STAT_BOOST", tier: action.action.tier, targetEntityId };
+  }
+  if (action.action.type === "BUY_STAT_REROLL") {
+    return { type: "BUY_STAT_REROLL", targetEntityId };
+  }
+  if (action.action.type === "BUY_TEACH_MOVE") {
+    return { type: "BUY_TEACH_MOVE", element: action.action.element, targetEntityId };
+  }
+  return undefined;
+}
+
 function requiresShopTarget(action: FrameAction): boolean {
-  return action.action.type === "BUY_HEAL" && action.action.scope === "single";
+  if (action.action.type === "BUY_HEAL") {
+    return action.action.scope === "single";
+  }
+  return (
+    action.action.type === "BUY_STAT_BOOST" ||
+    action.action.type === "BUY_STAT_REROLL" ||
+    action.action.type === "BUY_TEACH_MOVE"
+  );
 }
 
 function bindTeamDetailPopup(root: HTMLElement): void {
@@ -585,8 +630,10 @@ function renderBattleScreen({
       <div class="platform enemy" aria-hidden="true"></div>
       <div class="platform hero" aria-hidden="true"></div>
       ${renderTrainerBadge(frame.scene.trainer)}
+      ${renderTeamRecordShift(frame.scene.trainer, "battle")}
       ${renderBattleMonster(activeOpponent, "enemy-mon", playback.activeEvent, activeCue)}
       ${renderBattleMonster(activePlayer, "hero-mon", playback.activeEvent, activeCue)}
+      ${renderMoveVfx(playback.activeEvent, activeCue, battleEntities)}
       ${renderBattleCard(activeOpponent, "enemy", frame.scene.title, frame.scene.subtitle)}
       ${renderBattleCard(activePlayer, "hero", frame.hud.trainerName, `전투력 ${frame.hud.teamPower}`)}
       ${renderCaptureOverlay(
@@ -675,6 +722,7 @@ function renderReadyScreen({
     <section class="screen ready-screen shop-screen" data-screen="ready" data-shop-actions="${shopActions.length}" data-shop-targeting="${shopTargetAction ? "true" : "false"}" aria-label="관리 단계">
       <div class="camp-sky" aria-hidden="true"></div>
       <div class="camp-ground" aria-hidden="true"></div>
+      ${renderTeamRecordShift(frame.scene.trainer, "toast")}
       <div class="shop-top-panel">
         <div class="shop-board">
           <span class="shop-money">${formatMoney(frame.hud.money)}</span>
@@ -726,7 +774,10 @@ function renderShopTeamSlot(
   }
 
   const hpState = resolveHpState(entity.hp.ratio);
-  const selectable = Boolean(targetAction) && entity.hp.current < entity.hp.max;
+  const requiresHealable =
+    targetAction?.action.type === "BUY_HEAL" && targetAction.action.scope === "single";
+  const selectable =
+    Boolean(targetAction) && (!requiresHealable || entity.hp.current < entity.hp.max);
   const disabled = targetAction && !selectable ? " disabled" : "";
   const tag = "button";
   const typeAttribute = ' type="button"';
@@ -840,12 +891,25 @@ function renderShopActionCard(action: FrameAction, frame: GameFrame): string {
   const featuredAttribute = action.id === "encounter:next" ? ' data-shop-featured="true"' : "";
   const grade = resolveShopCardGrade(action);
   const gradeAttribute = grade ? ` data-grade="${grade}"` : "";
+  const isOnSale =
+    action.originalCost !== undefined && action.cost !== undefined && action.originalCost > action.cost;
+  const saleAttribute = isOnSale ? ' data-on-sale="true"' : "";
+  const discountPercent =
+    isOnSale && action.originalCost
+      ? Math.round((1 - (action.cost ?? 0) / action.originalCost) * 100)
+      : 0;
+  const saleBadge = isOnSale
+    ? `<span class="shop-sale-badge">-${discountPercent}%</span><span class="shop-sale-original">${formatMoney(
+        action.originalCost ?? 0,
+      )}</span>`
+    : "";
 
   return `
-    <button type="button" class="shop-card" data-action-id="${escapeHtml(action.id)}" data-shop-kind="${profile.kind}" data-role="${action.role}"${gradeAttribute}${featuredAttribute} aria-label="${escapeHtml(ariaLabel)}"${disabled}${reason}>
+    <button type="button" class="shop-card" data-action-id="${escapeHtml(action.id)}" data-shop-kind="${profile.kind}" data-role="${action.role}"${gradeAttribute}${featuredAttribute}${saleAttribute} aria-label="${escapeHtml(ariaLabel)}"${disabled}${reason}>
       ${renderActionIcon(action)}
       <strong>${titleLines.map((line) => `<span>${escapeHtml(line)}</span>`).join("")}</strong>
       <small>${escapeHtml(compactMeta)}</small>
+      ${saleBadge}
     </button>
   `;
 }
@@ -883,6 +947,22 @@ function resolveShopCardGrade(action: FrameAction): ShopCardGrade | undefined {
 
   if (action.action.type === "BUY_LEVEL_BOOST") {
     return tierToGrade(action.action.tier + 1);
+  }
+
+  if (action.action.type === "BUY_STAT_BOOST") {
+    return tierToGrade(action.action.tier + 2);
+  }
+
+  if (action.action.type === "BUY_STAT_REROLL") {
+    return "rare";
+  }
+
+  if (action.action.type === "BUY_TEACH_MOVE") {
+    return "epic";
+  }
+
+  if (action.action.type === "BUY_TYPE_LOCK") {
+    return "rare";
   }
 
   if (action.action.type === "BUY_BALL") {
@@ -979,12 +1059,40 @@ function createCompactShopTitleLines(action: FrameAction, profile: ShopActionPro
     return ["숙련도", ranges[action.action.tier]];
   }
 
+  if (action.action.type === "BUY_STAT_BOOST") {
+    const bonus: Record<1 | 2 | 3, string> = { 1: "+5", 2: "+10", 3: "+20" };
+    return ["능력치", bonus[action.action.tier]];
+  }
+
+  if (action.action.type === "BUY_STAT_REROLL") {
+    return ["능력치", "재추첨"];
+  }
+
+  if (action.action.type === "BUY_TEACH_MOVE") {
+    const typeLabel = ELEMENT_KO[action.action.element] ?? action.action.element;
+    return [`${typeLabel} 기술`, "머신"];
+  }
+
+  if (action.action.type === "BUY_TYPE_LOCK") {
+    const typeLabel = ELEMENT_KO[action.action.element] ?? action.action.element;
+    return [typeLabel, "고정"];
+  }
+
   if (action.id === "route:supply") {
     return ["보급", "루트"];
   }
 
   return [profile.title];
 }
+
+const ELEMENT_KO: Partial<Record<string, string>> = {
+  fire: "불꽃",
+  water: "물",
+  grass: "풀",
+  electric: "전기",
+  dragon: "드래곤",
+  psychic: "에스퍼",
+};
 
 function createCompactShopMeta(action: FrameAction, profile: ShopActionProfile): string {
   if (action.id === "encounter:next") {
@@ -1100,6 +1208,7 @@ function renderGameOverScreen({
         <span>도전 종료</span>
         <h2>${formatWave(frame.hud.wave)}</h2>
         <p>${escapeHtml(frame.hud.gameOverReason ?? frame.scene.subtitle)}</p>
+        ${renderTeamRecordShift(frame.scene.trainer, "inline")}
       </div>
       <div class="result-matchup">
         <div>
@@ -1236,7 +1345,49 @@ function renderTrainerBadge(trainer: FrameTrainerScene | undefined): string {
       <div>
         <span>${escapeHtml(trainer.label)}</span>
         <strong>${escapeHtml(trainer.trainerName)}</strong>
+        ${renderTrainerRecordLine(trainer)}
       </div>
+    </div>
+  `;
+}
+
+function renderTrainerRecordLine(trainer: FrameTrainerScene): string {
+  if (!trainer.record) {
+    return trainer.teamPower === undefined
+      ? ""
+      : `<div class="trainer-record"><span>전투력 ${trainer.teamPower}</span></div>`;
+  }
+
+  const record = trainer.record;
+  const winRate = formatPercent(record.winRate);
+  const teamPower = trainer.teamPower === undefined ? "" : ` · 전투력 ${trainer.teamPower}`;
+
+  return `
+    <div class="trainer-record" data-strength="${escapeHtml(record.strengthLabel)}">
+      <span>승률 ${winRate} · ${escapeHtml(record.strengthLabel)}</span>
+      <span>${record.wins}승 ${record.losses}패${teamPower}</span>
+    </div>
+  `;
+}
+
+function renderTeamRecordShift(
+  trainer: FrameTrainerScene | undefined,
+  placement: "battle" | "toast" | "inline",
+): string {
+  const change = trainer?.recordChange;
+
+  if (!change) {
+    return "";
+  }
+
+  const direction = change.deltaWinRate >= 0 ? "up" : "down";
+  const sign = change.deltaWinRate > 0 ? "+" : "";
+  const opponentResult = change.opponentResult === "win" ? "상대 승리" : "상대 패배";
+
+  return `
+    <div class="team-record-shift" data-record-direction="${direction}" data-record-placement="${placement}">
+      <strong>상대 승률 ${formatPercent(change.before.winRate)} → ${formatPercent(change.after.winRate)}</strong>
+      <span>${opponentResult} · ${sign}${formatPercent(change.deltaWinRate)}</span>
     </div>
   `;
 }
@@ -1418,12 +1569,31 @@ function actionEmoji(action: FrameAction): string {
       return RARITY_BOOST_EMOJI[action.action.tier];
     case "BUY_LEVEL_BOOST":
       return LEVEL_BOOST_EMOJI[action.action.tier];
+    case "BUY_STAT_BOOST": {
+      const map: Record<1 | 2 | 3, string> = { 1: "🛠️", 2: "💪", 3: "🦾" };
+      return map[action.action.tier];
+    }
+    case "BUY_STAT_REROLL":
+      return "🎰";
+    case "BUY_TEACH_MOVE":
+      return ELEMENT_EMOJI[action.action.element] ?? "📘";
+    case "BUY_TYPE_LOCK":
+      return ELEMENT_EMOJI[action.action.element] ?? "🔒";
     case "SET_TRAINER_NAME":
       return "💾";
     default:
       return "?";
   }
 }
+
+const ELEMENT_EMOJI: Partial<Record<string, string>> = {
+  fire: "🔥",
+  water: "💧",
+  grass: "🌿",
+  electric: "⚡",
+  dragon: "🐉",
+  psychic: "🔮",
+};
 
 function renderCommandItem(command: CommandItem, locked: boolean): string {
   return renderAction(command.action, locked);
@@ -1440,7 +1610,13 @@ function renderBattleMonster(
   }
 
   const effect = resolveBattleEffect(entity, activeEvent, activeCue);
+  const motion = resolveBattleMotionTemplate(entity, activeEvent, activeCue);
+  const moveType = activeEvent?.moveType ?? getCueMoveType(activeCue);
   const effectAttribute = effect ? ` data-battle-effect="${effect}"` : "";
+  const motionAttribute = motion
+    ? ` data-motion-clip="${motion.clip}" data-motion-role="${motion.role}" data-motion-lane="${entity.owner === "player" ? "hero" : "enemy"}"`
+    : "";
+  const moveTypeAttribute = moveType ? ` data-move-type="${escapeHtml(moveType)}"` : "";
   const cueAttribute =
     activeCue && visualCueReferencesEntity(activeCue, entity.id)
       ? ` data-battle-effect-key="${escapeHtml(activeCue.effectKey)}"`
@@ -1448,10 +1624,125 @@ function renderBattleMonster(
   const faintedAttribute = entity.flags.includes("fainted") ? ' data-fainted="true"' : "";
 
   return `
-    <div class="screen-monster ${className}" data-entity-id="${escapeHtml(entity.id)}"${effectAttribute}${cueAttribute}${faintedAttribute}>
+    <div class="screen-monster ${className}" data-entity-id="${escapeHtml(entity.id)}"${effectAttribute}${motionAttribute}${moveTypeAttribute}${cueAttribute}${faintedAttribute}>
       <img src="${resolveAssetPath(entity.assetPath)}" alt="${escapeHtml(`${entity.name} 포켓몬`)}" />
     </div>
   `;
+}
+
+function resolveBattleMotionTemplate(
+  entity: FrameEntity,
+  activeEvent: FrameBattleReplayEvent | undefined,
+  activeCue: FrameVisualCue | undefined,
+): BattleMotionTemplate | undefined {
+  if (!activeEvent || !shouldRenderBattleMotion(activeEvent)) {
+    return undefined;
+  }
+
+  const sourceId = activeEvent.sourceEntityId ?? getCueSourceEntityId(activeCue);
+  const targetId =
+    activeEvent.targetEntityId ?? activeEvent.entityId ?? getCueTargetEntityId(activeCue);
+
+  if (sourceId === entity.id) {
+    return {
+      clip: resolveUserMotionClip(activeEvent, activeCue),
+      role: "user",
+    };
+  }
+
+  if (targetId !== entity.id) {
+    return undefined;
+  }
+
+  return {
+    clip: resolveTargetMotionClip(activeEvent, activeCue),
+    role: "target",
+  };
+}
+
+function shouldRenderBattleMotion(activeEvent: FrameBattleReplayEvent): boolean {
+  return (
+    activeEvent.type === "damage.apply" ||
+    activeEvent.type === "move.miss" ||
+    activeEvent.type === "move.effect" ||
+    activeEvent.type === "status.apply" ||
+    activeEvent.type === "status.immune"
+  );
+}
+
+function getCueSourceEntityId(activeCue: FrameVisualCue | undefined): string | undefined {
+  if (
+    activeCue?.type === "battle.hit" ||
+    activeCue?.type === "battle.miss" ||
+    activeCue?.type === "battle.support"
+  ) {
+    return activeCue.sourceEntityId;
+  }
+
+  return undefined;
+}
+
+function getCueTargetEntityId(activeCue: FrameVisualCue | undefined): string | undefined {
+  if (
+    activeCue?.type === "battle.hit" ||
+    activeCue?.type === "battle.miss" ||
+    activeCue?.type === "battle.support"
+  ) {
+    return activeCue.targetEntityId ?? activeCue.entityId;
+  }
+
+  return undefined;
+}
+
+function resolveUserMotionClip(
+  activeEvent: FrameBattleReplayEvent,
+  activeCue: FrameVisualCue | undefined,
+): BattleMotionClip {
+  if (activeEvent.moveCategory === "status" || activeCue?.type === "battle.support") {
+    return "use-aura";
+  }
+
+  const moveType = activeEvent.moveType ?? getCueMoveType(activeCue);
+
+  if (moveType && ["electric", "psychic", "ice", "dragon"].includes(moveType)) {
+    return "use-beam";
+  }
+
+  if (moveType && ["fire", "water", "poison", "rock", "ground", "steel"].includes(moveType)) {
+    return "use-launch";
+  }
+
+  if (
+    activeEvent.moveCategory === "physical" ||
+    (moveType && ["normal", "fighting", "bug", "dark", "flying"].includes(moveType))
+  ) {
+    return "use-strike";
+  }
+
+  return "use-burst";
+}
+
+function resolveTargetMotionClip(
+  activeEvent: FrameBattleReplayEvent,
+  activeCue: FrameVisualCue | undefined,
+): BattleMotionClip {
+  if (activeEvent.type === "move.miss" || activeCue?.type === "battle.miss") {
+    return "evade";
+  }
+
+  if (activeEvent.type === "damage.apply") {
+    if (activeEvent.critical || (activeEvent.effectiveness ?? 1) > 1) {
+      return "take-heavy";
+    }
+
+    if ((activeEvent.effectiveness ?? 1) > 0 && (activeEvent.effectiveness ?? 1) < 1) {
+      return "take-guard";
+    }
+
+    return "take-hit";
+  }
+
+  return "take-status";
 }
 
 function renderBattleCard(
@@ -1571,7 +1862,133 @@ function renderBattleCue(
     return "";
   }
 
-  return `<div class="battle-float" data-cue-kind="${cue.kind}" data-cue-lane="${lane}">${escapeHtml(cue.text)}</div>`;
+  const moveType = activeEvent.moveType ?? getCueMoveType(activeCue);
+  const moveTypeAttribute = moveType ? ` data-move-type="${escapeHtml(moveType)}"` : "";
+  const damageAtlas = renderDamageAtlas(activeEvent, cue.kind);
+  const feedback = renderBattleFeedbackText(activeEvent, cue.text, cue.kind);
+  const content = damageAtlas
+    ? `${damageAtlas}<span class="battle-feedback">${escapeHtml(feedback)}</span>`
+    : `<span class="battle-feedback">${escapeHtml(feedback)}</span>`;
+
+  return `<div class="battle-float" data-cue-kind="${escapeHtml(cue.kind)}" data-cue-lane="${lane}"${moveTypeAttribute}>${content}</div>`;
+}
+
+function renderDamageAtlas(activeEvent: FrameBattleReplayEvent, cueKind: string): string {
+  if (activeEvent.type !== "damage.apply") {
+    return "";
+  }
+
+  const damage = Math.max(0, activeEvent.damage ?? 0);
+  const glyphs = `-${damage}`
+    .split("")
+    .map(
+      (glyph, index) =>
+        `<span class="damage-glyph" data-glyph="${escapeHtml(glyph)}" style="--glyph-index:${index}">${escapeHtml(glyph)}</span>`,
+    )
+    .join("");
+
+  return `<span class="damage-atlas" data-damage-kind="${escapeHtml(cueKind)}" aria-label="${damage} damage">${glyphs}</span>`;
+}
+
+function renderBattleFeedbackText(
+  activeEvent: FrameBattleReplayEvent,
+  fallback: string,
+  cueKind: string,
+): string {
+  if (activeEvent.type === "damage.apply") {
+    if (cueKind === "critical") {
+      return "급소에 맞았다!";
+    }
+
+    if (cueKind === "super-effective") {
+      return "효과가 굉장했다!";
+    }
+
+    if (cueKind === "resisted") {
+      return "효과가 별로였다...";
+    }
+
+    return "피해!";
+  }
+
+  if (activeEvent.type === "move.miss") {
+    return "빗나갔다!";
+  }
+
+  return fallback;
+}
+
+function getCueMoveType(activeCue: FrameVisualCue | undefined): ElementType | undefined {
+  if (activeCue?.type === "battle.hit" || activeCue?.type === "battle.miss") {
+    return activeCue.moveType;
+  }
+
+  if (activeCue?.type === "battle.support") {
+    return activeCue.moveType;
+  }
+
+  return undefined;
+}
+
+function renderMoveVfx(
+  activeEvent: FrameBattleReplayEvent | undefined,
+  activeCue: FrameVisualCue | undefined,
+  entities: readonly FrameEntity[],
+): string {
+  const moveType = activeEvent?.moveType ?? getCueMoveType(activeCue);
+
+  if (!activeEvent || !moveType || !shouldRenderMoveVfx(activeEvent)) {
+    return "";
+  }
+
+  const source = entities.find((entity) => entity.id === activeEvent.sourceEntityId);
+  const target = entities.find(
+    (entity) => entity.id === (activeEvent.targetEntityId ?? activeEvent.entityId),
+  );
+  const lane = source?.owner === "opponent" ? "enemy-to-hero" : "hero-to-enemy";
+  const targetLane = target?.owner === "player" ? "hero" : "enemy";
+  const shape = resolveMoveVfxShape(moveType, activeEvent, activeCue);
+  const sparks = Array.from(
+    { length: 7 },
+    (_, index) => `<span class="move-vfx-spark" style="--spark-index:${index}"></span>`,
+  ).join("");
+
+  return `
+    <div class="move-vfx" data-move-type="${escapeHtml(moveType)}" data-move-shape="${shape}" data-move-lane="${lane}" data-vfx-target-lane="${targetLane}" aria-hidden="true">
+      <span class="move-vfx-core"></span>
+      ${sparks}
+    </div>
+  `;
+}
+
+function shouldRenderMoveVfx(activeEvent: FrameBattleReplayEvent): boolean {
+  return (
+    activeEvent.type === "damage.apply" ||
+    activeEvent.type === "move.miss" ||
+    activeEvent.type === "move.effect" ||
+    activeEvent.type === "status.apply" ||
+    activeEvent.type === "status.immune"
+  );
+}
+
+function resolveMoveVfxShape(
+  moveType: ElementType,
+  activeEvent: FrameBattleReplayEvent,
+  activeCue: FrameVisualCue | undefined,
+): string {
+  if (activeEvent.moveCategory === "status" || activeCue?.type === "battle.support") {
+    return "aura";
+  }
+
+  if (["electric", "psychic", "ice", "dragon"].includes(moveType)) {
+    return "beam";
+  }
+
+  if (["fire", "water", "poison", "rock", "ground", "steel"].includes(moveType)) {
+    return "missile";
+  }
+
+  return "particles";
 }
 
 function updateBattlePlayback(playback: BattlePlaybackState, frame: GameFrame): void {
@@ -1782,6 +2199,10 @@ function escapeHtml(value: string): string {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+function formatPercent(value: number): string {
+  return `${Math.round(value * 100)}%`;
 }
 
 function cssEscape(value: string): string {

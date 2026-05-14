@@ -32,6 +32,7 @@ export type BallType = (typeof ballTypes)[number];
 export type EncounterKind = "wild" | "trainer";
 export type GamePhase = "starterChoice" | "ready" | "captureDecision" | "teamDecision" | "gameOver";
 export type AutoPlayStrategy = "greedy" | "conserveBalls";
+export type OpponentBattleOutcome = "win" | "loss";
 export type BattleStatus = "burn" | "poison" | "paralysis" | "sleep" | "freeze";
 export type VolatileBattleStatus =
   | "confusion"
@@ -52,6 +53,35 @@ export type StatBoostTier = 1 | 2 | 3;
 export interface SelectedRoute {
   id: RouteId;
   wave: number;
+}
+
+export interface TeamRecordSummary {
+  teamId: string;
+  wins: number;
+  losses: number;
+  battles: number;
+  winRate: number;
+  strengthScore: number;
+  strengthLabel: string;
+}
+
+export interface TeamRecordChange {
+  teamId: string;
+  before: TeamRecordSummary;
+  after: TeamRecordSummary;
+  opponentResult: OpponentBattleOutcome;
+  deltaWinRate: number;
+}
+
+export interface OpponentTeamRecordContext {
+  teamId: string;
+  snapshotPlayerId: string;
+  snapshotTrainerName: string;
+  snapshotWave: number;
+  snapshotCreatedAt: string;
+  snapshotSeed: string;
+  teamPower: number;
+  record?: TeamRecordSummary;
 }
 
 export interface EncounterBoost {
@@ -339,6 +369,8 @@ export interface BattleResult {
   encounterSource?: EncounterSource;
   encounterRoute?: RouteId;
   opponentName?: string;
+  opponentTeam?: OpponentTeamRecordContext;
+  opponentTeamRecordChange?: TeamRecordChange;
   winner: "player" | "enemy";
   turns: number;
   playerTeam: Creature[];
@@ -353,6 +385,7 @@ export interface EncounterSnapshot {
   routeId?: RouteId;
   wave: number;
   opponentName: string;
+  opponentTeam?: OpponentTeamRecordContext;
   enemyTeam: Creature[];
 }
 

@@ -14,6 +14,11 @@ import {
   serializeTrainerSnapshot,
   type SheetTrainerRow,
 } from "./trainerSnapshot";
+import {
+  SHEET_TEAM_BATTLE_RECORD_COLUMNS,
+  sheetTeamBattleRecordRowToValues,
+  type TeamBattleRecord,
+} from "./teamBattleRecord";
 
 describe("PublicCsvTrainerAdapter", () => {
   it("builds public Google Sheets CSV URLs from a shared edit URL", () => {
@@ -93,6 +98,34 @@ describe("PublicCsvTrainerAdapter", () => {
       adapter.appendSnapshot(buildSnapshot("public-a", "Public A", "public-sheet-a", 5)),
     ).rejects.toThrow(/read-only/);
   });
+
+  it("reads team battle records from a separate public CSV URL", async () => {
+    const record = buildTeamBattleRecord();
+    const requests: string[] = [];
+    const adapter = new PublicCsvTrainerAdapter({
+      csvUrl: "https://example.test/trainers.csv",
+      teamRecordCsvUrl: "https://example.test/team-records.csv",
+      fetch: async (url) => {
+        requests.push(url);
+        return {
+          ok: true,
+          status: 200,
+          statusText: "OK",
+          async text() {
+            return url.includes("team-records")
+              ? toTeamBattleCsv([record])
+              : toCsv([]);
+          },
+        };
+      },
+    });
+
+    await expect(adapter.listTeamBattleRecords({ opponentTeamId: "team-public-a" })).resolves.toEqual([
+      record,
+    ]);
+    await expect(adapter.appendTeamBattleRecord(record)).rejects.toThrow(/read-only/);
+    expect(requests).toContain("https://example.test/team-records.csv");
+  });
 });
 
 function createFetch(csv: string): PublicCsvFetchLike {
@@ -127,6 +160,15 @@ function csvCell(value: string): string {
   return `"${value.replaceAll('"', '""')}"`;
 }
 
+function toTeamBattleCsv(rows: readonly TeamBattleRecord[]): string {
+  return [
+    [...SHEET_TEAM_BATTLE_RECORD_COLUMNS],
+    ...rows.map((row) => sheetTeamBattleRecordRowToValues(row)),
+  ]
+    .map((row) => row.map(csvCell).join(","))
+    .join("\n");
+}
+
 function buildRow(playerId: string, trainerName: string, seed: string, targetWave: number) {
   return serializeTrainerSnapshot(buildSnapshot(playerId, trainerName, seed, targetWave));
 }
@@ -140,4 +182,28 @@ function buildSnapshot(playerId: string, trainerName: string, seed: string, targ
     runSummary: client.getRunSummary(),
     wave: targetWave,
   });
+}
+
+function buildTeamBattleRecord(): TeamBattleRecord {
+  return {
+    version: 1,
+    recordId: "battle-public-a",
+    createdAt: "2026-05-12T00:10:00.000Z",
+    opponentTeamId: "team-public-a",
+    opponentPlayerId: "public-a",
+    opponentTrainerName: "Public A",
+    opponentWave: 5,
+    opponentCreatedAt: "2026-05-12T00:00:00.000Z",
+    opponentSeed: "public-sheet-a",
+    opponentTeamPower: 100,
+    challengerPlayerId: "player-a",
+    challengerTrainerName: "Player A",
+    challengerSeed: "challenger-a",
+    battleWave: 5,
+    battleWinner: "player",
+    opponentResult: "loss",
+    challengerTeamPower: 130,
+    turns: 7,
+    source: "browser",
+  };
 }

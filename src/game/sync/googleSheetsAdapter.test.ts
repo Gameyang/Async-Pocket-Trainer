@@ -10,6 +10,11 @@ import {
   sheetTrainerRowToValues,
   type FetchLike,
 } from "./googleSheetsAdapter";
+import {
+  SHEET_TEAM_BATTLE_RECORD_COLUMNS,
+  sheetTeamBattleRecordRowToValues,
+  type TeamBattleRecord,
+} from "./teamBattleRecord";
 import { createTrainerSnapshot, serializeTrainerSnapshot } from "./trainerSnapshot";
 
 describe("GoogleSheetsTrainerAdapter", () => {
@@ -79,6 +84,32 @@ describe("GoogleSheetsTrainerAdapter", () => {
     expect(picked?.wave).toBe(5);
   });
 
+  it("appends and reads team battle records through a separate sheet range", async () => {
+    const record = buildTeamBattleRecord();
+    const requests: FetchRequest[] = [];
+    const adapter = new GoogleSheetsTrainerAdapter({
+      spreadsheetId: "spreadsheet-1",
+      range: "APT_WAVE_TEAMS!A:I",
+      teamRecordRange: "APT_TEAM_RECORDS!A:S",
+      accessToken: "token-1",
+      fetch: createFetch(requests, {
+        values: [
+          [...SHEET_TEAM_BATTLE_RECORD_COLUMNS],
+          sheetTeamBattleRecordRowToValues(record),
+        ],
+      }),
+    });
+
+    await expect(adapter.appendTeamBattleRecord(record)).resolves.toEqual(record);
+    expect(requests[0].url).toContain(
+      "/spreadsheets/spreadsheet-1/values/APT_TEAM_RECORDS!A%3AS:append?",
+    );
+
+    const rows = await adapter.listTeamBattleRows({ opponentTeamId: "team-google-a" });
+
+    expect(rows).toEqual([record]);
+  });
+
   it("keeps game core independent from the Google-specific adapter", () => {
     const gameSources = listTypeScriptSources(join(process.cwd(), "src", "game")).filter((file) => {
       const relativePath = toPosixPath(relative(process.cwd(), file));
@@ -99,6 +130,30 @@ interface FetchRequest {
     method?: string;
     headers?: Record<string, string>;
     body?: string;
+  };
+}
+
+function buildTeamBattleRecord(): TeamBattleRecord {
+  return {
+    version: 1,
+    recordId: "battle-google-a",
+    createdAt: "2026-05-12T00:10:00.000Z",
+    opponentTeamId: "team-google-a",
+    opponentPlayerId: "google-a",
+    opponentTrainerName: "Google A",
+    opponentWave: 5,
+    opponentCreatedAt: "2026-05-12T00:00:00.000Z",
+    opponentSeed: "google-sheet-a",
+    opponentTeamPower: 120,
+    challengerPlayerId: "player-a",
+    challengerTrainerName: "Player A",
+    challengerSeed: "challenger-a",
+    battleWave: 5,
+    battleWinner: "player",
+    opponentResult: "loss",
+    challengerTeamPower: 150,
+    turns: 6,
+    source: "browser",
   };
 }
 

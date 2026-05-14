@@ -52,6 +52,8 @@ import type {
   MoveDefinition,
   RouteId,
   SpeciesDefinition,
+  TeamRecordChange,
+  TeamRecordSummary,
   VolatileBattleStatus,
 } from "../types";
 
@@ -140,6 +142,9 @@ export interface FrameTrainerScene {
   trainerName: string;
   portraitKey: string;
   portraitPath: string;
+  teamPower?: number;
+  record?: TeamRecordSummary;
+  recordChange?: TeamRecordChange;
 }
 
 export type FrameBgmKey =
@@ -667,6 +672,7 @@ function createTrainerScene(state: GameState): FrameTrainerScene | undefined {
   const source = state.pendingEncounter?.source ?? state.lastBattle?.encounterSource ?? "generated";
   const trainerName =
     state.pendingEncounter?.opponentName ?? state.lastBattle?.opponentName ?? "트레이너";
+  const opponentTeam = state.pendingEncounter?.opponentTeam ?? state.lastBattle?.opponentTeam;
   const portraitPath = pickTrainerPortrait(trainerName, source);
 
   return {
@@ -675,6 +681,9 @@ function createTrainerScene(state: GameState): FrameTrainerScene | undefined {
     trainerName,
     portraitKey: `trainer:${portraitPath.split("/").at(-1)?.replace(".webp", "") ?? "portrait"}`,
     portraitPath,
+    teamPower: opponentTeam?.teamPower,
+    record: opponentTeam?.record,
+    recordChange: state.lastBattle?.opponentTeamRecordChange,
   };
 }
 
