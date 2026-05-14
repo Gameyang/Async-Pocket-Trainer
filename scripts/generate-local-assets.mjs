@@ -11,16 +11,15 @@ const trainerDir = new URL("../src/resources/trainers/", import.meta.url);
 const bgmDir = new URL("../src/resources/audio/bgm/", import.meta.url);
 const sfxDir = new URL("../src/resources/audio/sfx/", import.meta.url);
 const execFileAsync = promisify(execFile);
-const audioSampleRate = 22050;
-const sfxBitrate = "24k";
-const bgmBitrate = "40k";
+const audioSampleRate = 44100;
+const sfxBitrate = "56k";
+const bgmBitrate = "48k";
 
 await mkdir(trainerDir, { recursive: true });
 await mkdir(bgmDir, { recursive: true });
 await mkdir(sfxDir, { recursive: true });
 
 await generateTrainerPortraits();
-await generateAudio();
 
 async function generateTrainerPortraits() {
   const portraits = [
@@ -94,89 +93,20 @@ function createPortraitPng(portrait) {
 }
 
 async function generateAudio() {
-  const sfx = [
-    [
-      "battle-hit.m4a",
-      [
-        [196, 0.08],
-        [146, 0.07],
-      ],
-      0.38,
-    ],
-    [
-      "battle-critical-hit.m4a",
-      [
-        [294, 0.05],
-        [392, 0.05],
-        [588, 0.08],
-      ],
-      0.42,
-    ],
-    [
-      "battle-miss.m4a",
-      [
-        [440, 0.05],
-        [330, 0.08],
-      ],
-      0.28,
-    ],
-    [
-      "creature-faint.m4a",
-      [
-        [220, 0.12],
-        [165, 0.14],
-        [110, 0.16],
-      ],
-      0.36,
-    ],
-    [
-      "phase-change.m4a",
-      [
-        [262, 0.08],
-        [330, 0.08],
-        [392, 0.12],
-      ],
-      0.26,
-    ],
-    [
-      "capture-success.m4a",
-      [
-        [392, 0.08],
-        [523, 0.08],
-        [659, 0.16],
-      ],
-      0.36,
-    ],
-    [
-      "capture-fail.m4a",
-      [
-        [294, 0.08],
-        [220, 0.14],
-      ],
-      0.32,
-    ],
+  const sfxBuilders = [
+    ["battle-hit.m4a", synthHit],
+    ["battle-critical-hit.m4a", synthCriticalHit],
+    ["battle-miss.m4a", synthMiss],
+    ["creature-faint.m4a", synthFaint],
+    ["phase-change.m4a", synthPhaseChange],
+    ["capture-success.m4a", synthCaptureSuccess],
+    ["capture-fail.m4a", synthCaptureFail],
   ];
-  const typeSfx = [
-    ["normal", [196, 147, 220], 0.3],
-    ["fire", [330, 494, 659], 0.34],
-    ["water", [220, 294, 392], 0.31],
-    ["grass", [262, 330, 262], 0.3],
-    ["electric", [659, 880, 740], 0.32],
-    ["poison", [185, 165, 220], 0.3],
-    ["ground", [130, 98, 146], 0.34],
-    ["flying", [523, 659, 784], 0.28],
-    ["bug", [349, 294, 349], 0.26],
-    ["fighting", [220, 330, 220], 0.36],
-    ["psychic", [392, 523, 740], 0.27],
-    ["rock", [110, 147, 196], 0.36],
-    ["ghost", [247, 185, 123], 0.28],
-    ["ice", [740, 659, 523], 0.26],
-    ["dragon", [196, 294, 440], 0.38],
-    ["dark", [165, 123, 196], 0.32],
-    ["steel", [440, 330, 247], 0.34],
-    ["fairy", [659, 784, 988], 0.24],
+  const elementTypes = [
+    "normal", "fire", "water", "grass", "electric", "poison",
+    "ground", "flying", "bug", "fighting", "psychic", "rock",
+    "ghost", "ice", "dragon", "dark", "steel", "fairy",
   ];
-
   const bgm = [
     ["starter-ready.m4a", [262, 330, 392, 330, 294, 349, 440, 349]],
     ["battle-capture.m4a", [220, 277, 330, 277, 196, 247, 294, 247]],
@@ -184,24 +114,24 @@ async function generateAudio() {
     ["game-over.m4a", [262, 247, 220, 196, 175, 165, 147, 131]],
   ];
 
-  for (const [file, notes, volume] of sfx) {
-    await writeM4a(new URL(file, sfxDir), sequenceSamples(notes, volume), sfxBitrate);
+  for (const [file, build] of sfxBuilders) {
+    await writeM4a(new URL(file, sfxDir), build(), sfxBitrate);
   }
 
-  for (const [type, notes, volume] of typeSfx) {
+  for (const type of elementTypes) {
     await writeM4a(
       new URL(`battle-type-${type}.m4a`, sfxDir),
-      typeImpactSamples(notes, volume, false),
+      synthTypeImpact(type, false),
       sfxBitrate,
     );
     await writeM4a(
       new URL(`battle-type-${type}-critical.m4a`, sfxDir),
-      typeImpactSamples(notes, volume, true),
+      synthTypeImpact(type, true),
       sfxBitrate,
     );
     await writeM4a(
       new URL(`battle-support-type-${type}.m4a`, sfxDir),
-      supportTypeSamples(notes, volume),
+      synthTypeSupport(type),
       sfxBitrate,
     );
   }
@@ -211,58 +141,289 @@ async function generateAudio() {
   }
 }
 
-function sequenceSamples(notes, volume) {
-  const sampleRate = 22050;
-  const samples = [];
+function makeBuffer(durationMs) {
+  return new Float32Array(Math.floor((durationMs / 1000) * audioSampleRate));
+}
 
-  for (const [frequency, duration] of notes) {
-    const length = Math.floor(sampleRate * duration);
-    for (let index = 0; index < length; index += 1) {
-      const envelope = 1 - index / length;
-      samples.push(Math.sin((Math.PI * 2 * frequency * index) / sampleRate) * volume * envelope);
-    }
+function envelopeAt(index, length, attackSamples, releaseSamples) {
+  if (index < attackSamples) {
+    return index / Math.max(1, attackSamples);
   }
-
-  return samples;
+  if (index > length - releaseSamples) {
+    return Math.max(0, (length - index) / Math.max(1, releaseSamples));
+  }
+  return 1;
 }
 
-function typeImpactSamples(notes, volume, critical) {
-  const shapedNotes = notes.map((frequency, index) => [
-    critical && index === notes.length - 1 ? frequency * 1.5 : frequency,
-    critical ? 0.055 : 0.045,
-  ]);
-  const tail = critical
-    ? [
-        [notes.at(-1) * 2, 0.045],
-        [notes[0] * 0.75, 0.07],
-      ]
-    : [[notes[0] * 0.5, 0.05]];
+function addTone(buf, opts) {
+  const start = Math.floor((opts.startMs / 1000) * audioSampleRate);
+  const length = Math.floor((opts.durMs / 1000) * audioSampleRate);
+  const attack = Math.floor(((opts.attackMs ?? 2) / 1000) * audioSampleRate);
+  const release = Math.floor(((opts.releaseMs ?? 30) / 1000) * audioSampleRate);
+  const wave = opts.wave ?? "sine";
+  const gain = opts.gain ?? 0.25;
+  const lfoRate = opts.lfoRate ?? 0;
+  const lfoDepth = opts.lfoDepth ?? 0;
+  let phase = 0;
 
-  return sequenceSamples([...shapedNotes, ...tail], critical ? volume * 1.22 : volume);
+  for (let i = 0; i < length; i += 1) {
+    const target = start + i;
+    if (target < 0 || target >= buf.length) continue;
+    const t = i / Math.max(1, length);
+    let freq = opts.freqEnd !== undefined ? opts.freq + (opts.freqEnd - opts.freq) * t : opts.freq;
+    if (lfoRate > 0) {
+      freq += Math.sin((2 * Math.PI * lfoRate * i) / audioSampleRate) * lfoDepth;
+    }
+    phase += (2 * Math.PI * freq) / audioSampleRate;
+    const cycle = (phase / (2 * Math.PI)) % 1;
+    let sample;
+    if (wave === "sine") sample = Math.sin(phase);
+    else if (wave === "square") sample = Math.sin(phase) >= 0 ? 1 : -1;
+    else if (wave === "saw") sample = cycle * 2 - 1;
+    else sample = 1 - Math.abs(cycle - 0.5) * 4;
+    const env = envelopeAt(i, length, attack, release);
+    buf[target] += sample * gain * env;
+  }
 }
 
-function supportTypeSamples(notes, volume) {
-  const arpeggio = notes.map((frequency, index) => [
-    index % 2 === 0 ? frequency * 1.25 : frequency * 0.75,
-    0.07,
-  ]);
-  return sequenceSamples([...arpeggio, [notes[0], 0.1]], volume * 0.72);
+function addNoise(buf, opts) {
+  const start = Math.floor((opts.startMs / 1000) * audioSampleRate);
+  const length = Math.floor((opts.durMs / 1000) * audioSampleRate);
+  const attack = Math.floor(((opts.attackMs ?? 2) / 1000) * audioSampleRate);
+  const release = Math.floor(((opts.releaseMs ?? 40) / 1000) * audioSampleRate);
+  const gain = opts.gain ?? 0.3;
+  const lpFactor =
+    opts.color === "low" ? 0.08 : opts.color === "mid" ? 0.35 : opts.color === "high" ? 0.85 : 1;
+  let lpState = 0;
+
+  for (let i = 0; i < length; i += 1) {
+    const target = start + i;
+    if (target < 0 || target >= buf.length) continue;
+    const noise = Math.random() * 2 - 1;
+    lpState += lpFactor * (noise - lpState);
+    const sample = opts.color ? lpState : noise;
+    const env = envelopeAt(i, length, attack, release);
+    buf[target] += sample * gain * env;
+  }
+}
+
+function bufferToSamples(buf) {
+  let peak = 0;
+  for (const value of buf) {
+    const magnitude = Math.abs(value);
+    if (magnitude > peak) peak = magnitude;
+  }
+  const normalize = peak > 0.95 ? 0.95 / peak : 1;
+  const out = new Array(buf.length);
+  for (let i = 0; i < buf.length; i += 1) out[i] = buf[i] * normalize;
+  return out;
+}
+
+function synthHit() {
+  const buf = makeBuffer(180);
+  addNoise(buf, { startMs: 0, durMs: 70, gain: 0.55, attackMs: 1, releaseMs: 60, color: "mid" });
+  addTone(buf, { startMs: 0, durMs: 90, freq: 110, wave: "saw", gain: 0.32, attackMs: 1, releaseMs: 80 });
+  addTone(buf, { startMs: 0, durMs: 140, freq: 320, freqEnd: 150, wave: "sine", gain: 0.2, releaseMs: 110 });
+  return bufferToSamples(buf);
+}
+
+function synthCriticalHit() {
+  const buf = makeBuffer(300);
+  addNoise(buf, { startMs: 0, durMs: 110, gain: 0.65, attackMs: 1, releaseMs: 95, color: "mid" });
+  addTone(buf, { startMs: 0, durMs: 180, freq: 90, freqEnd: 45, wave: "saw", gain: 0.5, attackMs: 1, releaseMs: 150 });
+  addTone(buf, { startMs: 0, durMs: 240, freq: 660, freqEnd: 220, wave: "sine", gain: 0.28, releaseMs: 200 });
+  addTone(buf, { startMs: 30, durMs: 120, freq: 880, wave: "square", gain: 0.18, attackMs: 4, releaseMs: 90 });
+  addTone(buf, { startMs: 150, durMs: 130, freq: 196, freqEnd: 110, wave: "saw", gain: 0.22, releaseMs: 110 });
+  return bufferToSamples(buf);
+}
+
+function synthMiss() {
+  const buf = makeBuffer(220);
+  addTone(buf, { startMs: 0, durMs: 220, freq: 740, freqEnd: 220, wave: "sine", gain: 0.32, attackMs: 5, releaseMs: 130 });
+  addTone(buf, { startMs: 0, durMs: 180, freq: 1480, freqEnd: 440, wave: "sine", gain: 0.12, attackMs: 5, releaseMs: 130 });
+  addNoise(buf, { startMs: 0, durMs: 40, gain: 0.18, attackMs: 1, releaseMs: 35, color: "high" });
+  return bufferToSamples(buf);
+}
+
+function synthFaint() {
+  const buf = makeBuffer(520);
+  addTone(buf, { startMs: 0, durMs: 520, freq: 440, freqEnd: 98, wave: "saw", gain: 0.3, attackMs: 8, releaseMs: 240 });
+  addTone(buf, { startMs: 0, durMs: 520, freq: 220, freqEnd: 49, wave: "sine", gain: 0.18, attackMs: 8, releaseMs: 240 });
+  addTone(buf, { startMs: 60, durMs: 460, freq: 660, freqEnd: 147, wave: "square", gain: 0.08, attackMs: 20, releaseMs: 200 });
+  addNoise(buf, { startMs: 380, durMs: 140, gain: 0.1, attackMs: 20, releaseMs: 110, color: "low" });
+  return bufferToSamples(buf);
+}
+
+function synthPhaseChange() {
+  const buf = makeBuffer(320);
+  const notes = [523, 659, 784];
+  notes.forEach((freq, index) => {
+    const startMs = index * 90;
+    addTone(buf, { startMs, durMs: 110, freq, wave: "sine", gain: 0.3, attackMs: 4, releaseMs: 90 });
+    addTone(buf, { startMs, durMs: 110, freq: freq * 2, wave: "sine", gain: 0.12, attackMs: 4, releaseMs: 90 });
+    addTone(buf, { startMs, durMs: 110, freq: freq / 2, wave: "triangle", gain: 0.08, attackMs: 4, releaseMs: 90 });
+  });
+  return bufferToSamples(buf);
+}
+
+function synthCaptureSuccess() {
+  const buf = makeBuffer(620);
+  const notes = [392, 523, 659, 784];
+  notes.forEach((freq, index) => {
+    const startMs = index * 120;
+    addTone(buf, { startMs, durMs: 160, freq, wave: "square", gain: 0.22, attackMs: 3, releaseMs: 140 });
+    addTone(buf, { startMs, durMs: 160, freq: freq * 2, wave: "sine", gain: 0.1, attackMs: 3, releaseMs: 140 });
+  });
+  addTone(buf, { startMs: 480, durMs: 140, freq: 1568, wave: "sine", gain: 0.16, attackMs: 5, releaseMs: 120 });
+  addTone(buf, { startMs: 480, durMs: 140, freq: 2093, wave: "sine", gain: 0.1, attackMs: 5, releaseMs: 120 });
+  return bufferToSamples(buf);
+}
+
+function synthCaptureFail() {
+  const buf = makeBuffer(360);
+  addTone(buf, { startMs: 0, durMs: 220, freq: 330, freqEnd: 138, wave: "saw", gain: 0.3, attackMs: 3, releaseMs: 180 });
+  addTone(buf, { startMs: 0, durMs: 220, freq: 165, freqEnd: 82, wave: "sine", gain: 0.18, attackMs: 3, releaseMs: 180 });
+  addNoise(buf, { startMs: 200, durMs: 160, gain: 0.2, attackMs: 5, releaseMs: 120, color: "low" });
+  return bufferToSamples(buf);
+}
+
+const typeImpactRecipes = {
+  normal: (buf, dur) => {
+    addNoise(buf, { startMs: 0, durMs: dur * 0.3, gain: 0.32, attackMs: 1, releaseMs: dur * 0.25, color: "mid" });
+    addTone(buf, { startMs: 0, durMs: dur * 0.8, freq: 220, freqEnd: 165, wave: "square", gain: 0.28, releaseMs: dur * 0.6 });
+    addTone(buf, { startMs: 0, durMs: dur * 0.8, freq: 110, wave: "saw", gain: 0.16, releaseMs: dur * 0.6 });
+  },
+  fire: (buf, dur) => {
+    addNoise(buf, { startMs: 0, durMs: dur * 0.55, gain: 0.5, attackMs: 1, releaseMs: dur * 0.45, color: "mid" });
+    addTone(buf, { startMs: 0, durMs: dur * 0.9, freq: 360, freqEnd: 180, wave: "square", gain: 0.3, releaseMs: dur * 0.7 });
+    addTone(buf, { startMs: 0, durMs: dur * 0.9, freq: 165, freqEnd: 110, wave: "saw", gain: 0.2, releaseMs: dur * 0.7 });
+  },
+  water: (buf, dur) => {
+    addTone(buf, { startMs: 0, durMs: dur, freq: 220, wave: "sine", gain: 0.3, attackMs: 5, releaseMs: dur * 0.6, lfoRate: 7, lfoDepth: 28 });
+    addTone(buf, { startMs: 0, durMs: dur * 0.9, freq: 110, wave: "sine", gain: 0.18, attackMs: 5, releaseMs: dur * 0.6 });
+    addNoise(buf, { startMs: 0, durMs: dur * 0.3, gain: 0.2, attackMs: 2, releaseMs: dur * 0.25, color: "high" });
+  },
+  grass: (buf, dur) => {
+    addTone(buf, { startMs: 0, durMs: dur * 0.9, freq: 262, wave: "square", gain: 0.26, attackMs: 3, releaseMs: dur * 0.7 });
+    addTone(buf, { startMs: 0, durMs: dur * 0.9, freq: 392, wave: "sine", gain: 0.14, attackMs: 3, releaseMs: dur * 0.7 });
+    addNoise(buf, { startMs: 0, durMs: dur * 0.45, gain: 0.22, attackMs: 1, releaseMs: dur * 0.4, color: "mid" });
+  },
+  electric: (buf, dur) => {
+    addTone(buf, { startMs: 0, durMs: dur * 0.85, freq: 660, freqEnd: 990, wave: "saw", gain: 0.28, releaseMs: dur * 0.6, lfoRate: 14, lfoDepth: 120 });
+    addTone(buf, { startMs: 0, durMs: dur * 0.4, freq: 1320, wave: "square", gain: 0.14, attackMs: 1, releaseMs: dur * 0.35 });
+    addNoise(buf, { startMs: 0, durMs: dur * 0.25, gain: 0.28, attackMs: 1, releaseMs: dur * 0.22, color: "high" });
+  },
+  poison: (buf, dur) => {
+    addTone(buf, { startMs: 0, durMs: dur * 0.9, freq: 165, wave: "saw", gain: 0.28, releaseMs: dur * 0.7, lfoRate: 5, lfoDepth: 18 });
+    addTone(buf, { startMs: 0, durMs: dur * 0.9, freq: 220, wave: "saw", gain: 0.18, releaseMs: dur * 0.7 });
+    addNoise(buf, { startMs: 0, durMs: dur * 0.5, gain: 0.22, attackMs: 2, releaseMs: dur * 0.4, color: "low" });
+  },
+  ground: (buf, dur) => {
+    addNoise(buf, { startMs: 0, durMs: dur * 0.85, gain: 0.5, attackMs: 1, releaseMs: dur * 0.7, color: "low" });
+    addTone(buf, { startMs: 0, durMs: dur * 0.95, freq: 82, wave: "sine", gain: 0.32, releaseMs: dur * 0.75 });
+    addTone(buf, { startMs: 0, durMs: dur * 0.6, freq: 165, freqEnd: 110, wave: "square", gain: 0.16, releaseMs: dur * 0.5 });
+  },
+  flying: (buf, dur) => {
+    addTone(buf, { startMs: 0, durMs: dur * 0.9, freq: 880, freqEnd: 392, wave: "sine", gain: 0.32, attackMs: 5, releaseMs: dur * 0.6 });
+    addTone(buf, { startMs: 0, durMs: dur * 0.9, freq: 1760, freqEnd: 784, wave: "sine", gain: 0.14, attackMs: 5, releaseMs: dur * 0.6 });
+    addNoise(buf, { startMs: 0, durMs: dur * 0.4, gain: 0.18, attackMs: 5, releaseMs: dur * 0.35, color: "high" });
+  },
+  bug: (buf, dur) => {
+    addTone(buf, { startMs: 0, durMs: dur * 0.9, freq: 350, wave: "square", gain: 0.28, releaseMs: dur * 0.6, lfoRate: 22, lfoDepth: 40 });
+    addTone(buf, { startMs: 0, durMs: dur * 0.6, freq: 700, wave: "saw", gain: 0.12, releaseMs: dur * 0.5 });
+    addNoise(buf, { startMs: 0, durMs: dur * 0.4, gain: 0.15, attackMs: 2, releaseMs: dur * 0.35, color: "mid" });
+  },
+  fighting: (buf, dur) => {
+    addNoise(buf, { startMs: 0, durMs: dur * 0.5, gain: 0.6, attackMs: 1, releaseMs: dur * 0.4, color: "mid" });
+    addTone(buf, { startMs: 0, durMs: dur * 0.85, freq: 220, freqEnd: 140, wave: "square", gain: 0.34, releaseMs: dur * 0.7 });
+    addTone(buf, { startMs: 0, durMs: dur * 0.85, freq: 82, wave: "sine", gain: 0.26, releaseMs: dur * 0.7 });
+  },
+  psychic: (buf, dur) => {
+    addTone(buf, { startMs: 0, durMs: dur, freq: 392, wave: "sine", gain: 0.28, attackMs: 8, releaseMs: dur * 0.7, lfoRate: 5, lfoDepth: 14 });
+    addTone(buf, { startMs: 0, durMs: dur, freq: 740, wave: "sine", gain: 0.18, attackMs: 8, releaseMs: dur * 0.7, lfoRate: 5, lfoDepth: 18 });
+    addTone(buf, { startMs: 0, durMs: dur, freq: 1480, wave: "sine", gain: 0.08, attackMs: 8, releaseMs: dur * 0.7 });
+  },
+  rock: (buf, dur) => {
+    addNoise(buf, { startMs: 0, durMs: dur * 0.55, gain: 0.6, attackMs: 1, releaseMs: dur * 0.45, color: "low" });
+    addTone(buf, { startMs: 0, durMs: dur * 0.85, freq: 110, freqEnd: 82, wave: "square", gain: 0.3, releaseMs: dur * 0.7 });
+    addTone(buf, { startMs: 0, durMs: dur * 0.6, freq: 220, wave: "saw", gain: 0.16, releaseMs: dur * 0.5 });
+  },
+  ghost: (buf, dur) => {
+    addTone(buf, { startMs: 0, durMs: dur, freq: 247, freqEnd: 124, wave: "sine", gain: 0.3, attackMs: 12, releaseMs: dur * 0.7, lfoRate: 4, lfoDepth: 16 });
+    addTone(buf, { startMs: 0, durMs: dur, freq: 124, freqEnd: 62, wave: "saw", gain: 0.2, attackMs: 12, releaseMs: dur * 0.7 });
+    addNoise(buf, { startMs: 0, durMs: dur * 0.5, gain: 0.16, attackMs: 12, releaseMs: dur * 0.4, color: "low" });
+  },
+  ice: (buf, dur) => {
+    addTone(buf, { startMs: 0, durMs: dur * 0.9, freq: 880, wave: "sine", gain: 0.3, attackMs: 3, releaseMs: dur * 0.7 });
+    addTone(buf, { startMs: 0, durMs: dur * 0.9, freq: 1760, wave: "sine", gain: 0.18, attackMs: 3, releaseMs: dur * 0.7 });
+    addTone(buf, { startMs: 40, durMs: dur * 0.8, freq: 2640, wave: "sine", gain: 0.08, attackMs: 6, releaseMs: dur * 0.6 });
+    addNoise(buf, { startMs: 0, durMs: dur * 0.2, gain: 0.18, attackMs: 1, releaseMs: dur * 0.18, color: "high" });
+  },
+  dragon: (buf, dur) => {
+    addTone(buf, { startMs: 0, durMs: dur * 0.95, freq: 196, freqEnd: 147, wave: "saw", gain: 0.34, releaseMs: dur * 0.75, lfoRate: 6, lfoDepth: 10 });
+    addTone(buf, { startMs: 0, durMs: dur * 0.95, freq: 294, freqEnd: 220, wave: "saw", gain: 0.22, releaseMs: dur * 0.75 });
+    addNoise(buf, { startMs: 0, durMs: dur * 0.6, gain: 0.3, attackMs: 2, releaseMs: dur * 0.5, color: "low" });
+  },
+  dark: (buf, dur) => {
+    addTone(buf, { startMs: 0, durMs: dur * 0.95, freq: 165, wave: "square", gain: 0.3, releaseMs: dur * 0.75 });
+    addTone(buf, { startMs: 0, durMs: dur * 0.95, freq: 110, wave: "saw", gain: 0.22, releaseMs: dur * 0.75 });
+    addNoise(buf, { startMs: 0, durMs: dur * 0.5, gain: 0.24, attackMs: 2, releaseMs: dur * 0.4, color: "low" });
+  },
+  steel: (buf, dur) => {
+    addNoise(buf, { startMs: 0, durMs: dur * 0.25, gain: 0.5, attackMs: 1, releaseMs: dur * 0.22, color: "high" });
+    addTone(buf, { startMs: 0, durMs: dur * 0.85, freq: 440, wave: "square", gain: 0.3, releaseMs: dur * 0.7 });
+    addTone(buf, { startMs: 0, durMs: dur * 0.6, freq: 880, wave: "sine", gain: 0.16, releaseMs: dur * 0.5 });
+    addTone(buf, { startMs: 0, durMs: dur * 0.6, freq: 1320, wave: "sine", gain: 0.1, releaseMs: dur * 0.5 });
+  },
+  fairy: (buf, dur) => {
+    addTone(buf, { startMs: 0, durMs: dur * 0.9, freq: 880, wave: "sine", gain: 0.28, attackMs: 4, releaseMs: dur * 0.7 });
+    addTone(buf, { startMs: 30, durMs: dur * 0.85, freq: 1320, wave: "sine", gain: 0.2, attackMs: 4, releaseMs: dur * 0.65 });
+    addTone(buf, { startMs: 60, durMs: dur * 0.8, freq: 1760, wave: "sine", gain: 0.12, attackMs: 4, releaseMs: dur * 0.6 });
+    addNoise(buf, { startMs: 0, durMs: dur * 0.2, gain: 0.1, attackMs: 1, releaseMs: dur * 0.18, color: "high" });
+  },
+};
+
+function synthTypeImpact(type, critical) {
+  const dur = critical ? 380 : 280;
+  const buf = makeBuffer(dur);
+  typeImpactRecipes[type](buf, dur);
+  if (critical) {
+    addNoise(buf, { startMs: 0, durMs: dur * 0.4, gain: 0.32, attackMs: 1, releaseMs: dur * 0.32, color: "mid" });
+    addTone(buf, { startMs: 0, durMs: dur * 0.85, freq: 90, freqEnd: 45, wave: "saw", gain: 0.3, releaseMs: dur * 0.7 });
+    addTone(buf, { startMs: dur * 0.45, durMs: dur * 0.45, freq: 220, freqEnd: 110, wave: "square", gain: 0.16, releaseMs: dur * 0.35 });
+  }
+  return bufferToSamples(buf);
+}
+
+const supportFreqPairs = {
+  normal: [262, 392], fire: [330, 494], water: [247, 370], grass: [294, 440],
+  electric: [392, 587], poison: [220, 330], ground: [165, 247], flying: [440, 659],
+  bug: [277, 415], fighting: [196, 294], psychic: [370, 554], rock: [175, 262],
+  ghost: [233, 350], ice: [523, 784], dragon: [220, 330], dark: [196, 294],
+  steel: [311, 466], fairy: [587, 880],
+};
+
+function synthTypeSupport(type) {
+  const [low, high] = supportFreqPairs[type];
+  const dur = 460;
+  const buf = makeBuffer(dur);
+  addTone(buf, { startMs: 0, durMs: dur, freq: low, wave: "sine", gain: 0.22, attackMs: 60, releaseMs: 220 });
+  addTone(buf, { startMs: 70, durMs: dur - 70, freq: high, wave: "sine", gain: 0.18, attackMs: 60, releaseMs: 220 });
+  addTone(buf, { startMs: 140, durMs: dur - 140, freq: high * 1.5, wave: "triangle", gain: 0.08, attackMs: 60, releaseMs: 220 });
+  return bufferToSamples(buf);
 }
 
 function loopSamples(notes) {
-  const sampleRate = 22050;
   const samples = [];
-
   for (const frequency of notes) {
-    const length = Math.floor(sampleRate * 0.18);
+    const length = Math.floor(audioSampleRate * 0.18);
     for (let index = 0; index < length; index += 1) {
       const envelope = 0.55 + 0.45 * Math.sin((Math.PI * index) / length);
-      const tone = Math.sin((Math.PI * 2 * frequency * index) / sampleRate);
-      const harmony = Math.sin((Math.PI * 2 * (frequency / 2) * index) / sampleRate);
+      const tone = Math.sin((Math.PI * 2 * frequency * index) / audioSampleRate);
+      const harmony = Math.sin((Math.PI * 2 * (frequency / 2) * index) / audioSampleRate);
       samples.push((tone * 0.08 + harmony * 0.05) * envelope);
     }
   }
-
   return samples;
 }
 
@@ -441,3 +602,5 @@ function crc32(buffer) {
 
   return (crc ^ 0xffffffff) >>> 0;
 }
+
+await generateAudio();
