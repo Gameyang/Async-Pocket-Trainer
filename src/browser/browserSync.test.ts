@@ -1,8 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import { HeadlessGameClient } from "../game/headlessClient";
-import { LocalTrainerSheetAdapter } from "../game/sync/localSheetAdapter";
-import { createTrainerSnapshot, serializeTrainerSnapshot } from "../game/sync/trainerSnapshot";
+import { LocalTrainerSheetAdapter, type TrainerRowQuery } from "../game/sync/localSheetAdapter";
+import {
+  createTrainerSnapshot,
+  serializeTrainerSnapshot,
+  type SheetTrainerRow,
+  type TrainerSnapshot,
+} from "../game/sync/trainerSnapshot";
 import { BrowserSyncController } from "./browserSync";
 import type { SyncSettings } from "./syncSettings";
 
@@ -56,6 +61,34 @@ describe("browser sync controller", () => {
     expect(sync.getStatus()).toMatchObject({ state: "synced", candidateCount: 1 });
   });
 
+  it("prefetches checkpoint trainers before the checkpoint and reuses the cache", async () => {
+    const opponent = buildOpponentSnapshot();
+    const adapter = new CountingTrainerSheetAdapter([serializeTrainerSnapshot(opponent)]);
+    const client = new HeadlessGameClient({
+      seed: "prefetch-checkpoint",
+      trainerName: "Browser Sync",
+    });
+    client.dispatch({ type: "START_RUN", starterSpeciesId: 1 });
+    const sync = new BrowserSyncController(client, enabledSettings, {
+      adapter,
+      playerId: "player-a",
+      now: () => "2026-05-12T00:00:00.000Z",
+    });
+
+    await sync.prefetchNextCheckpoint();
+    expect(adapter.listSnapshotWaves).toEqual([5]);
+
+    moveClientToWave(client, 5);
+    await sync.beforeDispatch({ type: "RESOLVE_NEXT_ENCOUNTER" });
+    client.dispatch({ type: "RESOLVE_NEXT_ENCOUNTER" });
+
+    expect(adapter.listSnapshotWaves).toEqual([5]);
+    expect(client.getSnapshot().lastBattle?.kind).toBe("trainer");
+    expect(client.getSnapshot().lastBattle?.enemyTeam[0].instanceId).toBe(
+      opponent.team[0].creatureId,
+    );
+  });
+
   it("records sheet trainer battle outcomes in local cache and syncs the event log", async () => {
     const opponent = buildOpponentSnapshot();
     const adapter = new LocalTrainerSheetAdapter([serializeTrainerSnapshot(opponent)]);
@@ -90,6 +123,47 @@ describe("browser sync controller", () => {
     expect([...storage.values.values()].some((value) => value.includes(records[0].recordId))).toBe(
       true,
     );
+  });
+
+  it("uploads a won checkpoint team and prefetches the next checkpoint trainer data", async () => {
+    const waveFiveOpponent = weakenTrainerSnapshot(
+      buildOpponentSnapshot({
+        seed: "sheet-opponent-five",
+        playerId: "opponent-five",
+        wave: 5,
+      }),
+    );
+    const waveTenOpponent = buildOpponentSnapshot({
+      seed: "sheet-opponent-ten",
+      playerId: "opponent-ten",
+      wave: 10,
+    });
+    const adapter = new CountingTrainerSheetAdapter([
+      serializeTrainerSnapshot(waveFiveOpponent),
+      serializeTrainerSnapshot(waveTenOpponent),
+    ]);
+    const client = readyAtCheckpoint("auto-checkpoint-submit");
+    strengthenClientTeam(client);
+    const sync = new BrowserSyncController(client, enabledSettings, {
+      adapter,
+      playerId: "player-a",
+      now: () => "2026-05-12T00:00:00.000Z",
+    });
+
+    await sync.beforeDispatch({ type: "RESOLVE_NEXT_ENCOUNTER" });
+    client.dispatch({ type: "RESOLVE_NEXT_ENCOUNTER" });
+    const status = await sync.afterDispatch({ type: "RESOLVE_NEXT_ENCOUNTER" });
+    await sync.prefetchNextCheckpoint();
+
+    const waveFiveRows = await adapter.listRows({ wave: 5 });
+
+    expect(client.getSnapshot().lastBattle?.winner).toBe("player");
+    expect(status).toMatchObject({ state: "synced" });
+    expect(
+      waveFiveRows.some((row) => row.playerId === "player-a" && row.seed === "auto-checkpoint-submit"),
+    ).toBe(true);
+    expect(adapter.listSnapshotWaves).toEqual(expect.arrayContaining([5, 10]));
+    expect(sync.getStatus()).toMatchObject({ state: "synced", candidateCount: 1 });
   });
 
   it("stays offline when sync is enabled without credentials", async () => {
@@ -220,38 +294,102 @@ interface FetchRequest {
   };
 }
 
+class CountingTrainerSheetAdapter extends LocalTrainerSheetAdapter {
+  readonly listSnapshotWaves: number[] = [];
+
+  override async listSnapshots(query: TrainerRowQuery): Promise<TrainerSnapshot[]> {
+    this.listSnapshotWaves.push(query.wave);
+    return super.listSnapshots(query);
+  }
+}
+
 function readyAtCheckpoint(seed: string): HeadlessGameClient {
   const client = new HeadlessGameClient({ seed, trainerName: "Browser Sync" });
 
   client.dispatch({ type: "START_RUN", starterSpeciesId: 1 });
+  moveClientToWave(client, 5);
+
+  return client;
+}
+
+function moveClientToWave(client: HeadlessGameClient, wave: number): void {
   const snapshot = client.saveSnapshot();
   snapshot.state.phase = "ready";
-  snapshot.state.currentWave = 5;
+  snapshot.state.currentWave = wave;
   snapshot.state.selectedRoute = undefined;
   snapshot.state.pendingEncounter = undefined;
   snapshot.state.pendingCapture = undefined;
   snapshot.state.lastBattle = undefined;
   client.loadSnapshot(snapshot);
-
-  return client;
 }
 
-function buildOpponentSnapshot() {
+function strengthenClientTeam(client: HeadlessGameClient): void {
+  const snapshot = client.saveSnapshot();
+  snapshot.state.team = snapshot.state.team.map((creature) => ({
+    ...creature,
+    currentHp: 999,
+    powerScore: 999,
+    stats: {
+      hp: 999,
+      attack: 999,
+      defense: 999,
+      special: 999,
+      speed: 999,
+    },
+  }));
+  client.loadSnapshot(snapshot);
+}
+
+function weakenTrainerSnapshot(snapshot: TrainerSnapshot): TrainerSnapshot {
+  return {
+    ...snapshot,
+    teamPower: 1,
+    team: snapshot.team.map((creature) => ({
+      ...creature,
+      currentHp: 1,
+      powerScore: 1,
+      stats: {
+        hp: 1,
+        attack: 1,
+        defense: 1,
+        special: 1,
+        speed: 1,
+      },
+    })),
+  };
+}
+
+function buildOpponentSnapshot(
+  options: {
+    seed?: string;
+    playerId?: string;
+    trainerName?: string;
+    starterSpeciesId?: number;
+    wave?: number;
+  } = {},
+) {
+  const {
+    seed = "sheet-opponent",
+    playerId = "opponent-a",
+    trainerName = "Sheet Rival",
+    starterSpeciesId = 4,
+    wave = 5,
+  } = options;
   const opponent = new HeadlessGameClient({
-    seed: "sheet-opponent",
-    trainerName: "Sheet Rival",
+    seed,
+    trainerName,
   });
-  opponent.dispatch({ type: "START_RUN", starterSpeciesId: 4 });
+  opponent.dispatch({ type: "START_RUN", starterSpeciesId });
 
   return createTrainerSnapshot(opponent.getSnapshot(), {
-    playerId: "opponent-a",
+    playerId,
     createdAt: "2026-05-12T00:00:00.000Z",
     runSummary: opponent.getRunSummary(),
-    wave: 5,
+    wave,
   });
 }
 
-function toCsv(rows: readonly ReturnType<typeof serializeTrainerSnapshot>[]): string {
+function toCsv(rows: readonly SheetTrainerRow[]): string {
   const headers = [
     "version",
     "playerId",

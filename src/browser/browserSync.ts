@@ -661,7 +661,7 @@ function getNextCheckpointWave(
 function getLatestResolvedBattleWave(state: GameState): number | undefined {
   const wave = [...state.events].reverse().find((event) => event.type === "battle_resolved")?.wave;
 
-  return Number.isInteger(wave) && wave > 0 ? wave : undefined;
+  return typeof wave === "number" && Number.isInteger(wave) && wave > 0 ? wave : undefined;
 }
 
 function asTeamRecordSyncAdapter(adapter: unknown): TeamRecordSyncAdapter | undefined {
