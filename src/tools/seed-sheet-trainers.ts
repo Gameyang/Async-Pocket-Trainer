@@ -55,10 +55,14 @@ async function main(): Promise<void> {
   }
 
   const submitUrl = resolveSubmitUrl(args);
-  const submitter = new AppsScriptSubmitter({ submitUrl });
+  const submitter = new AppsScriptSubmitter({
+    submitUrl,
+    fetch: submitFromNode,
+  });
 
   for (const snapshot of snapshots) {
     await submitter.submitSnapshot(snapshot);
+    await delay(250);
   }
 
   console.log(
@@ -159,4 +163,25 @@ function parsePositiveInteger(
   }
 
   return parsed;
+}
+
+async function submitFromNode(
+  input: string,
+  init: {
+    method?: string;
+    headers?: Record<string, string>;
+    body?: string;
+  } = {},
+): Promise<unknown> {
+  return fetch(input, {
+    method: init.method,
+    headers: init.headers,
+    body: init.body,
+  });
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }
