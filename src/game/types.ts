@@ -49,6 +49,7 @@ export type ScoutTier = 1 | 2 | 3;
 export type RarityBoostTier = 1 | 2 | 3;
 export type LevelBoostTier = 1 | 2 | 3 | 4;
 export type StatBoostTier = 1 | 2 | 3;
+export type ShopStatKey = "hp" | "attack" | "defense" | "special" | "speed";
 
 export interface SelectedRoute {
   id: RouteId;
@@ -128,12 +129,7 @@ export interface MetaCurrencyState {
   };
 }
 
-export type PremiumOfferId =
-  | "premium:masterball"
-  | "premium:revive"
-  | "premium:coin-bag"
-  | "premium:team-reroll"
-  | "premium:dex-unlock";
+export type PremiumOfferId = `premium:${string}`;
 
 export interface BattleStatusState {
   type: BattleStatus;
@@ -512,10 +508,11 @@ export type GameAction =
   | { type: "BUY_SCOUT"; kind: ScoutKind; tier: ScoutTier }
   | { type: "BUY_RARITY_BOOST"; tier: RarityBoostTier }
   | { type: "BUY_LEVEL_BOOST"; tier: LevelBoostTier }
-  | { type: "BUY_STAT_BOOST"; tier: StatBoostTier; targetEntityId?: string }
+  | { type: "BUY_STAT_BOOST"; stat: ShopStatKey; tier: StatBoostTier; targetEntityId?: string }
   | { type: "BUY_STAT_REROLL"; targetEntityId?: string }
   | { type: "BUY_TEACH_MOVE"; element: ElementType; targetEntityId?: string }
   | { type: "BUY_TYPE_LOCK"; element: ElementType }
+  | { type: "BUY_PREMIUM_SHOP_ITEM"; offerId: PremiumOfferId; targetEntityId?: string }
   | { type: "BUY_PREMIUM_MASTERBALL" }
   | { type: "BUY_PREMIUM_REVIVE_ALL" }
   | { type: "BUY_PREMIUM_COIN_BAG" }

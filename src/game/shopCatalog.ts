@@ -9,6 +9,7 @@ import type {
   RarityBoostTier,
   ScoutKind,
   ScoutTier,
+  ShopStatKey,
   StatBoostTier,
 } from "./types";
 
@@ -37,6 +38,84 @@ export interface ScoutProduct {
   tier: ScoutTier;
   cost: number;
 }
+
+export interface StatBoostProduct {
+  stat: ShopStatKey;
+  tier: StatBoostTier;
+  bonus: number;
+  cost: number;
+}
+
+export interface StatRerollProduct {
+  cost: number;
+}
+
+export interface TeachMoveProduct {
+  element: ElementType;
+  cost: number;
+}
+
+export interface TypeLockProduct {
+  element: ElementType;
+  cost: number;
+}
+
+export type PremiumOfferEffect =
+  | { kind: "heal"; scope: HealScope; healRatio: number }
+  | { kind: "ball"; ball: BallType; quantity: number }
+  | { kind: "rarityBoost"; bonus: number }
+  | { kind: "levelBoost"; min: number; max: number }
+  | { kind: "typeLock"; element: ElementType }
+  | { kind: "statBoost"; stat: ShopStatKey; bonus: number }
+  | { kind: "teachMove"; element: ElementType; grade: 1 | 2 | 3 };
+
+export interface PremiumOffer {
+  id: PremiumOfferId;
+  tpCost: number;
+  label: string;
+  detail: string;
+  weight: number;
+  targetRequired?: boolean;
+  effect: PremiumOfferEffect;
+}
+
+export const shopElementTypes: readonly ElementType[] = [
+  "normal",
+  "fire",
+  "water",
+  "grass",
+  "electric",
+  "poison",
+  "ground",
+  "flying",
+  "bug",
+  "fighting",
+  "psychic",
+  "rock",
+  "ghost",
+  "ice",
+  "dragon",
+  "dark",
+  "steel",
+  "fairy",
+];
+
+export const shopStatKeys: readonly ShopStatKey[] = [
+  "hp",
+  "attack",
+  "defense",
+  "special",
+  "speed",
+];
+
+export const healTiers: readonly HealTier[] = [1, 2, 3, 4, 5];
+export const scoutTiers: readonly ScoutTier[] = [1, 2, 3];
+export const scoutKinds: readonly ScoutKind[] = ["rarity", "power"];
+export const rarityBoostTiers: readonly RarityBoostTier[] = [1, 2, 3];
+export const levelBoostTiers: readonly LevelBoostTier[] = [1, 2, 3, 4];
+export const statBoostTiers: readonly StatBoostTier[] = [1, 2, 3];
+export const teachMoveElements = shopElementTypes;
+export const typeLockElements = shopElementTypes;
 
 const healRatios: Record<HealTier, number> = {
   1: 0.2,
@@ -75,12 +154,6 @@ const scoutCosts: Record<ScoutKind, Record<ScoutTier, number>> = {
   },
 };
 
-export const healTiers: readonly HealTier[] = [1, 2, 3, 4, 5];
-export const scoutTiers: readonly ScoutTier[] = [1, 2, 3];
-export const scoutKinds: readonly ScoutKind[] = ["rarity", "power"];
-export const rarityBoostTiers: readonly RarityBoostTier[] = [1, 2, 3];
-export const levelBoostTiers: readonly LevelBoostTier[] = [1, 2, 3, 4];
-
 const rarityBoostBonuses: Record<RarityBoostTier, number> = {
   1: 0.1,
   2: 0.25,
@@ -107,6 +180,89 @@ const levelBoostCosts: Record<LevelBoostTier, number> = {
   4: 30,
 };
 
+const statBoostBonuses: Record<StatBoostTier, number> = {
+  1: 3,
+  2: 6,
+  3: 9,
+};
+
+const statBoostCosts: Record<StatBoostTier, number> = {
+  1: 8,
+  2: 14,
+  3: 22,
+};
+
+const teachMoveCosts: Record<ElementType, number> = {
+  normal: 24,
+  fire: 32,
+  water: 30,
+  grass: 28,
+  electric: 34,
+  poison: 26,
+  ground: 30,
+  flying: 28,
+  bug: 24,
+  fighting: 30,
+  psychic: 34,
+  rock: 30,
+  ghost: 34,
+  ice: 36,
+  dragon: 42,
+  dark: 34,
+  steel: 36,
+  fairy: 36,
+};
+
+const typeLockCosts: Record<ElementType, number> = {
+  normal: 16,
+  fire: 20,
+  water: 18,
+  grass: 18,
+  electric: 22,
+  poison: 18,
+  ground: 22,
+  flying: 20,
+  bug: 16,
+  fighting: 24,
+  psychic: 28,
+  rock: 22,
+  ghost: 28,
+  ice: 30,
+  dragon: 42,
+  dark: 30,
+  steel: 32,
+  fairy: 32,
+};
+
+const statLabels: Record<ShopStatKey, string> = {
+  hp: "HP",
+  attack: "공",
+  defense: "방",
+  special: "특",
+  speed: "스",
+};
+
+const typeLabels: Record<ElementType, string> = {
+  normal: "노말",
+  fire: "불꽃",
+  water: "물",
+  grass: "풀",
+  electric: "전기",
+  poison: "독",
+  ground: "땅",
+  flying: "비행",
+  bug: "벌레",
+  fighting: "격투",
+  psychic: "에스퍼",
+  rock: "바위",
+  ghost: "고스트",
+  ice: "얼음",
+  dragon: "드래곤",
+  dark: "악",
+  steel: "강철",
+  fairy: "페어리",
+};
+
 export function getRarityBoostProduct(tier: RarityBoostTier): RarityBoostProduct {
   return {
     tier,
@@ -124,81 +280,33 @@ export function getLevelBoostProduct(tier: LevelBoostTier): LevelBoostProduct {
   };
 }
 
-export interface StatBoostProduct {
-  tier: StatBoostTier;
-  bonus: number;
-  cost: number;
-}
-
-const statBoostBonuses: Record<StatBoostTier, number> = {
-  1: 5,
-  2: 10,
-  3: 20,
-};
-
-const statBoostCosts: Record<StatBoostTier, number> = {
-  1: 18,
-  2: 35,
-  3: 65,
-};
-
-export const statBoostTiers: readonly StatBoostTier[] = [1, 2, 3];
-
-export function getStatBoostProduct(tier: StatBoostTier): StatBoostProduct {
+export function getStatBoostProduct(
+  stat: ShopStatKey,
+  tier: StatBoostTier,
+): StatBoostProduct {
   return {
+    stat,
     tier,
     bonus: statBoostBonuses[tier],
     cost: statBoostCosts[tier],
   };
 }
 
-export interface StatRerollProduct {
-  cost: number;
-}
-
 export function getStatRerollProduct(): StatRerollProduct {
   return { cost: 24 };
 }
 
-export interface TeachMoveProduct {
-  element: ElementType;
-  cost: number;
-}
-
-export const teachMoveElements: readonly ElementType[] = ["fire", "water", "electric", "grass"];
-
-const teachMoveCosts: Partial<Record<ElementType, number>> = {
-  fire: 32,
-  water: 30,
-  electric: 34,
-  grass: 28,
-};
-
 export function getTeachMoveProduct(element: ElementType): TeachMoveProduct {
   return {
     element,
-    cost: teachMoveCosts[element] ?? 32,
+    cost: teachMoveCosts[element],
   };
 }
-
-export interface TypeLockProduct {
-  element: ElementType;
-  cost: number;
-}
-
-export const typeLockElements: readonly ElementType[] = ["fire", "water", "dragon", "psychic"];
-
-const typeLockCosts: Partial<Record<ElementType, number>> = {
-  fire: 20,
-  water: 18,
-  dragon: 42,
-  psychic: 28,
-};
 
 export function getTypeLockProduct(element: ElementType): TypeLockProduct {
   return {
     element,
-    cost: typeLockCosts[element] ?? 22,
+    cost: typeLockCosts[element],
   };
 }
 
@@ -249,55 +357,172 @@ export function ballActionSlug(ball: BallType): string {
   }
 }
 
-export interface PremiumOffer {
-  id: PremiumOfferId;
-  tpCost: number;
-  label: string;
-  detail: string;
+function createPremiumOffers(): PremiumOffer[] {
+  const offers: PremiumOffer[] = [
+    premiumOffer("premium:heal:single:3", 3, "TP 단일 회복 3단계", "포켓몬 1마리 HP 50%", 4, {
+      kind: "heal",
+      scope: "single",
+      healRatio: 0.5,
+    }),
+    premiumOffer("premium:heal:team:3", 4, "TP 전체 회복 3단계", "팀 전체 HP 50%", 4, {
+      kind: "heal",
+      scope: "team",
+      healRatio: 0.5,
+    }),
+    premiumOffer("premium:ball:ultraball", 5, "TP 울트라볼", "울트라볼 +1", 4, {
+      kind: "ball",
+      ball: "ultraBall",
+      quantity: 1,
+    }),
+    premiumOffer("premium:ball:masterball:2", 16, "TP 마스터볼 2세트", "마스터볼 +2", 2, {
+      kind: "ball",
+      ball: "masterBall",
+      quantity: 2,
+    }),
+    premiumOffer("premium:ball:masterball:3", 24, "TP 마스터볼 3세트", "마스터볼 +3", 1, {
+      kind: "ball",
+      ball: "masterBall",
+      quantity: 3,
+    }),
+    premiumOffer("premium:rarity-boost:2", 4, "TP 희귀도 +25%", "일반 중간 등급과 동일", 4, {
+      kind: "rarityBoost",
+      bonus: 0.25,
+    }),
+    premiumOffer("premium:rarity-boost:4", 8, "TP 희귀도 +75%", "일반 최고 등급보다 높은 보정", 2, {
+      kind: "rarityBoost",
+      bonus: 0.75,
+    }),
+    premiumOffer("premium:rarity-boost:5", 12, "TP 희귀도 +100%", "일반 최고 등급보다 높은 보정", 1, {
+      kind: "rarityBoost",
+      bonus: 1,
+    }),
+    premiumOffer("premium:level-boost:2", 3, "TP 레벨 +1~3", "일반 중간 등급과 동일", 4, {
+      kind: "levelBoost",
+      min: 1,
+      max: 3,
+    }),
+    premiumOffer("premium:level-boost:5", 8, "TP 레벨 +4~8", "일반 최고 등급보다 높은 보정", 2, {
+      kind: "levelBoost",
+      min: 4,
+      max: 8,
+    }),
+    premiumOffer("premium:level-boost:6", 12, "TP 레벨 +6~10", "일반 최고 등급보다 높은 보정", 1, {
+      kind: "levelBoost",
+      min: 6,
+      max: 10,
+    }),
+  ];
+
+  for (const stat of shopStatKeys) {
+    const label = statLabels[stat];
+    offers.push(
+      premiumOffer(
+        `premium:stat-boost:${stat}:2`,
+        3,
+        `TP ${label} +6`,
+        "일반 중간 등급과 동일",
+        4,
+        { kind: "statBoost", stat, bonus: 6 },
+        true,
+      ),
+      premiumOffer(
+        `premium:stat-boost:${stat}:4`,
+        6,
+        `TP ${label} +12`,
+        "일반 최고 등급보다 높은 강화",
+        2,
+        { kind: "statBoost", stat, bonus: 12 },
+        true,
+      ),
+      premiumOffer(
+        `premium:stat-boost:${stat}:5`,
+        8,
+        `TP ${label} +15`,
+        "일반 최고 등급보다 높은 강화",
+        1,
+        { kind: "statBoost", stat, bonus: 15 },
+        true,
+      ),
+    );
+  }
+
+  for (const element of shopElementTypes) {
+    const label = typeLabels[element];
+    offers.push(
+      premiumOffer(
+        `premium:type-lock:${element}`,
+        4,
+        `TP ${label} 고정`,
+        "일반 타입 고정과 동일",
+        3,
+        { kind: "typeLock", element },
+      ),
+      premiumOffer(
+        `premium:teach-move:${element}:1`,
+        4,
+        `TP ${label} 기술`,
+        "일반 기술머신과 동일",
+        4,
+        { kind: "teachMove", element, grade: 1 },
+        true,
+      ),
+      premiumOffer(
+        `premium:teach-move:${element}:2`,
+        7,
+        `TP ${label} 상급 기술`,
+        "일반 기술머신보다 강한 기술",
+        2,
+        { kind: "teachMove", element, grade: 2 },
+        true,
+      ),
+      premiumOffer(
+        `premium:teach-move:${element}:3`,
+        10,
+        `TP ${label} 최상급 기술`,
+        "일반 기술머신보다 강한 기술",
+        1,
+        { kind: "teachMove", element, grade: 3 },
+        true,
+      ),
+    );
+  }
+
+  return offers;
 }
 
-const premiumOffers: Record<PremiumOfferId, PremiumOffer> = {
-  "premium:masterball": {
-    id: "premium:masterball",
-    tpCost: 15,
-    label: "전설의 마스터볼",
-    detail: "마스터볼 +1",
-  },
-  "premium:revive": {
-    id: "premium:revive",
-    tpCost: 12,
-    label: "기적의 부활",
-    detail: "팀 전원 부활 + HP 100%",
-  },
-  "premium:coin-bag": {
-    id: "premium:coin-bag",
-    tpCost: 6,
-    label: "행운의 코인 주머니",
-    detail: "인게임 코인 +50",
-  },
-  "premium:team-reroll": {
-    id: "premium:team-reroll",
-    tpCost: 20,
-    label: "운명의 재추첨",
-    detail: "선택 포켓몬을 동등 희귀도 다른 종으로 교체",
-  },
-  "premium:dex-unlock": {
-    id: "premium:dex-unlock",
-    tpCost: 25,
-    label: "신화의 발견",
-    detail: "미언락 종 1개를 도감에 영구 추가",
-  },
-};
+function premiumOffer(
+  id: PremiumOfferId,
+  tpCost: number,
+  label: string,
+  detail: string,
+  weight: number,
+  effect: PremiumOfferEffect,
+  targetRequired = false,
+): PremiumOffer {
+  return {
+    id,
+    tpCost,
+    label,
+    detail,
+    weight,
+    targetRequired,
+    effect,
+  };
+}
 
-export const premiumOfferIds: readonly PremiumOfferId[] = [
-  "premium:masterball",
-  "premium:revive",
-  "premium:coin-bag",
-  "premium:team-reroll",
-  "premium:dex-unlock",
-];
+const premiumOfferList = createPremiumOffers();
+const premiumOfferMap = new Map(premiumOfferList.map((offer) => [offer.id, offer]));
+
+export const premiumOfferIds: readonly PremiumOfferId[] = premiumOfferList.map((offer) => offer.id);
+
+export function hasPremiumOffer(id: PremiumOfferId): boolean {
+  return premiumOfferMap.has(id);
+}
 
 export function getPremiumOffer(id: PremiumOfferId): PremiumOffer {
-  return premiumOffers[id];
+  const offer = premiumOfferMap.get(id);
+  if (!offer) {
+    throw new Error(`Unknown premium offer: ${id}`);
+  }
+  return offer;
 }
-

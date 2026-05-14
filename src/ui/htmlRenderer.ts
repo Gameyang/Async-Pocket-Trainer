@@ -99,6 +99,10 @@ interface AppLifecycleState {
   suspended: boolean;
 }
 
+interface TransientFeedbackState {
+  shownReadyCaptureKeys: Set<string>;
+}
+
 interface AudioState {
   unlocked: boolean;
   currentBgmKey?: FrameBgmKey;
@@ -125,10 +129,9 @@ interface BattleMotionTemplate {
   role: "user" | "target";
 }
 
-type BattleHitVisualCue = Extract<
-  FrameVisualCue,
-  { type: "battle.hit" | "battle.miss" }
-> & { type: "battle.hit" };
+type BattleHitVisualCue = Extract<FrameVisualCue, { type: "battle.hit" | "battle.miss" }> & {
+  type: "battle.hit";
+};
 type BattleEffectVisualCue =
   | BattleHitVisualCue
   | Extract<FrameVisualCue, { type: "battle.support" }>;
@@ -156,6 +159,9 @@ export function mountHtmlRenderer(
   const lifecycle: AppLifecycleState = {
     suspended: isPageSuspended(),
   };
+  const transientFeedback: TransientFeedbackState = {
+    shownReadyCaptureKeys: new Set(),
+  };
   const shopTarget: ShopTargetState = {};
 
   const render = () => {
@@ -171,6 +177,7 @@ export function mountHtmlRenderer(
       playbackView,
       Boolean(options.onStarterReroll),
       shopTarget.action,
+      transientFeedback,
     );
     spawnActiveBattleEffect(
       root,
@@ -282,10 +289,12 @@ function bindShopTargetSelection(
   shopTarget: ShopTargetState,
   render: () => void,
 ): void {
-  root.querySelector<HTMLButtonElement>("[data-shop-target-cancel]")?.addEventListener("click", () => {
-    shopTarget.action = undefined;
-    render();
-  });
+  root
+    .querySelector<HTMLButtonElement>("[data-shop-target-cancel]")
+    ?.addEventListener("click", () => {
+      shopTarget.action = undefined;
+      render();
+    });
 
   root.querySelectorAll<HTMLButtonElement>("[data-shop-target-id]").forEach((button) => {
     button.addEventListener("click", async () => {
@@ -324,7 +333,12 @@ function buildTargetedPayload(action: FrameAction, targetEntityId: string): Game
     };
   }
   if (action.action.type === "BUY_STAT_BOOST") {
-    return { type: "BUY_STAT_BOOST", tier: action.action.tier, targetEntityId };
+    return {
+      type: "BUY_STAT_BOOST",
+      stat: action.action.stat,
+      tier: action.action.tier,
+      targetEntityId,
+    };
   }
   if (action.action.type === "BUY_STAT_REROLL") {
     return { type: "BUY_STAT_REROLL", targetEntityId };
@@ -332,8 +346,8 @@ function buildTargetedPayload(action: FrameAction, targetEntityId: string): Game
   if (action.action.type === "BUY_TEACH_MOVE") {
     return { type: "BUY_TEACH_MOVE", element: action.action.element, targetEntityId };
   }
-  if (action.action.type === "BUY_PREMIUM_TEAM_REROLL") {
-    return { type: "BUY_PREMIUM_TEAM_REROLL", targetEntityId };
+  if (action.action.type === "BUY_PREMIUM_SHOP_ITEM") {
+    return { type: "BUY_PREMIUM_SHOP_ITEM", offerId: action.action.offerId, targetEntityId };
   }
   return undefined;
 }
@@ -343,10 +357,10 @@ function requiresShopTarget(action: FrameAction): boolean {
     return action.action.scope === "single";
   }
   return (
+    action.requiresTarget ||
     action.action.type === "BUY_STAT_BOOST" ||
     action.action.type === "BUY_STAT_REROLL" ||
-    action.action.type === "BUY_TEACH_MOVE" ||
-    action.action.type === "BUY_PREMIUM_TEAM_REROLL"
+    action.action.type === "BUY_TEACH_MOVE"
   );
 }
 
@@ -461,6 +475,7 @@ function renderFrame(
   playback: BattlePlaybackView,
   canRerollStarter: boolean,
   shopTargetAction?: FrameAction,
+  transientFeedback?: TransientFeedbackState,
 ): string {
   const entityView = createEntityPlaybackView(frame, playback);
   const playerEntities = frame.scene.playerSlots
@@ -506,11 +521,12 @@ function renderFrame(
     activeCue,
     canRerollStarter,
     shopTargetAction,
+    teamRecord: statusView.teamRecord,
+    transientFeedback,
   });
   return `
     <main class="app-shell" data-frame-id="${frame.frameId}" data-protocol="${frame.protocolVersion}" data-phase="${frame.phase}" data-wave="${frame.hud.wave}" data-money="${frame.hud.money}" data-trainer-points="${frame.hud.trainerPoints}" ${renderBallDataAttributes(frame)} data-team-size="${playerEntities.length}" data-team-hp-ratio="${frame.hud.teamHpRatio}" data-timeline-count="${frame.timeline.length}" data-battle-playback="${playback.isPlaying ? "playing" : "idle"}" data-battle-sequence="${playback.activeEvent?.sequence ?? 0}" data-battle-event-type="${escapeHtml(playback.activeEvent?.type ?? "")}">
       ${screen}
-      ${playback.isPlaying ? "" : renderTeamRecordPanel(statusView.teamRecord, playerEntities)}
 
       ${
         frame.phase === "starterChoice" || frame.phase === "ready"
@@ -554,6 +570,8 @@ interface ScreenRenderContext {
   activeCue?: FrameVisualCue;
   canRerollStarter: boolean;
   shopTargetAction?: FrameAction;
+  teamRecord?: HtmlRendererTeamRecordView;
+  transientFeedback?: TransientFeedbackState;
 }
 
 function renderScreen(context: ScreenRenderContext): string {
@@ -573,6 +591,10 @@ function renderScreen(context: ScreenRenderContext): string {
 
   if (frame.phase === "gameOver") {
     return renderGameOverScreen(context);
+  }
+
+  if (frame.phase === "ready" && context.teamRecord && !playback.isPlaying) {
+    return renderCheckpointVictoryScreen(context.teamRecord, context.playerEntities);
   }
 
   return renderReadyScreen(context);
@@ -726,9 +748,10 @@ function renderStarterScreen(
   const unlockedCount = options.filter((option) =>
     actions.some((action) => action.id === `start:${option.speciesId}`),
   ).length;
-  const rerollButton = canReroll && options.length <= 12
-    ? '<button type="button" class="starter-reroll" data-starter-reroll aria-label="스타터 후보 다시 뽑기"><span aria-hidden="true">🎲</span><span class="starter-reroll-label">다시 뽑기</span></button>'
-    : "";
+  const rerollButton =
+    canReroll && options.length <= 12
+      ? '<button type="button" class="starter-reroll" data-starter-reroll aria-label="스타터 후보 다시 뽑기"><span aria-hidden="true">🎲</span><span class="starter-reroll-label">다시 뽑기</span></button>'
+      : "";
 
   return `
     <section class="screen starter-screen" data-screen="starterChoice" aria-label="스타터 선택">
@@ -761,7 +784,7 @@ function renderStarterOption(option: FrameStarterOption, actions: readonly Frame
         <img src="${resolveAssetPath(option.assetPath)}" alt="${escapeHtml(`${displayName} 포켓몬`)}" />
         <h2>${escapeHtml(displayName)}</h2>
         <p>${escapeHtml(typeLine)}</p>
-        ${action ? '<span>선택 가능</span>' : '<span>LOCKED</span>'}
+        ${action ? "<span>선택 가능</span>" : "<span>LOCKED</span>"}
       </button>
       ${
         action
@@ -779,13 +802,13 @@ function renderReadyScreen({
   frame,
   playerEntities,
   shopTargetAction,
+  transientFeedback,
 }: ScreenRenderContext): string {
   const shopActions = selectReadyShopActions(frame, playerEntities);
   const nextAction = frame.actions.find((action) => action.id === "encounter:next");
-  const captureFeedback =
-    frame.scene.capture?.result === "failure" || frame.scene.capture?.result === "success"
-      ? frame.scene.capture
-      : undefined;
+  const captureFeedback = shouldRenderReadyCaptureFeedback(frame, transientFeedback)
+    ? frame.scene.capture
+    : undefined;
 
   return `
     <section class="screen ready-screen shop-screen" data-screen="ready" data-shop-actions="${shopActions.length}" data-shop-targeting="${shopTargetAction ? "true" : "false"}" aria-label="관리 단계">
@@ -812,6 +835,38 @@ function renderReadyScreen({
       ${renderTeamDetailPopups(playerEntities)}
     </section>
   `;
+}
+
+function shouldRenderReadyCaptureFeedback(
+  frame: GameFrame,
+  transientFeedback: TransientFeedbackState | undefined,
+): boolean {
+  if (
+    frame.phase !== "ready" ||
+    (frame.scene.capture?.result !== "failure" && frame.scene.capture?.result !== "success")
+  ) {
+    return false;
+  }
+
+  if (!transientFeedback) {
+    return true;
+  }
+
+  const key = createReadyCaptureFeedbackKey(frame);
+  if (transientFeedback.shownReadyCaptureKeys.has(key)) {
+    return false;
+  }
+
+  transientFeedback.shownReadyCaptureKeys.add(key);
+  return true;
+}
+
+function createReadyCaptureFeedbackKey(frame: GameFrame): string {
+  const cue = frame.visualCues.find(
+    (candidate) => candidate.type === "capture.fail" || candidate.type === "capture.success",
+  );
+
+  return cue?.id ?? `${frame.stateKey}:capture:${frame.scene.capture?.result ?? "none"}`;
 }
 
 function createShopTargetLabel(action: FrameAction): string {
@@ -1168,11 +1223,7 @@ function createCompactShopTitleLines(action: FrameAction, profile: ShopActionPro
   if (action.action.type === "BUY_SCOUT") {
     const kindLabel = action.action.kind === "rarity" ? "희귀 탐지" : "강도 탐지";
     const detail =
-      action.action.tier === 1
-        ? "기본 정보"
-        : action.action.tier === 2
-          ? "상세 정보"
-          : "정밀 분석";
+      action.action.tier === 1 ? "기본 정보" : action.action.tier === 2 ? "상세 정보" : "정밀 분석";
     return [kindLabel, detail];
   }
 
@@ -1207,8 +1258,8 @@ function createCompactShopTitleLines(action: FrameAction, profile: ShopActionPro
   }
 
   if (action.action.type === "BUY_STAT_BOOST") {
-    const bonus: Record<1 | 2 | 3, string> = { 1: "+5", 2: "+10", 3: "+20" };
-    return ["능력치", bonus[action.action.tier]];
+    const bonus: Record<1 | 2 | 3, string> = { 1: "+3", 2: "+6", 3: "+9" };
+    return [formatShopStatLabel(action.action.stat), bonus[action.action.tier]];
   }
 
   if (action.action.type === "BUY_STAT_REROLL") {
@@ -1229,20 +1280,21 @@ function createCompactShopTitleLines(action: FrameAction, profile: ShopActionPro
     return ["보급", "루트"];
   }
 
-  if (action.action.type === "BUY_PREMIUM_MASTERBALL") {
-    return ["마스터", "볼"];
-  }
-  if (action.action.type === "BUY_PREMIUM_REVIVE_ALL") {
-    return ["기적의", "부활"];
-  }
-  if (action.action.type === "BUY_PREMIUM_COIN_BAG") {
-    return ["코인", "+50"];
-  }
-  if (action.action.type === "BUY_PREMIUM_TEAM_REROLL") {
-    return ["운명의", "재추첨"];
-  }
-  if (action.action.type === "BUY_PREMIUM_DEX_UNLOCK") {
-    return ["신화의", "발견"];
+  if (action.action.type === "BUY_PREMIUM_SHOP_ITEM") {
+    const [, ...parts] = action.action.offerId.replace(/^premium:/, "").split(":");
+    if (action.action.offerId.includes(":stat-boost:")) {
+      const stat = action.action.offerId.split(":")[2];
+      return ["TP", `${formatShopStatLabel(stat)} 강화`];
+    }
+    if (action.action.offerId.includes(":teach-move:")) {
+      const element = action.action.offerId.split(":")[2];
+      return ["TP", `${ELEMENT_KO[element] ?? element} 기술`];
+    }
+    if (action.action.offerId.includes(":type-lock:")) {
+      const element = action.action.offerId.split(":")[2];
+      return ["TP", `${ELEMENT_KO[element] ?? element} 고정`];
+    }
+    return ["TP", parts.join(" ") || "프리미엄"];
   }
 
   if (action.action.type === "REROLL_SHOP_INVENTORY") {
@@ -1253,13 +1305,42 @@ function createCompactShopTitleLines(action: FrameAction, profile: ShopActionPro
 }
 
 const ELEMENT_KO: Partial<Record<string, string>> = {
+  normal: "노말",
   fire: "불꽃",
   water: "물",
   grass: "풀",
   electric: "전기",
+  poison: "독",
+  ground: "땅",
+  flying: "비행",
+  bug: "벌레",
+  fighting: "격투",
   dragon: "드래곤",
   psychic: "에스퍼",
+  rock: "바위",
+  ghost: "고스트",
+  ice: "얼음",
+  dark: "악",
+  steel: "강철",
+  fairy: "페어리",
 };
+
+function formatShopStatLabel(stat: unknown): string {
+  switch (stat) {
+    case "hp":
+      return "HP";
+    case "attack":
+      return "공";
+    case "defense":
+      return "방";
+    case "special":
+      return "특";
+    case "speed":
+      return "스";
+    default:
+      return "능력치";
+  }
+}
 
 function createCompactShopMeta(action: FrameAction, profile: ShopActionProfile): string {
   if (action.id === "encounter:next") {
@@ -1279,9 +1360,10 @@ function renderTeamDecisionScreen({
   pendingCapture,
 }: ScreenRenderContext): string {
   const fullTeam = playerEntities.length >= 6;
-  const weakestPower = playerEntities.length === 0
-    ? 0
-    : Math.min(...playerEntities.map((entity) => entity.scores.power));
+  const weakestPower =
+    playerEntities.length === 0
+      ? 0
+      : Math.min(...playerEntities.map((entity) => entity.scores.power));
 
   return `
     <section class="screen team-decision-screen" data-screen="teamDecision" aria-label="팀 편성">
@@ -1395,10 +1477,7 @@ function renderGameOverScreen({
   `;
 }
 
-function renderFinalTeamStats(
-  playerEntities: readonly FrameEntity[],
-  teamPower: number,
-): string {
+function renderFinalTeamStats(playerEntities: readonly FrameEntity[], teamPower: number): string {
   const slots = Array.from({ length: 6 }, (_, index) => playerEntities[index]);
 
   return `
@@ -1562,7 +1641,7 @@ function renderCaptureOverlay(capture: FrameCaptureScene | undefined): string {
   `;
 }
 
-function renderTeamRecordPanel(
+function renderCheckpointVictoryScreen(
   record: HtmlRendererTeamRecordView | undefined,
   playerEntities: readonly FrameEntity[],
 ): string {
@@ -1571,20 +1650,33 @@ function renderTeamRecordPanel(
   }
 
   const message = record.message
-    ? `<p class="record-message">${escapeHtml(record.message)}</p>`
+    ? `<p class="victory-record-message">${escapeHtml(record.message)}</p>`
     : "";
+  const particles = Array.from({ length: 24 }, (_, index) => {
+    const group = index % 5;
+    const top = (index % 6) * 14 - 6;
+    const left = (index * 37) % 100;
+    const hue = 42 + group * 18;
+    const drift = -28 + group * 14;
+    return `<span style="--petal-index: ${index}; --petal-top: ${top}%; --petal-left: ${left}%; --petal-hue: ${hue}; --petal-drift: ${drift}px" aria-hidden="true"></span>`;
+  }).join("");
 
   return `
-    <section class="team-record-panel" data-team-record-panel>
-      <form data-team-record-form>
-        <span>${formatWave(record.wave)} 트레이너 승리 기록</span>
-        <strong>${escapeHtml(record.opponentName)}</strong>
-        ${renderTeamDots(playerEntities)}
+    <section class="screen checkpoint-victory-screen" data-screen="checkpointVictory" aria-label="트레이너 승리 정산">
+      <div class="victory-pollen-field" aria-hidden="true">${particles}</div>
+      <div class="victory-ground" aria-hidden="true"></div>
+      <form class="checkpoint-victory-card" data-team-record-form>
+        <span class="victory-kicker">${formatWave(record.wave)} 트레이너 승리</span>
+        <h2>${escapeHtml(record.opponentName)} 격파</h2>
+        <p>현재 팀을 체크포인트 기록으로 저장합니다.</p>
+        <div class="victory-team-row">
+          ${renderTeamDots(playerEntities)}
+        </div>
         <label>
           <span>팀 이름</span>
           <input name="trainerName" value="${escapeHtml(record.trainerName)}" maxlength="24" autocomplete="off" />
         </label>
-        <button type="submit">기록 저장</button>
+        <button type="submit">정산 저장</button>
         ${message}
       </form>
     </section>
@@ -1731,6 +1823,8 @@ function actionEmoji(action: FrameAction): string {
       return ELEMENT_EMOJI[action.action.element] ?? "📘";
     case "BUY_TYPE_LOCK":
       return ELEMENT_EMOJI[action.action.element] ?? "🔒";
+    case "BUY_PREMIUM_SHOP_ITEM":
+      return "⭐";
     case "BUY_PREMIUM_MASTERBALL":
       return "✨";
     case "BUY_PREMIUM_REVIVE_ALL":
@@ -1751,12 +1845,24 @@ function actionEmoji(action: FrameAction): string {
 }
 
 const ELEMENT_EMOJI: Partial<Record<string, string>> = {
+  normal: "⚪",
   fire: "🔥",
   water: "💧",
   grass: "🌿",
   electric: "⚡",
+  poison: "☠️",
+  ground: "⛰️",
+  flying: "🪽",
+  bug: "🐞",
+  fighting: "🥊",
   dragon: "🐉",
   psychic: "🔮",
+  rock: "🪨",
+  ghost: "👻",
+  ice: "❄️",
+  dark: "🌑",
+  steel: "⚙️",
+  fairy: "✨",
 };
 
 function renderCommandItem(command: CommandItem, locked: boolean): string {
@@ -2159,9 +2265,8 @@ function normalizeEffectSide(
 
 function findBattleEntityElement(root: HTMLElement, entityId: string): HTMLElement | undefined {
   return (
-    root.querySelector<HTMLElement>(
-      `.screen-monster[data-entity-id="${cssEscape(entityId)}"]`,
-    ) ?? undefined
+    root.querySelector<HTMLElement>(`.screen-monster[data-entity-id="${cssEscape(entityId)}"]`) ??
+    undefined
   );
 }
 

@@ -26,10 +26,7 @@ test("renders phase-specific screens with stable responsive layout", async ({ pa
   await assertPhaseScreen(page, "starterChoice", ".starter-screen");
   await expect(page.locator(".starter-option")).toHaveCount(speciesCatalog.length);
   await expect(page.locator('.starter-option[data-starter-state="unlocked"]')).toHaveCount(10);
-  await expect(page.locator(".starter-choice-row")).toHaveAttribute(
-    "data-starter-density",
-    "dex",
-  );
+  await expect(page.locator(".starter-choice-row")).toHaveAttribute("data-starter-density", "dex");
 
   const firstStarter = page.locator('.starter-option[data-starter-state="unlocked"]').first();
   await firstStarter.locator("[data-starter-pick]").click();
@@ -80,9 +77,9 @@ test("renders phase-specific screens with stable responsive layout", async ({ pa
   await page.locator("[data-shop-target-id]:not(:disabled)").first().click();
   await expect.poll(() => page.locator("#app").getAttribute("data-busy")).toBeNull();
   await expect(page.locator(".shop-screen")).toHaveAttribute("data-shop-targeting", "false");
-  await expect.poll(async () => (await readShellState(page)).money).toBeLessThan(
-    beforeTargetHeal.money,
-  );
+  await expect
+    .poll(async () => (await readShellState(page)).money)
+    .toBeLessThan(beforeTargetHeal.money);
 
   await openSnapshot(page, captureDecisionSnapshot());
   await assertPhaseScreen(page, "captureDecision", ".encounter-panel");
@@ -260,11 +257,10 @@ test("reads public CSV from code sync settings and opens team record prompt", as
   await expect(page.locator(".trainer-record")).toHaveCount(0);
   await expect(page.locator('.team-record-shift[data-record-placement="battle"]')).toHaveCount(0);
   await waitForBattleReplay(page);
-  await expect(page.locator('.team-record-shift[data-record-placement="toast"]')).toBeVisible();
-  await expect(page.locator("[data-team-record-panel]")).toBeVisible();
+  await expect(page.locator('[data-screen="checkpointVictory"]')).toBeVisible();
   await page.locator('input[name="trainerName"]').fill("E2E Team");
   await page.locator("[data-team-record-form] button").click();
-  await expect(page.locator("[data-team-record-panel]")).toHaveCount(0);
+  await expect(page.locator('[data-screen="checkpointVictory"]')).toHaveCount(0);
   await expect
     .poll(() => page.evaluate(() => localStorage.getItem("apt:trainer-name:v1")))
     .toBe("E2E Team");
@@ -554,7 +550,10 @@ async function selectStarterAndConfirm(page: Page, speciesId = 4): Promise<void>
     "data-selection-active",
     "true",
   );
-  await clickAction(page, '.starter-option[data-starter-selected="true"] [data-action-id^="start:"]');
+  await clickAction(
+    page,
+    '.starter-option[data-starter-selected="true"] [data-action-id^="start:"]',
+  );
 }
 
 async function waitForBattleReplay(page: Page): Promise<void> {

@@ -51,7 +51,7 @@ describe("HeadlessGameClient", () => {
     const groups = new Set(inventory?.entries.map((entry) => shopInventoryGroup(entry.actionId)));
     expect(inventory?.entries).toHaveLength(8);
     expect(groups).toEqual(
-      new Set(["recovery", "balls", "scout", "encounter", "team", "premium"]),
+      new Set(["recovery", "balls", "encounter", "team", "premium"]),
     );
 
     const productActionIds = client
@@ -157,10 +157,10 @@ describe("HeadlessGameClient", () => {
         { actionId: "shop:ultraball", stock: 2, initialStock: 2 },
         { actionId: "shop:heal:single:1", stock: 1, initialStock: 1 },
         { actionId: "shop:heal:team:1", stock: 1, initialStock: 1 },
-        { actionId: "shop:scout:rarity:1", stock: 1, initialStock: 1 },
-        { actionId: "shop:scout:power:1", stock: 1, initialStock: 1 },
         { actionId: "shop:rarity-boost:1", stock: 1, initialStock: 1 },
         { actionId: "shop:level-boost:1", stock: 1, initialStock: 1 },
+        { actionId: "shop:type-lock:fire", stock: 1, initialStock: 1 },
+        { actionId: "shop:stat-boost:hp:1", stock: 1, initialStock: 1 },
       ],
     };
     shopClient.loadSnapshot(snapshot);
@@ -174,10 +174,10 @@ describe("HeadlessGameClient", () => {
         "shop:ultraball",
         "shop:heal:single:1",
         "shop:heal:team:1",
-        "shop:scout:rarity:1",
-        "shop:scout:power:1",
         "shop:rarity-boost:1",
         "shop:level-boost:1",
+        "shop:type-lock:fire",
+        "shop:stat-boost:hp:1",
         "shop:reroll",
       ]),
     );
@@ -185,14 +185,15 @@ describe("HeadlessGameClient", () => {
     expect(shopClient.getSnapshot().encounterBoost).toMatchObject({ rarityBonus: 0.1, wave: 1 });
     dispatchFrameAction(shopClient, "shop:level-boost:1");
     expect(shopClient.getSnapshot().encounterBoost).toMatchObject({ levelMin: 1, levelMax: 2 });
+    dispatchFrameAction(shopClient, "shop:type-lock:fire");
+    expect(shopClient.getSnapshot().encounterBoost).toMatchObject({ lockedType: "fire" });
+    dispatchFrameAction(shopClient, "shop:stat-boost:hp:1");
+    expect(shopClient.getSnapshot().team[0].stats.hp).toBeGreaterThan(snapshot.state.team[0].stats.hp);
     dispatchFrameAction(shopClient, "shop:pokeball");
-    dispatchFrameAction(shopClient, "shop:scout:power:1");
     dispatchFrameAction(shopClient, "shop:rest");
     expect(shopClient.getSnapshot().events.map((event) => event.type)).toContain("team_rested");
     expect(shopClient.getSnapshot().events.map((event) => event.type)).toContain("ball_bought");
-    expect(shopClient.getSnapshot().events.map((event) => event.type)).toContain(
-      "scout_reported",
-    );
+    expect(shopClient.getSnapshot().events.map((event) => event.type)).toContain("stat_boost_applied");
 
     const skipClient = startFromFrameAction("input-skip");
     dispatchFrameAction(skipClient, "encounter:next");
@@ -328,7 +329,6 @@ function shopInventoryGroup(actionId: string): string {
   ) {
     return "balls";
   }
-  if (actionId.startsWith("shop:scout:")) return "scout";
   if (
     actionId.startsWith("shop:rarity-boost:") ||
     actionId.startsWith("shop:level-boost:") ||
@@ -336,11 +336,7 @@ function shopInventoryGroup(actionId: string): string {
   ) {
     return "encounter";
   }
-  if (
-    actionId.startsWith("shop:stat-boost:") ||
-    actionId === "shop:stat-reroll" ||
-    actionId.startsWith("shop:teach-move:")
-  ) {
+  if (actionId.startsWith("shop:stat-boost:") || actionId.startsWith("shop:teach-move:")) {
     return "team";
   }
   if (actionId.startsWith("shop:premium:")) return "premium";

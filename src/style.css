@@ -236,14 +236,12 @@ p {
 }
 
 .screen-monster[data-motion-role="user"] {
-  filter:
-    drop-shadow(0 7px 0 rgba(25, 38, 36, 0.22))
+  filter: drop-shadow(0 7px 0 rgba(25, 38, 36, 0.22))
     drop-shadow(0 0 10px color-mix(in srgb, var(--move-color, #fff) 58%, transparent));
 }
 
 .screen-monster[data-motion-role="target"] {
-  filter:
-    drop-shadow(0 7px 0 rgba(25, 38, 36, 0.22))
+  filter: drop-shadow(0 7px 0 rgba(25, 38, 36, 0.22))
     drop-shadow(0 0 8px color-mix(in srgb, var(--move-color, #fff) 42%, transparent));
 }
 
@@ -1276,7 +1274,8 @@ p {
   opacity: 1;
 }
 
-.starter-choice-row[data-selection-active="true"] .starter-option[data-starter-state="unlocked"]:not([data-starter-selected="true"]) {
+.starter-choice-row[data-selection-active="true"]
+  .starter-option[data-starter-state="unlocked"]:not([data-starter-selected="true"]) {
   opacity: 0.58;
 }
 
@@ -3358,6 +3357,143 @@ button.shop-team-slot:hover:not(:disabled) {
   background: linear-gradient(90deg, #e25248, #f38a5c);
 }
 
+.checkpoint-victory-screen {
+  position: relative;
+  grid-template-rows: minmax(0, 1fr);
+  place-items: center;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 18% 18%, rgba(255, 240, 166, 0.9), transparent 24%),
+    linear-gradient(180deg, #8bd8ff 0 42%, #8dd37a 42% 100%);
+}
+
+.victory-ground {
+  position: absolute;
+  right: -8%;
+  bottom: -20%;
+  left: -8%;
+  height: 42%;
+  border-top: 4px solid rgba(16, 23, 34, 0.28);
+  border-radius: 50% 50% 0 0;
+  background:
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.22) 0 10px, transparent 10px 22px),
+    linear-gradient(180deg, #8dd37a, #4f9d5c);
+}
+
+.victory-pollen-field {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.victory-pollen-field span {
+  position: absolute;
+  top: var(--petal-top);
+  left: var(--petal-left);
+  width: 8px;
+  height: 12px;
+  border: 2px solid rgba(16, 23, 34, 0.18);
+  border-radius: 8px 8px 8px 2px;
+  background: hsl(var(--petal-hue) 88% 72%);
+  opacity: 0;
+  transform: translate3d(0, -18px, 0) rotate(0deg);
+  animation: victory-pollen-fall 3.8s calc(var(--petal-index) * 90ms) linear infinite;
+}
+
+.checkpoint-victory-card {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  justify-items: stretch;
+  gap: 10px;
+  width: min(88%, 360px);
+  border: 4px solid var(--line);
+  border-radius: 8px;
+  padding: 14px;
+  background: rgba(255, 254, 244, 0.96);
+  box-shadow:
+    inset 0 0 0 2px rgba(255, 255, 255, 0.78),
+    7px 8px 0 rgba(0, 0, 0, 0.22);
+}
+
+.checkpoint-victory-card h2,
+.checkpoint-victory-card p {
+  margin: 0;
+  overflow-wrap: anywhere;
+  text-align: center;
+}
+
+.checkpoint-victory-card h2 {
+  font-size: 1rem;
+  line-height: 1.1;
+}
+
+.checkpoint-victory-card p {
+  color: #395762;
+  font-size: 0.72rem;
+  font-weight: 900;
+  line-height: 1.25;
+}
+
+.victory-kicker {
+  justify-self: center;
+  border: 2px solid var(--line);
+  border-radius: 999px;
+  padding: 3px 9px;
+  background: #fff0a6;
+  color: #7f4f17;
+  font-size: 0.66rem;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.victory-team-row {
+  display: grid;
+  justify-items: center;
+}
+
+.checkpoint-victory-card label {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+.checkpoint-victory-card input {
+  min-width: 0;
+  border: 3px solid var(--line);
+  border-radius: 7px;
+  padding: 9px 10px;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 900;
+}
+
+.checkpoint-victory-card button {
+  min-height: 42px;
+  border: 3px solid var(--line);
+  border-radius: 7px;
+  background: linear-gradient(180deg, #fff0a6, #f0b83e);
+  color: var(--ink);
+  box-shadow: 0 4px 0 rgba(0, 0, 0, 0.18);
+  font-size: 0.82rem;
+  font-weight: 900;
+}
+
+.victory-record-message {
+  border: 2px solid rgba(23, 32, 42, 0.28);
+  border-radius: 6px;
+  padding: 6px;
+  background: #eef7ff;
+  color: #275768;
+  font-size: 0.66rem;
+}
+
 .team-record-panel {
   position: absolute;
   z-index: 24;
@@ -4434,13 +4570,19 @@ button.shop-team-slot:hover:not(:disabled) {
 
   88% {
     opacity: 1;
-    transform: translate(calc(148px + var(--spark-index) * 5px), calc(-22px + (var(--spark-index) % 3) * 13px))
+    transform: translate(
+        calc(148px + var(--spark-index) * 5px),
+        calc(-22px + (var(--spark-index) % 3) * 13px)
+      )
       scale(1);
   }
 
   100% {
     opacity: 0;
-    transform: translate(calc(166px + var(--spark-index) * 5px), calc(-28px + (var(--spark-index) % 3) * 13px))
+    transform: translate(
+        calc(166px + var(--spark-index) * 5px),
+        calc(-28px + (var(--spark-index) % 3) * 13px)
+      )
       scale(0.75);
   }
 }
@@ -4511,5 +4653,26 @@ button.shop-team-slot:hover:not(:disabled) {
 
   75% {
     transform: translateX(-3px) rotate(-5deg);
+  }
+}
+
+@keyframes victory-pollen-fall {
+  0% {
+    opacity: 0;
+    transform: translate3d(-8px, -18px, 0) rotate(0deg);
+  }
+
+  12% {
+    opacity: 0.95;
+  }
+
+  82% {
+    opacity: 0.9;
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate3d(var(--petal-drift), 118vh, 0)
+      rotate(calc(220deg + var(--petal-index) * 18deg));
   }
 }

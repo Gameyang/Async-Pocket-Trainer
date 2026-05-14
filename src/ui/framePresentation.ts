@@ -908,9 +908,9 @@ export function createShopActionProfile(action: FrameAction, frame: GameFrame): 
   if (action.action.type === "BUY_STAT_BOOST") {
     return {
       kind: "stat-boost",
-      kicker: "능력치",
-      title: "능력치 강화",
-      detail: "선택 포켓몬 전 능력치 상승",
+      kicker: formatShopStatLabel(action.action.stat),
+      title: `${formatShopStatLabel(action.action.stat)} 강화`,
+      detail: "선택 포켓몬 단일 능력치 상승",
       meta: action.cost === undefined ? "선택" : formatMoney(action.cost),
     };
   }
@@ -955,16 +955,10 @@ export function createShopActionProfile(action: FrameAction, frame: GameFrame): 
     };
   }
 
-  if (
-    action.action.type === "BUY_PREMIUM_MASTERBALL" ||
-    action.action.type === "BUY_PREMIUM_REVIVE_ALL" ||
-    action.action.type === "BUY_PREMIUM_COIN_BAG" ||
-    action.action.type === "BUY_PREMIUM_TEAM_REROLL" ||
-    action.action.type === "BUY_PREMIUM_DEX_UNLOCK"
-  ) {
+  if (action.action.type === "BUY_PREMIUM_SHOP_ITEM") {
     return {
       kind: "premium",
-      kicker: "프리미엄",
+      kicker: "TP 전용",
       title: action.label.replace(/\s\d+TP$/, ""),
       detail: "트레이너 포인트로만 구매",
       meta: action.tpCost !== undefined ? `${action.tpCost} TP` : action.label,
@@ -1015,4 +1009,21 @@ export function renderPhaseLabel(phase: GameFrame["phase"]): string {
 
 function findAction(actions: readonly FrameAction[], id: string): FrameAction | undefined {
   return actions.find((action) => action.id === id);
+}
+
+function formatShopStatLabel(stat: unknown): string {
+  switch (stat) {
+    case "hp":
+      return "HP";
+    case "attack":
+      return "공";
+    case "defense":
+      return "방";
+    case "special":
+      return "특";
+    case "speed":
+      return "스";
+    default:
+      return "능력치";
+  }
 }

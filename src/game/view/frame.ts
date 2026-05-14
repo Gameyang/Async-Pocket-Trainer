@@ -7,17 +7,15 @@ import {
   getLevelBoostProduct,
   getPremiumOffer,
   getRarityBoostProduct,
-  getScoutProduct,
   getStatBoostProduct,
-  getStatRerollProduct,
   getTeachMoveProduct,
   getTypeLockProduct,
+  hasPremiumOffer,
   healTiers,
   levelBoostTiers,
   premiumOfferIds,
   rarityBoostTiers,
-  scoutKinds,
-  scoutTiers,
+  shopStatKeys,
   statBoostTiers,
   teachMoveElements,
   typeLockElements,
@@ -55,6 +53,7 @@ import type {
   MoveDefinition,
   PremiumOfferId,
   RouteId,
+  ShopStatKey,
   ShopInventory,
   SpeciesDefinition,
   TeamRecordChange,
@@ -215,6 +214,7 @@ export interface FrameAction {
   cost?: number;
   originalCost?: number;
   tpCost?: number;
+  requiresTarget?: boolean;
   reason?: string;
 }
 
@@ -1193,11 +1193,9 @@ function createReadyShopActions(state: GameState, balance: GameBalance): FrameAc
   const allActions = [
     ...createHealActions(state),
     ...createBallShopActions(state, balance),
-    ...createScoutActions(state),
     ...createRarityBoostActions(state),
     ...createLevelBoostActions(state),
     ...createStatBoostActions(state),
-    ...createStatRerollActions(state),
     ...createTeachMoveActions(state),
     ...createTypeLockActions(state),
     ...createPremiumActions(state),
@@ -1254,38 +1252,24 @@ function createPremiumActions(state: GameState): FrameAction[] {
   const offerIds = resolveActivePremiumOffers(state);
   return offerIds.map((offerId) => {
     const offer = getPremiumOffer(offerId);
-    const action: GameAction = premiumActionFor(offerId);
     return {
       id: `shop:${offerId}`,
       label: `${offer.label} ${offer.tpCost}TP`,
       role: "secondary" as const,
       enabled: tp >= offer.tpCost,
       tpCost: offer.tpCost,
-      action,
+      requiresTarget: offer.targetRequired,
+      action: { type: "BUY_PREMIUM_SHOP_ITEM" as const, offerId },
       reason: tp >= offer.tpCost ? undefined : "트레이너 포인트가 부족합니다",
     };
   });
 }
 
-function premiumActionFor(offerId: PremiumOfferId): GameAction {
-  switch (offerId) {
-    case "premium:masterball":
-      return { type: "BUY_PREMIUM_MASTERBALL" };
-    case "premium:revive":
-      return { type: "BUY_PREMIUM_REVIVE_ALL" };
-    case "premium:coin-bag":
-      return { type: "BUY_PREMIUM_COIN_BAG" };
-    case "premium:team-reroll":
-      return { type: "BUY_PREMIUM_TEAM_REROLL" };
-    case "premium:dex-unlock":
-      return { type: "BUY_PREMIUM_DEX_UNLOCK" };
-  }
-}
-
 function resolveActivePremiumOffers(state: GameState): PremiumOfferId[] {
   const cached = state.premiumOfferIds;
-  if (cached && cached.wave === state.currentWave && cached.ids.length > 0) {
-    return cached.ids;
+  const cachedIds = cached?.ids.filter(hasPremiumOffer) ?? [];
+  if (cached && cached.wave === state.currentWave && cachedIds.length > 0) {
+    return cachedIds;
   }
   return rollPremiumOffers(state.seed, state.currentWave);
 }
@@ -1315,34 +1299,37 @@ function applyShopDeal(action: FrameAction, state: GameState): FrameAction {
   };
 }
 
-function createStatBoostActions(state: GameState): FrameAction[] {
-  return statBoostTiers.map((tier) => {
-    const product = getStatBoostProduct(tier);
-    return {
-      id: `shop:stat-boost:${tier}`,
-      label: `능력치 +${product.bonus} ${formatMoney(product.cost)}`,
-      role: "secondary" as const,
-      enabled: state.money >= product.cost,
-      cost: product.cost,
-      action: { type: "BUY_STAT_BOOST" as const, tier },
-      reason: state.money >= product.cost ? undefined : "코인이 부족합니다",
-    };
-  });
+function formatShopStatLabel(stat: ShopStatKey): string {
+  switch (stat) {
+    case "hp":
+      return "HP";
+    case "attack":
+      return "공";
+    case "defense":
+      return "방";
+    case "special":
+      return "특";
+    case "speed":
+      return "스";
+  }
 }
 
-function createStatRerollActions(state: GameState): FrameAction[] {
-  const product = getStatRerollProduct();
-  return [
-    {
-      id: "shop:stat-reroll",
-      label: `능력치 재추첨 ${formatMoney(product.cost)}`,
-      role: "secondary",
-      enabled: state.money >= product.cost,
-      cost: product.cost,
-      action: { type: "BUY_STAT_REROLL" },
-      reason: state.money >= product.cost ? undefined : "코인이 부족합니다",
-    },
-  ];
+function createStatBoostActions(state: GameState): FrameAction[] {
+  return shopStatKeys.flatMap((stat) =>
+    statBoostTiers.map((tier) => {
+      const product = getStatBoostProduct(stat, tier);
+      return {
+        id: `shop:stat-boost:${stat}:${tier}`,
+        label: `${formatShopStatLabel(stat)} +${product.bonus} ${formatMoney(product.cost)}`,
+        role: "secondary" as const,
+        enabled: state.money >= product.cost,
+        cost: product.cost,
+        requiresTarget: true,
+        action: { type: "BUY_STAT_BOOST" as const, stat, tier },
+        reason: state.money >= product.cost ? undefined : "코인이 부족합니다",
+      };
+    }),
+  );
 }
 
 function createTeachMoveActions(state: GameState): FrameAction[] {
@@ -1354,6 +1341,7 @@ function createTeachMoveActions(state: GameState): FrameAction[] {
       role: "secondary" as const,
       enabled: state.money >= product.cost,
       cost: product.cost,
+      requiresTarget: true,
       action: { type: "BUY_TEACH_MOVE" as const, element },
       reason: state.money >= product.cost ? undefined : "코인이 부족합니다",
     };
@@ -1448,25 +1436,6 @@ function createBallShopActions(state: GameState, balance: GameBalance): FrameAct
       reason: state.money >= cost ? undefined : "코인이 부족합니다",
     };
   });
-}
-
-function createScoutActions(state: GameState): FrameAction[] {
-  return scoutKinds.flatMap((kind) =>
-    scoutTiers.map((tier) => {
-      const product = getScoutProduct(kind, tier);
-      const label = kind === "rarity" ? "희귀 탐지" : "강도 탐지";
-
-      return {
-        id: `shop:scout:${kind}:${tier}`,
-        label: `${label} ${tier}단계 ${formatMoney(product.cost)}`,
-        role: "secondary" as const,
-        enabled: state.money >= product.cost,
-        cost: product.cost,
-        action: { type: "BUY_SCOUT" as const, kind, tier },
-        reason: state.money >= product.cost ? undefined : "코인이 부족합니다",
-      };
-    }),
-  );
 }
 
 function createTimeline(state: GameState): FrameTimelineEntry[] {
