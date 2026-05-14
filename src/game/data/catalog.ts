@@ -150,7 +150,6 @@ function toMoveDefinition(record: MoveRecord): MoveDefinition | undefined {
     power: record.power ?? 0,
     accuracy: (record.accuracy ?? 100) / 100,
     accuracyPercent: record.accuracy ?? undefined,
-    pp: record.pp ?? undefined,
     category: record.damageClass,
     priority: record.priority,
     target: record.target ?? undefined,

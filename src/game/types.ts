@@ -105,7 +105,6 @@ export interface MoveDefinition {
   power: number;
   accuracy: number;
   accuracyPercent?: number;
-  pp?: number;
   category: MoveCategory;
   priority: number;
   target?: string;

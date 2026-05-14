@@ -112,7 +112,6 @@ export interface FrameMoveSummary {
   power: number;
   accuracy: number;
   accuracyLabel: string;
-  pp?: number;
   category: MoveCategory;
   priority: number;
   effect: string;
@@ -736,7 +735,6 @@ function toFrameMoveSummary(move: MoveDefinition): FrameMoveSummary {
     accuracy: move.accuracy,
     accuracyLabel:
       move.accuracyPercent === undefined ? "-" : `${Math.round(move.accuracyPercent)}%`,
-    pp: move.pp,
     category: move.category,
     priority: move.priority,
     effect: createMoveEffectText(move),

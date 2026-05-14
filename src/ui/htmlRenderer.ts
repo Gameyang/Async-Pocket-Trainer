@@ -802,7 +802,6 @@ function renderTeamDetailMove(move: FrameEntity["moves"][number]): string {
         <div class="move-detail-category"><dt>분류</dt><dd>${escapeHtml(localizeMoveCategory(move.category))}</dd></div>
         <div class="move-detail-power"><dt>위력</dt><dd>${escapeHtml(formatMovePower(move))}</dd></div>
         <div class="move-detail-accuracy"><dt>명중</dt><dd>${escapeHtml(move.accuracyLabel)}</dd></div>
-        <div class="move-detail-pp"><dt>PP</dt><dd>${move.pp ?? "-"}</dd></div>
         <div class="move-detail-priority"><dt>우선도</dt><dd>${escapeHtml(formatMovePriority(move.priority))}</dd></div>
       </dl>
       <p class="move-detail-effect"><span>효과</span>${escapeHtml(move.effect)}</p>
@@ -1173,6 +1172,10 @@ function renderCommandBand(
   playerEntities: readonly FrameEntity[],
   pendingCapture: FrameEntity | undefined,
 ): string {
+  if (locked) {
+    return renderBattleTeamStatusBand(playerEntities);
+  }
+
   const commands = selectCommandItems(frame, playerEntities, pendingCapture);
 
   if (commands.length === 0) {
@@ -1183,6 +1186,42 @@ function renderCommandBand(
     <section class="command-band" data-command-count="${commands.length}">
       ${commands.map((command) => renderCommandItem(command, locked)).join("")}
     </section>
+  `;
+}
+
+function renderBattleTeamStatusBand(playerEntities: readonly FrameEntity[]): string {
+  const slots = Array.from({ length: 6 }, (_, index) => playerEntities[index]);
+
+  return `
+    <section class="battle-status-band" data-status-count="${playerEntities.length}" aria-label="전투 중 팀 상태">
+      ${slots.map((entity, index) => renderBattleStatusSlot(entity, index)).join("")}
+    </section>
+  `;
+}
+
+function renderBattleStatusSlot(entity: FrameEntity | undefined, index: number): string {
+  if (!entity) {
+    return `
+      <div class="battle-status-slot" data-slot-state="empty" data-team-slot="${index + 1}">
+        <span class="battle-status-number">${index + 1}</span>
+      </div>
+    `;
+  }
+
+  const hpState = resolveHpState(entity.hp.ratio);
+  const fainted = entity.hp.current <= 0;
+  const slotState = fainted ? "fainted" : "filled";
+
+  return `
+    <div class="battle-status-slot" data-slot-state="${slotState}" data-hp-state="${hpState}" data-team-slot="${index + 1}">
+      <span class="battle-status-number">${index + 1}</span>
+      <img src="${resolveAssetPath(entity.assetPath)}" alt="${escapeHtml(`${entity.name} 포켓몬`)}" />
+      <div class="battle-status-body">
+        <strong>${escapeHtml(entity.name)}</strong>
+        <p>${entity.hp.current}/${entity.hp.max}</p>
+        <span class="slot-meter" data-hp-state="${hpState}"><span style="width: ${Math.round(entity.hp.ratio * 100)}%"></span></span>
+      </div>
+    </div>
   `;
 }
 

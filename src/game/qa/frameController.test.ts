@@ -124,7 +124,6 @@ function entity(id: string, owner: FrameEntity["owner"], slot: number, power: nu
         power: 40,
         accuracy: 1,
         accuracyLabel: "100%",
-        pp: 35,
         category: "physical",
         priority: 0,
         effect: "추가 효과 없이 피해를 줍니다.",

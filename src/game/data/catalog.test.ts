@@ -28,7 +28,6 @@ describe("battle catalog move coverage", () => {
     expect(movesById.recover.meta).toMatchObject({ healing: 50 });
     expect(movesById["thunder-shock"]).toMatchObject({
       accuracyPercent: 100,
-      pp: 30,
       shortEffect: "Has a 10% chance to paralyze the target.",
     });
   });

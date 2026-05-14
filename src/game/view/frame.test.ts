@@ -92,7 +92,6 @@ describe("game frame contract", () => {
     expect(thunderShock).toMatchObject({
       category: "special",
       accuracyLabel: "100%",
-      pp: 30,
       effect: "10% 확률로 상대를 마비 상태로 만듭니다.",
     });
     expect(thunderShock?.effect).not.toMatch(/Has a|target|Inflicts/i);
