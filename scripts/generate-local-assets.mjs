@@ -322,7 +322,9 @@ async function writeM4a(destination, samples, bitrate) {
     ]);
   } catch (error) {
     if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
-      throw new Error("ffmpeg is required to generate compressed .m4a audio assets.");
+      throw new Error("ffmpeg is required to generate compressed .m4a audio assets.", {
+        cause: error,
+      });
     }
     throw error;
   } finally {

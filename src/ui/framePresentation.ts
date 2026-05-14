@@ -139,7 +139,9 @@ export function resolveActiveBattleEntityIds(
   ) {
     setActive(activeCue.sourceEntityId);
     setActive(activeCue.targetEntityId);
-    setActive(activeCue.entityId);
+    if (activeCue.type === "battle.support") {
+      setActive(activeCue.entityId);
+    }
   } else if (activeCue?.type === "creature.faint") {
     setActive(activeCue.entityId);
   } else if (activeCue?.type === "capture.success" || activeCue?.type === "capture.fail") {
@@ -225,17 +227,25 @@ export function resolveCueEffect(
     return "faint";
   }
 
-  if (cue.type === "battle.hit" || cue.type === "battle.miss" || cue.type === "battle.support") {
+  if (cue.type === "battle.support") {
+    if (cue.sourceEntityId === entity.id) {
+      return "attack";
+    }
+
+    if (cue.targetEntityId === entity.id || cue.entityId === entity.id) {
+      return "status";
+    }
+
+    return "";
+  }
+
+  if (cue.type === "battle.hit" || cue.type === "battle.miss") {
     if (cue.sourceEntityId === entity.id) {
       return "attack";
     }
 
     if (cue.targetEntityId !== entity.id) {
-      return cue.entityId === entity.id ? "status" : "";
-    }
-
-    if (cue.type === "battle.support") {
-      return "status";
+      return "";
     }
 
     if (cue.type === "battle.miss") {
@@ -261,9 +271,15 @@ export function resolveCueEffect(
 }
 
 export function visualCueReferencesEntity(cue: FrameVisualCue, entityId: string): boolean {
-  if (cue.type === "battle.hit" || cue.type === "battle.miss" || cue.type === "battle.support") {
+  if (cue.type === "battle.support") {
     return (
       cue.sourceEntityId === entityId || cue.targetEntityId === entityId || cue.entityId === entityId
+    );
+  }
+
+  if (cue.type === "battle.hit" || cue.type === "battle.miss") {
+    return (
+      cue.sourceEntityId === entityId || cue.targetEntityId === entityId
     );
   }
 

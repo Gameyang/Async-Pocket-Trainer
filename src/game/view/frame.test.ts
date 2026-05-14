@@ -82,11 +82,28 @@ describe("game frame contract", () => {
     expect(frame.visualCues.map((cue) => cue.type)).toContain("capture.success");
   });
 
+  it("localizes move detail effects for renderer-facing summaries", () => {
+    const client = new HeadlessGameClient({ seed: "move-detail-ko" });
+
+    client.dispatch({ type: "START_RUN", starterSpeciesId: 25 });
+    const frame = client.getFrame();
+    const thunderShock = frame.entities[0]?.moves.find((move) => move.id === "thunder-shock");
+
+    expect(thunderShock).toMatchObject({
+      category: "special",
+      accuracyLabel: "100%",
+      pp: 30,
+      effect: "10% 확률로 상대를 마비 상태로 만듭니다.",
+    });
+    expect(thunderShock?.effect).not.toMatch(/Has a|target|Inflicts/i);
+  });
+
   it("classifies replay cues with readable names and effect tiers", () => {
     const superEffective = findBattleFrameWithCue("battle.superEffective", 7);
     const resisted = findBattleFrameWithCue("battle.resisted", 1);
     const critical = findBattleFrameWithCue("battle.criticalHit", 4);
     const missed = findBattleFrameWithCue("battle.miss", 1);
+    const support = findBattleFrameWithCue("battle.support", 1);
     const superEffectiveEvent = superEffective.battleReplay.events.find(
       (event) => event.type === "damage.apply" && (event.effectiveness ?? 1) > 1,
     );
@@ -94,6 +111,10 @@ describe("game frame contract", () => {
       (cue) => cue.type === "battle.hit" && cue.sequence === superEffectiveEvent?.sequence,
     );
     const criticalCue = critical.visualCues.find((cue) => cue.effectKey === "battle.criticalHit");
+    const supportCue = support.visualCues.find((cue) => cue.type === "battle.support");
+    const supportEvent = support.battleReplay.events.find(
+      (event) => event.sequence === supportCue?.sequence,
+    );
 
     expect(superEffective.visualCues).toContainEqual(
       expect.objectContaining({
@@ -121,6 +142,10 @@ describe("game frame contract", () => {
     expect(criticalCue).toMatchObject({
       soundKey: expect.stringMatching(/^sfx\.battle\.type\.[a-z-]+\.critical$/),
       critical: true,
+    });
+    expect(supportCue).toMatchObject({
+      soundKey: `sfx.battle.support.type.${supportEvent?.moveType}`,
+      moveType: supportEvent?.moveType,
     });
     expect(superEffectiveEvent?.label).not.toMatch(/\d+-\d+-[0-9a-f]+/);
   });

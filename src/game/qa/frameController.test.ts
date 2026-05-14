@@ -127,7 +127,7 @@ function entity(id: string, owner: FrameEntity["owner"], slot: number, power: nu
         pp: 35,
         category: "physical",
         priority: 0,
-        effect: "Inflicts regular damage with no additional effect.",
+        effect: "추가 효과 없이 피해를 줍니다.",
       },
     ],
     scores: {

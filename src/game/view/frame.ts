@@ -243,6 +243,7 @@ export type FrameVisualCue =
       turn: number;
       sourceEntityId: string;
       targetEntityId: string;
+      entityId?: string;
       label: string;
       damage: number;
       effectiveness: number;
@@ -260,7 +261,7 @@ export type FrameVisualCue =
       targetEntityId?: string;
       entityId?: string;
       label: string;
-      moveType: ElementType;
+      moveType?: ElementType;
     }
   | {
       id: string;
@@ -743,8 +744,12 @@ function toFrameMoveSummary(move: MoveDefinition): FrameMoveSummary {
 }
 
 function createMoveEffectText(move: MoveDefinition): string {
-  if (move.shortEffect) {
-    return move.shortEffect;
+  const translatedShortEffect = move.shortEffect
+    ? translateMoveShortEffect(move.shortEffect)
+    : undefined;
+
+  if (translatedShortEffect) {
+    return translatedShortEffect;
   }
 
   const effects: string[] = [];
@@ -780,6 +785,176 @@ function createMoveEffectText(move: MoveDefinition): string {
   }
 
   return move.category === "status" ? "상태 변화 기술" : "추가 효과 없음";
+}
+
+function translateMoveShortEffect(effect: string): string | undefined {
+  const normalized = effect.replace(/\s+/g, " ").trim();
+  const exactTranslations: Record<string, string> = {
+    "Inflicts regular damage with no additional effect.": "추가 효과 없이 피해를 줍니다.",
+    "Inflicts regular damage.": "피해를 줍니다.",
+    "Never misses.": "반드시 명중합니다.",
+    "Has an increased chance for a critical hit.": "급소에 맞을 확률이 높습니다.",
+    "Always scores a critical hit.": "반드시 급소에 맞습니다.",
+    "Hits twice in one turn.": "한 턴에 2회 공격합니다.",
+    "Hits 2-5 times in one turn.": "한 턴에 2~5회 연속으로 공격합니다.",
+    "Requires a turn to charge before attacking.": "1턴 동안 힘을 모은 뒤 공격합니다.",
+    "User must switch out after attacking.": "공격한 뒤 사용자는 교체됩니다.",
+    "Ends wild battles. Forces trainers to switch Pokémon.":
+      "야생 배틀을 끝내고, 트레이너전에서는 상대의 교체를 강제합니다.",
+  };
+
+  if (exactTranslations[normalized]) {
+    return exactTranslations[normalized];
+  }
+
+  let match = normalized.match(/^Has a (\d+)% chance to (paralyze|burn|poison|freeze|confuse) the target\.$/);
+  if (match) {
+    return `${match[1]}% 확률로 상대를 ${translateAilmentVerb(match[2])} 상태로 만듭니다.`;
+  }
+
+  match = normalized.match(/^Has a (\d+)% chance to make the target flinch\.$/);
+  if (match) {
+    return `${match[1]}% 확률로 상대를 풀죽게 합니다.`;
+  }
+
+  match = normalized.match(
+    /^Has a (\d+)% chance to lower the target's ([A-Za-z -]+) by (one|two|three) stages?\.$/,
+  );
+  if (match) {
+    return `${match[1]}% 확률로 상대의 ${translateStatList(match[2])} 능력치를 ${translateStageCount(
+      match[3],
+    )}랭크 낮춥니다.`;
+  }
+
+  match = normalized.match(
+    /^Has a (\d+)% chance to raise the user's ([A-Za-z -]+) by (one|two|three) stages?\.$/,
+  );
+  if (match) {
+    return `${match[1]}% 확률로 사용자의 ${translateStatList(match[2])} 능력치를 ${translateStageCount(
+      match[3],
+    )}랭크 올립니다.`;
+  }
+
+  match = normalized.match(/^Lowers the target's ([A-Za-z -]+) by (one|two|three) stages?\.$/);
+  if (match) {
+    return `상대의 ${translateStatList(match[1])} 능력치를 ${translateStageCount(
+      match[2],
+    )}랭크 낮춥니다.`;
+  }
+
+  match = normalized.match(/^Raises the user's ([A-Za-z ,and-]+) by (one|two|three) stages? each\.$/);
+  if (match) {
+    return `사용자의 ${translateStatList(match[1])} 능력치를 각각 ${translateStageCount(
+      match[2],
+    )}랭크 올립니다.`;
+  }
+
+  match = normalized.match(/^Raises the user's ([A-Za-z ,and-]+) by (one|two|three) stages?\.$/);
+  if (match) {
+    return `사용자의 ${translateStatList(match[1])} 능력치를 ${translateStageCount(
+      match[2],
+    )}랭크 올립니다.`;
+  }
+
+  match = normalized.match(
+    /^Lowers the user's ([A-Za-z -]+) by (one|two|three) stages? after inflicting damage\.$/,
+  );
+  if (match) {
+    return `피해를 준 뒤 사용자의 ${translateStatList(match[1])} 능력치를 ${translateStageCount(
+      match[2],
+    )}랭크 낮춥니다.`;
+  }
+
+  match = normalized.match(/^Drains (\d+)% of the damage inflicted to heal the user\.$/);
+  if (match) {
+    return `준 피해의 ${match[1]}%만큼 HP를 회복합니다.`;
+  }
+
+  match = normalized.match(/^User receives 1\/(\d+) the damage inflicted in recoil\.$/);
+  if (match) {
+    return `준 피해의 1/${match[1]}만큼 반동 피해를 받습니다.`;
+  }
+
+  match = normalized.match(/^Heals the user by (half|50%) its max HP\.$/);
+  if (match) {
+    return "사용자의 HP를 최대 HP의 절반만큼 회복합니다.";
+  }
+
+  match = normalized.match(/^Heals the target for (half|50%) (?:its|their) max HP\.$/);
+  if (match) {
+    return "대상의 HP를 최대 HP의 절반만큼 회복합니다.";
+  }
+
+  if (normalized.includes("Power is higher")) {
+    return "조건에 따라 위력이 달라집니다.";
+  }
+
+  if (normalized.includes("double damage") || normalized.includes("double power")) {
+    return "조건을 만족하면 위력이 2배가 됩니다.";
+  }
+
+  return undefined;
+}
+
+function translateAilmentVerb(verb: string): string {
+  switch (verb) {
+    case "paralyze":
+      return "마비";
+    case "burn":
+      return "화상";
+    case "poison":
+      return "독";
+    case "freeze":
+      return "얼음";
+    case "confuse":
+      return "혼란";
+    default:
+      return verb;
+  }
+}
+
+function translateStatList(value: string): string {
+  return value
+    .replace(/, and /g, ", ")
+    .replace(/ and /g, ", ")
+    .split(",")
+    .map((stat) => translateMoveStatName(stat.trim()))
+    .filter(Boolean)
+    .join(", ");
+}
+
+function translateMoveStatName(value: string): string {
+  switch (value.toLowerCase()) {
+    case "attack":
+      return "공격";
+    case "defense":
+      return "방어";
+    case "special attack":
+      return "특수공격";
+    case "special defense":
+      return "특수방어";
+    case "speed":
+      return "스피드";
+    case "accuracy":
+      return "명중률";
+    case "evasion":
+      return "회피율";
+    default:
+      return value;
+  }
+}
+
+function translateStageCount(value: string): number {
+  switch (value) {
+    case "one":
+      return 1;
+    case "two":
+      return 2;
+    case "three":
+      return 3;
+    default:
+      return 1;
+  }
 }
 
 function formatMoveStatChange(change: MoveDefinition["statChanges"][number]): string {
@@ -1249,7 +1424,7 @@ function toFrameBattleReplayEvent(
       side: event.side,
       sourceEntityId: event.actorId,
       targetEntityId: event.targetId,
-      entityId: event.entityId,
+      entityId: event.type === "move.effect" ? event.entityId : undefined,
     };
   }
 
@@ -1440,6 +1615,10 @@ function battleSupportLabel(
     return event.label;
   }
 
+  if (event.type === "status.immune") {
+    return `${lookup.name(event.targetId)}: ${localizeBattleStatus(event.status)} 면역`;
+  }
+
   return `${lookup.name(event.targetId)}: ${localizeBattleStatus(event.status)}`;
 }
 
@@ -1499,7 +1678,7 @@ function battleReplayEventToCue(
       turn: event.turn,
       sourceEntityId: event.actorId,
       targetEntityId: event.targetId,
-      entityId: event.entityId,
+      entityId: event.type === "move.effect" ? event.entityId : undefined,
       label: battleSupportLabel(event, lookup),
       moveType: event.moveType,
     };

@@ -60,6 +60,9 @@ test("renders phase-specific screens with stable responsive layout", async ({ pa
   await expect(page.locator(".move-detail-power").first()).toBeVisible();
   await expect(page.locator(".move-detail-accuracy").first()).toBeVisible();
   await expect(page.locator(".move-detail-effect").first()).toBeVisible();
+  await expect(page.locator(".move-detail-effect").first()).not.toContainText(
+    /Inflicts|Has a|Lowers|Raises|target/i,
+  );
   await page.locator("[data-team-detail-close]").click();
   await expect(page.locator('.team-detail-popup[data-open="true"]')).toHaveCount(0);
 
