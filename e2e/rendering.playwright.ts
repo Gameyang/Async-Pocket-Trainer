@@ -486,6 +486,17 @@ function shopTargetSelectionSnapshot(): HeadlessClientSnapshot {
     ...creature,
     currentHp: index === 0 ? 1 : creature.currentHp,
   }));
+  // Seed deterministic inventory containing single-target heal for shop-target flow
+  snapshot.state.shopInventory = {
+    wave: snapshot.state.currentWave,
+    rerollCount: 0,
+    entries: [
+      { actionId: "shop:heal:single:1", stock: 1, initialStock: 1 },
+      { actionId: "shop:pokeball", stock: 3, initialStock: 3 },
+      { actionId: "shop:greatball", stock: 2, initialStock: 2 },
+      { actionId: "shop:rest", stock: 1, initialStock: 1 },
+    ],
+  };
   return snapshot;
 }
 

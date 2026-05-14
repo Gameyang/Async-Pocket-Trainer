@@ -55,6 +55,7 @@ import type {
   MoveDefinition,
   PremiumOfferId,
   RouteId,
+  ShopInventory,
   SpeciesDefinition,
   TeamRecordChange,
   TeamRecordSummary,
@@ -87,6 +88,12 @@ export interface FrameHud {
   teamHpRatio: number;
   gameOverReason?: string;
   trainerPoints: number;
+  encounterBoost?: {
+    rarityBonus?: number;
+    levelMin?: number;
+    levelMax?: number;
+    lockedType?: ElementType;
+  };
 }
 
 export interface FrameScene {
@@ -100,6 +107,7 @@ export interface FrameScene {
   capture?: FrameCaptureScene;
   trainer?: FrameTrainerScene;
   bgmKey: FrameBgmKey;
+  teamEffect?: { entityId: string; kind: string; key: string };
 }
 
 export interface FrameStarterOption {
@@ -382,6 +390,15 @@ export function createGameFrame(
       teamHpRatio: Number(getTeamHealthRatio(state.team).toFixed(4)),
       gameOverReason: state.gameOverReason,
       trainerPoints: state.metaCurrency?.trainerPoints ?? 0,
+      encounterBoost:
+        state.encounterBoost && state.encounterBoost.wave === state.currentWave
+          ? {
+              rarityBonus: state.encounterBoost.rarityBonus,
+              levelMin: state.encounterBoost.levelMin,
+              levelMax: state.encounterBoost.levelMax,
+              lockedType: state.encounterBoost.lockedType,
+            }
+          : undefined,
     },
     scene: {
       title: createSceneTitle(state),
@@ -394,6 +411,13 @@ export function createGameFrame(
       capture: captureScene,
       trainer: createTrainerScene(state),
       bgmKey: createBgmKey(state),
+      teamEffect: state.lastTeamEffect && state.lastTeamEffect.frameId >= frameId
+        ? {
+            entityId: state.lastTeamEffect.entityId,
+            kind: state.lastTeamEffect.kind,
+            key: `${state.lastTeamEffect.kind}:${state.lastTeamEffect.frameId}`,
+          }
+        : undefined,
     },
     entities,
     actions: createFrameActions(state, balance),
@@ -1055,13 +1079,10 @@ function createFrameActions(state: GameState, balance: GameBalance): FrameAction
   }
 
   if (state.phase === "ready") {
-    const selectedRoute = getSelectedRouteId(state);
-
     return [
-      routeAction("supply", selectedRoute, state, balance),
       {
         id: "encounter:next",
-        label: selectedRoute === "supply" ? "보급 받기" : "전투 시작",
+        label: "전투 시작",
         role: "primary",
         enabled: true,
         action: { type: "RESOLVE_NEXT_ENCOUNTER" },
@@ -1167,7 +1188,7 @@ function captureBallAction(
 }
 
 function createReadyShopActions(state: GameState, balance: GameBalance): FrameAction[] {
-  const baseActions = [
+  const allActions = [
     ...createHealActions(state),
     ...createBallShopActions(state, balance),
     ...createScoutActions(state),
@@ -1179,7 +1200,51 @@ function createReadyShopActions(state: GameState, balance: GameBalance): FrameAc
     ...createTypeLockActions(state),
     ...createPremiumActions(state),
   ];
-  return baseActions.map((action) => applyShopDeal(action, state));
+  const inventory =
+    state.shopInventory && state.shopInventory.wave === state.currentWave
+      ? state.shopInventory
+      : undefined;
+  const visibleActions = inventory
+    ? filterByInventory(allActions, inventory)
+    : allActions;
+  return [
+    ...visibleActions.map((action) => applyShopDeal(action, state)),
+    createRerollAction(state, inventory?.rerollCount ?? 0),
+  ];
+}
+
+function filterByInventory(actions: FrameAction[], inventory: ShopInventory): FrameAction[] {
+  const idMap = new Map(inventory.entries.map((entry) => [entry.actionId, entry]));
+  return actions
+    .filter((action) => idMap.has(action.id))
+    .map((action) => {
+      const entry = idMap.get(action.id);
+      if (!entry || entry.stock <= 0) {
+        return {
+          ...action,
+          enabled: false,
+          reason: "재고가 없습니다",
+        };
+      }
+      return action;
+    });
+}
+
+function createRerollAction(state: GameState, rerollCount: number): FrameAction {
+  const cost = computeRerollCost(rerollCount);
+  return {
+    id: "shop:reroll",
+    label: `상점 재구성 ${cost}코인`,
+    role: "secondary",
+    enabled: state.money >= cost,
+    cost,
+    action: { type: "REROLL_SHOP_INVENTORY" },
+    reason: state.money >= cost ? undefined : "코인이 부족합니다",
+  };
+}
+
+export function computeRerollCost(rerollCount: number): number {
+  return 8 + rerollCount * 6;
 }
 
 function createPremiumActions(state: GameState): FrameAction[] {
@@ -1922,38 +1987,7 @@ function getSelectedRouteId(state: GameState): RouteId {
   return state.selectedRoute?.wave === state.currentWave ? state.selectedRoute.id : "normal";
 }
 
-function routeAction(
-  routeId: RouteId,
-  selectedRoute: RouteId,
-  state: GameState,
-  balance: GameBalance,
-): FrameAction {
-  const selected = routeId === selectedRoute;
-  const supplyUsed = routeId === "supply" && state.supplyUsedAtWave === state.currentWave;
-  const supplyAffordable = routeId !== "supply" || state.money >= balance.supplyRouteCost;
-  const enabled = !selected && !supplyUsed && supplyAffordable;
-
-  return {
-    id: `route:${routeId}`,
-    label:
-      routeId === "supply" && !selected
-        ? `${routeActionName(routeId)} ${formatMoney(balance.supplyRouteCost)}`
-        : selected
-          ? `${routeActionName(routeId)} 선택됨`
-          : routeActionName(routeId),
-    role: selected ? "primary" : "secondary",
-    enabled,
-    action: { type: "CHOOSE_ROUTE", routeId },
-    cost: routeId === "supply" ? balance.supplyRouteCost : undefined,
-    reason: selected
-      ? "이미 선택된 길입니다"
-      : supplyUsed
-        ? "보급은 웨이브마다 한 번만 받을 수 있습니다"
-        : supplyAffordable
-          ? undefined
-          : "코인이 부족합니다",
-  };
-}
+// (routeAction was removed when supply was retired from the shop.)
 
 function routeActionName(routeId: RouteId): string {
   switch (routeId) {

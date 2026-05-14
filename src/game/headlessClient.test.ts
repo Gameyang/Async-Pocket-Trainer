@@ -127,11 +127,27 @@ describe("HeadlessGameClient", () => {
     const shopClient = startFromFrameAction("input-shop");
     const snapshot = shopClient.saveSnapshot();
     snapshot.state.money = 200;
+    // Seed deterministic inventory for the assertions below
+    snapshot.state.shopInventory = {
+      wave: snapshot.state.currentWave,
+      rerollCount: 0,
+      entries: [
+        { actionId: "shop:rest", stock: 1, initialStock: 1 },
+        { actionId: "shop:pokeball", stock: 3, initialStock: 3 },
+        { actionId: "shop:greatball", stock: 2, initialStock: 2 },
+        { actionId: "shop:ultraball", stock: 2, initialStock: 2 },
+        { actionId: "shop:heal:single:1", stock: 1, initialStock: 1 },
+        { actionId: "shop:heal:team:1", stock: 1, initialStock: 1 },
+        { actionId: "shop:scout:rarity:1", stock: 1, initialStock: 1 },
+        { actionId: "shop:scout:power:1", stock: 1, initialStock: 1 },
+        { actionId: "shop:rarity-boost:1", stock: 1, initialStock: 1 },
+        { actionId: "shop:level-boost:1", stock: 1, initialStock: 1 },
+      ],
+    };
     shopClient.loadSnapshot(snapshot);
     const shopFrame = shopClient.getFrame();
     expect(shopFrame.actions.map((action) => action.id)).toEqual(
       expect.arrayContaining([
-        "route:supply",
         "encounter:next",
         "shop:rest",
         "shop:pokeball",
@@ -143,6 +159,7 @@ describe("HeadlessGameClient", () => {
         "shop:scout:power:1",
         "shop:rarity-boost:1",
         "shop:level-boost:1",
+        "shop:reroll",
       ]),
     );
     dispatchFrameAction(shopClient, "shop:rarity-boost:1");
@@ -214,7 +231,7 @@ describe("HeadlessGameClient", () => {
     }));
     client.loadSnapshot(damaged);
 
-    dispatchFrameAction(client, "route:supply");
+    client.dispatch({ type: "CHOOSE_ROUTE", routeId: "supply" });
     dispatchFrameAction(client, "encounter:next");
     const afterFirst = client.getSnapshot();
     const supplyCost = client.getBalance().supplyRouteCost;

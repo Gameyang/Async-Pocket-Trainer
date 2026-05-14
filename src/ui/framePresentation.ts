@@ -760,6 +760,10 @@ function scoreReadyShopAction(
     return budgetFit + availability + onSale + 18;
   }
 
+  if (action.action.type === "REROLL_SHOP_INVENTORY") {
+    return 200 + (action.enabled ? 30 : 0);
+  }
+
   return budgetFit + onSale;
 }
 
@@ -942,6 +946,16 @@ export function createShopActionProfile(action: FrameAction, frame: GameFrame): 
       kicker: "타입 고정",
       title: "타입 고정",
       detail: "다음 만남 속성 고정",
+      meta: action.cost === undefined ? "선택" : formatMoney(action.cost),
+    };
+  }
+
+  if (action.action.type === "REROLL_SHOP_INVENTORY") {
+    return {
+      kind: "reroll",
+      kicker: "재구성",
+      title: "상점 재구성",
+      detail: "모든 카드 새로 추첨",
       meta: action.cost === undefined ? "선택" : formatMoney(action.cost),
     };
   }

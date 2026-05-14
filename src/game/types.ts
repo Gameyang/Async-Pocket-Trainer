@@ -98,6 +98,26 @@ export interface ShopDeal {
   discountRate: number;
 }
 
+export interface ShopInventoryEntry {
+  actionId: string;
+  stock: number;
+  initialStock: number;
+}
+
+export interface ShopInventory {
+  wave: number;
+  entries: ShopInventoryEntry[];
+  rerollCount: number;
+}
+
+export type TeamEffectKind = "heal" | "stat-boost" | "stat-reroll" | "teach-move" | "team-reroll";
+
+export interface TeamEffectFlash {
+  entityId: string;
+  kind: TeamEffectKind;
+  frameId: number;
+}
+
 export interface MetaCurrencyState {
   trainerPoints: number;
   claimedAchievements: string[];
@@ -463,9 +483,11 @@ export interface GameState {
   selectedRoute?: SelectedRoute;
   encounterBoost?: EncounterBoost;
   shopDeal?: ShopDeal;
+  shopInventory?: ShopInventory;
   metaCurrency?: MetaCurrencyState;
   unlockedSpeciesIds?: number[];
   premiumOfferIds?: { wave: number; ids: PremiumOfferId[] };
+  lastTeamEffect?: TeamEffectFlash;
   supplyUsedAtWave?: number;
   pendingEncounter?: EncounterSnapshot;
   pendingCapture?: Creature;
@@ -497,7 +519,8 @@ export type GameAction =
   | { type: "BUY_PREMIUM_REVIVE_ALL" }
   | { type: "BUY_PREMIUM_COIN_BAG" }
   | { type: "BUY_PREMIUM_TEAM_REROLL"; targetEntityId?: string }
-  | { type: "BUY_PREMIUM_DEX_UNLOCK" };
+  | { type: "BUY_PREMIUM_DEX_UNLOCK" }
+  | { type: "REROLL_SHOP_INVENTORY" };
 
 export interface AutoPlayOptions {
   maxWaves: number;

@@ -71,8 +71,12 @@ import type {
   ScoutKind,
   ScoutTier,
   ShopDeal,
+  ShopInventory,
+  ShopInventoryEntry,
   StatBoostTier,
+  TeamEffectFlash,
 } from "./types";
+import { computeRerollCost } from "./view/frame";
 
 export interface HeadlessClientOptions {
   seed?: string;
@@ -239,12 +243,140 @@ export class HeadlessGameClient {
       case "BUY_PREMIUM_DEX_UNLOCK":
         this.buyPremium("premium:dex-unlock");
         break;
+      case "REROLL_SHOP_INVENTORY":
+        this.rerollShopInventory();
+        break;
     }
 
     this.detectWaveMilestones();
+    this.consumeShopInventory(action);
     this.syncRngState();
     this.frameId += 1;
     return this.getSnapshot();
+  }
+
+  private rerollShopInventory(): void {
+    if (this.state.phase !== "ready") {
+      this.addEvent("reroll_ignored", "준비 상태에서만 상점을 재구성할 수 있습니다.");
+      return;
+    }
+    const current = this.getActiveShopInventory();
+    const rerollCount = current?.rerollCount ?? 0;
+    const cost = computeRerollCost(rerollCount);
+    if (this.state.money < cost) {
+      this.addEvent("reroll_denied", "상점 재구성에 필요한 코인이 부족합니다.");
+      return;
+    }
+    this.state.money -= cost;
+    this.state.shopInventory = this.generateShopInventory(rerollCount + 1);
+    this.addEvent("shop_rerolled", `상점을 ${cost}코인으로 재구성했습니다.`, { rerollCount: rerollCount + 1 });
+  }
+
+  private getActiveShopInventory(): ShopInventory | undefined {
+    return this.state.shopInventory?.wave === this.state.currentWave ? this.state.shopInventory : undefined;
+  }
+
+  private generateShopInventory(rerollCount = 0): ShopInventory {
+    const rng = new SeededRng(`${this.state.seed}:inv:${this.state.currentWave}:${rerollCount}`);
+    const pool: Array<{ actionId: string; weight: number; stock: number }> = [
+      // 회복 (싸지만 강력) — 회수 적게
+      { actionId: "shop:rest", weight: 8, stock: 1 },
+      { actionId: "shop:heal:single:1", weight: 14, stock: 1 },
+      { actionId: "shop:heal:single:2", weight: 12, stock: 1 },
+      { actionId: "shop:heal:single:3", weight: 8, stock: 1 },
+      { actionId: "shop:heal:single:4", weight: 5, stock: 1 },
+      { actionId: "shop:heal:single:5", weight: 3, stock: 1 },
+      { actionId: "shop:heal:team:1", weight: 12, stock: 1 },
+      { actionId: "shop:heal:team:2", weight: 10, stock: 1 },
+      { actionId: "shop:heal:team:3", weight: 7, stock: 1 },
+      { actionId: "shop:heal:team:4", weight: 4, stock: 1 },
+      // 볼 — 재고가 더 많음
+      { actionId: "shop:pokeball", weight: 18, stock: 3 },
+      { actionId: "shop:greatball", weight: 14, stock: 2 },
+      { actionId: "shop:ultraball", weight: 10, stock: 2 },
+      { actionId: "shop:hyperball", weight: 6, stock: 1 },
+      { actionId: "shop:masterball", weight: 2, stock: 1 },
+      // 탐지
+      { actionId: "shop:scout:rarity:1", weight: 8, stock: 1 },
+      { actionId: "shop:scout:rarity:2", weight: 5, stock: 1 },
+      { actionId: "shop:scout:rarity:3", weight: 2, stock: 1 },
+      { actionId: "shop:scout:power:1", weight: 8, stock: 1 },
+      { actionId: "shop:scout:power:2", weight: 5, stock: 1 },
+      { actionId: "shop:scout:power:3", weight: 2, stock: 1 },
+      // 보정
+      { actionId: "shop:rarity-boost:1", weight: 8, stock: 1 },
+      { actionId: "shop:rarity-boost:2", weight: 5, stock: 1 },
+      { actionId: "shop:rarity-boost:3", weight: 2, stock: 1 },
+      { actionId: "shop:level-boost:1", weight: 8, stock: 1 },
+      { actionId: "shop:level-boost:2", weight: 6, stock: 1 },
+      { actionId: "shop:level-boost:3", weight: 4, stock: 1 },
+      { actionId: "shop:level-boost:4", weight: 2, stock: 1 },
+      // 능력치
+      { actionId: "shop:stat-boost:1", weight: 8, stock: 1 },
+      { actionId: "shop:stat-boost:2", weight: 5, stock: 1 },
+      { actionId: "shop:stat-boost:3", weight: 2, stock: 1 },
+      { actionId: "shop:stat-reroll", weight: 5, stock: 1 },
+      // 기술 머신
+      { actionId: "shop:teach-move:fire", weight: 4, stock: 1 },
+      { actionId: "shop:teach-move:water", weight: 4, stock: 1 },
+      { actionId: "shop:teach-move:electric", weight: 4, stock: 1 },
+      { actionId: "shop:teach-move:grass", weight: 4, stock: 1 },
+      // 타입 고정
+      { actionId: "shop:type-lock:fire", weight: 4, stock: 1 },
+      { actionId: "shop:type-lock:water", weight: 4, stock: 1 },
+      { actionId: "shop:type-lock:dragon", weight: 2, stock: 1 },
+      { actionId: "shop:type-lock:psychic", weight: 3, stock: 1 },
+      // 프리미엄 (TP 가격) — 항상 하나 등장하도록 별도
+      { actionId: "shop:premium:masterball", weight: 3, stock: 1 },
+      { actionId: "shop:premium:revive", weight: 3, stock: 1 },
+      { actionId: "shop:premium:coin-bag", weight: 3, stock: 1 },
+      { actionId: "shop:premium:team-reroll", weight: 2, stock: 1 },
+      { actionId: "shop:premium:dex-unlock", weight: 1, stock: 1 },
+    ];
+
+    const slotCount = 10;
+    const remaining = [...pool];
+    const chosen: ShopInventoryEntry[] = [];
+    while (chosen.length < slotCount && remaining.length > 0) {
+      const totalWeight = remaining.reduce((sum, entry) => sum + entry.weight, 0);
+      let ticket = rng.nextFloat() * totalWeight;
+      let pickedIndex = 0;
+      for (let i = 0; i < remaining.length; i += 1) {
+        ticket -= remaining[i].weight;
+        if (ticket <= 0) {
+          pickedIndex = i;
+          break;
+        }
+      }
+      const picked = remaining.splice(pickedIndex, 1)[0];
+      chosen.push({
+        actionId: picked.actionId,
+        stock: picked.stock,
+        initialStock: picked.stock,
+      });
+    }
+
+    return {
+      wave: this.state.currentWave,
+      entries: chosen,
+      rerollCount,
+    };
+  }
+
+  private consumeShopInventory(action: GameAction): void {
+    if (!this.state.shopInventory || this.state.shopInventory.wave !== this.state.currentWave) {
+      return;
+    }
+    const actionId = inferShopActionId(action);
+    if (!actionId) return;
+    const lastEventType = this.state.events.at(-1)?.type ?? "";
+    // 구매 실패/거부 이벤트일 경우 소비하지 않음
+    if (lastEventType.endsWith("_denied") || lastEventType.endsWith("_ignored")) {
+      return;
+    }
+    const entry = this.state.shopInventory.entries.find((entry) => entry.actionId === actionId);
+    if (!entry || entry.stock <= 0) return;
+    entry.stock -= 1;
   }
 
   private detectWaveMilestones(): void {
@@ -292,6 +424,8 @@ export class HeadlessGameClient {
         ...creature,
         currentHp: creature.stats.hp,
       }));
+      // Pulse-flash 첫 슬롯 — UI에서 팀 전체 효과로 해석
+      this.flashTeamEffect(this.state.team[0]?.instanceId, "heal");
       this.addEvent("premium_purchased", "팀 전원이 부활하고 HP가 회복되었습니다.", { offerId });
       return;
     }
@@ -331,6 +465,7 @@ export class HeadlessGameClient {
           : creature,
       );
       this.state.team = replacedTeam;
+      this.flashTeamEffect(target.instanceId, "team-reroll");
       this.addEvent("premium_purchased", `${target.speciesName} → ${pickedSpecies.name} 재추첨 완료.`, {
         offerId,
         from: target.speciesId,
@@ -459,6 +594,7 @@ export class HeadlessGameClient {
       unlockedSpeciesIds: previousUnlocked,
     };
     this.state.shopDeal = this.generateShopDeal();
+    this.state.shopInventory = this.generateShopInventory(0);
     this.nextEventId = 1;
     this.addEvent(
       "run_started",
@@ -801,6 +937,11 @@ export class HeadlessGameClient {
         ? healTeamByRatio(this.state.team, product.healRatio)
         : healSingleByRatio(this.state.team, product.healRatio, targetEntityId);
     const healedHp = totalCurrentHp(this.state.team) - beforeHp;
+    const focusEntityId =
+      scope === "single"
+        ? targetEntityId ?? this.findMostDamagedCreatureId()
+        : undefined;
+    this.flashTeamEffect(focusEntityId, "heal");
     this.addEvent(
       scope === "team" ? "team_healed" : "creature_healed",
       scope === "team"
@@ -813,6 +954,28 @@ export class HeadlessGameClient {
         healedHp,
       },
     );
+  }
+
+  private findMostDamagedCreatureId(): string | undefined {
+    let mostDamaged: Creature | undefined;
+    let worstRatio = Infinity;
+    for (const creature of this.state.team) {
+      const ratio = creature.stats.hp === 0 ? 1 : creature.currentHp / creature.stats.hp;
+      if (ratio < worstRatio) {
+        worstRatio = ratio;
+        mostDamaged = creature;
+      }
+    }
+    return mostDamaged?.instanceId;
+  }
+
+  private flashTeamEffect(entityId: string | undefined, kind: TeamEffectFlash["kind"]): void {
+    if (!entityId) return;
+    this.state.lastTeamEffect = {
+      entityId,
+      kind,
+      frameId: this.frameId + 1,
+    };
   }
 
   private buyRarityBoost(tier: RarityBoostTier): void {
@@ -924,6 +1087,7 @@ export class HeadlessGameClient {
       moves: target.moves,
       types: target.types,
     });
+    this.flashTeamEffect(target.instanceId, "stat-boost");
     this.addEvent(
       "stat_boost_applied",
       `${withJosa(target.speciesName, "이/가")} 모든 능력치 +${bonus}을(를) 얻었습니다.`,
@@ -971,6 +1135,7 @@ export class HeadlessGameClient {
       moves: target.moves,
       types: target.types,
     });
+    this.flashTeamEffect(target.instanceId, "stat-reroll");
     this.addEvent(
       "stat_reroll_applied",
       `${withJosa(target.speciesName, "이/가")} 능력치를 다시 굴렸습니다.`,
@@ -1024,6 +1189,7 @@ export class HeadlessGameClient {
       moves: updatedMoves,
       types: target.types,
     });
+    this.flashTeamEffect(target.instanceId, "teach-move");
     this.addEvent(
       "teach_move_applied",
       `${withJosa(target.speciesName, "이/가")} ${learnedMove.name}을(를) 익혔습니다.`,
@@ -1253,6 +1419,7 @@ export class HeadlessGameClient {
     this.state.pendingEncounter = undefined;
     this.state.pendingCapture = undefined;
     this.state.shopDeal = this.generateShopDeal();
+    this.state.shopInventory = this.generateShopInventory(0);
   }
 
   private generateShopDeal(): ShopDeal {
@@ -1521,6 +1688,58 @@ function signature(state: GameState): string {
     ...ballTypes.map((ball) => state.balls[ball]),
     state.events.length,
   ].join(":");
+}
+
+function inferShopActionId(action: GameAction): string | undefined {
+  switch (action.type) {
+    case "REST_TEAM":
+      return "shop:rest";
+    case "BUY_HEAL":
+      return `shop:heal:${action.scope}:${action.tier}`;
+    case "BUY_BALL":
+      return `shop:${ballActionSlugFor(action.ball)}`;
+    case "BUY_SCOUT":
+      return `shop:scout:${action.kind}:${action.tier}`;
+    case "BUY_RARITY_BOOST":
+      return `shop:rarity-boost:${action.tier}`;
+    case "BUY_LEVEL_BOOST":
+      return `shop:level-boost:${action.tier}`;
+    case "BUY_STAT_BOOST":
+      return `shop:stat-boost:${action.tier}`;
+    case "BUY_STAT_REROLL":
+      return "shop:stat-reroll";
+    case "BUY_TEACH_MOVE":
+      return `shop:teach-move:${action.element}`;
+    case "BUY_TYPE_LOCK":
+      return `shop:type-lock:${action.element}`;
+    case "BUY_PREMIUM_MASTERBALL":
+      return "shop:premium:masterball";
+    case "BUY_PREMIUM_REVIVE_ALL":
+      return "shop:premium:revive";
+    case "BUY_PREMIUM_COIN_BAG":
+      return "shop:premium:coin-bag";
+    case "BUY_PREMIUM_TEAM_REROLL":
+      return "shop:premium:team-reroll";
+    case "BUY_PREMIUM_DEX_UNLOCK":
+      return "shop:premium:dex-unlock";
+    default:
+      return undefined;
+  }
+}
+
+function ballActionSlugFor(ball: BallType): string {
+  switch (ball) {
+    case "pokeBall":
+      return "pokeball";
+    case "greatBall":
+      return "greatball";
+    case "ultraBall":
+      return "ultraball";
+    case "hyperBall":
+      return "hyperball";
+    case "masterBall":
+      return "masterball";
+  }
 }
 
 function getSpeciesRarity(speciesId: number): number {

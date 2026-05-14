@@ -737,7 +737,7 @@ function renderReadyScreen({
               : ""
           }
         </div>
-        ${renderShopTeamGrid(playerEntities, shopTargetAction)}
+        ${renderShopTeamGrid(playerEntities, shopTargetAction, frame.scene.teamEffect)}
       </div>
       <div class="shop-card-grid" data-shop-card-count="${shopActions.length}">
         ${shopActions.map((action) => renderShopActionCard(action, frame)).join("")}
@@ -755,12 +755,13 @@ function createShopTargetLabel(action: FrameAction): string {
 function renderShopTeamGrid(
   playerEntities: readonly FrameEntity[],
   targetAction: FrameAction | undefined,
+  teamEffect?: { entityId: string; kind: string; key: string },
 ): string {
   const slots = Array.from({ length: 6 }, (_, index) => playerEntities[index]);
 
   return `
     <div class="shop-team-grid" data-targeting="${targetAction ? "true" : "false"}">
-      ${slots.map((entity, index) => renderShopTeamSlot(entity, index, targetAction)).join("")}
+      ${slots.map((entity, index) => renderShopTeamSlot(entity, index, targetAction, teamEffect)).join("")}
     </div>
   `;
 }
@@ -769,6 +770,7 @@ function renderShopTeamSlot(
   entity: FrameEntity | undefined,
   index: number,
   targetAction: FrameAction | undefined,
+  teamEffect?: { entityId: string; kind: string; key: string },
 ): string {
   if (!entity) {
     return `
@@ -789,9 +791,13 @@ function renderShopTeamSlot(
   const targetAttribute = targetAction ? ` data-shop-target-id="${escapeHtml(entity.id)}"` : "";
   const detailAttribute = targetAction ? "" : ` data-team-detail-id="${escapeHtml(entity.id)}"`;
   const moves = entity.moves.map((move) => `<span>${escapeHtml(move.name)}</span>`).join("");
+  const effectAttribute =
+    teamEffect && teamEffect.entityId === entity.id
+      ? ` data-team-effect="${escapeHtml(teamEffect.kind)}" data-team-effect-key="${escapeHtml(teamEffect.key)}"`
+      : "";
 
   return `
-    <${tag}${typeAttribute} class="shop-team-slot" data-team-slot="${index + 1}" data-slot-state="${hpState}"${targetAttribute}${detailAttribute}${disabled}>
+    <${tag}${typeAttribute} class="shop-team-slot" data-team-slot="${index + 1}" data-slot-state="${hpState}"${targetAttribute}${detailAttribute}${effectAttribute}${disabled}>
       <span class="shop-slot-number">${index + 1}</span>
       <img src="${resolveAssetPath(entity.assetPath)}" alt="${escapeHtml(`${entity.name} 포켓몬`)}" />
       <div class="shop-slot-main">
@@ -914,16 +920,57 @@ function renderShopActionCard(action: FrameAction, frame: GameFrame): string {
       )}</span>`
     : "";
   const premiumBadge = isPremium ? '<span class="shop-premium-badge">PREMIUM</span>' : "";
+  const inventoryBadge = renderShopCardInventoryBadge(action, frame);
+  const encounterBadges = action.id === "encounter:next" ? renderEncounterBoostBadges(frame) : "";
+  const soldOut = !action.enabled && action.reason === "재고가 없습니다";
+  const soldOutAttribute = soldOut ? ' data-sold-out="true"' : "";
+  const soldOutBadge = soldOut ? '<span class="shop-soldout-badge">SOLD OUT</span>' : "";
 
   return `
-    <button type="button" class="shop-card" data-action-id="${escapeHtml(action.id)}" data-shop-kind="${profile.kind}" data-role="${action.role}"${gradeAttribute}${featuredAttribute}${saleAttribute}${premiumAttribute} aria-label="${escapeHtml(ariaLabel)}"${disabled}${reason}>
+    <button type="button" class="shop-card" data-action-id="${escapeHtml(action.id)}" data-shop-kind="${profile.kind}" data-role="${action.role}"${gradeAttribute}${featuredAttribute}${saleAttribute}${premiumAttribute}${soldOutAttribute} aria-label="${escapeHtml(ariaLabel)}"${disabled}${reason}>
       ${renderActionIcon(action)}
       <strong>${titleLines.map((line) => `<span>${escapeHtml(line)}</span>`).join("")}</strong>
       <small>${escapeHtml(compactMeta)}</small>
       ${saleBadge}
       ${premiumBadge}
+      ${inventoryBadge}
+      ${encounterBadges}
+      ${soldOutBadge}
     </button>
   `;
+}
+
+function renderEncounterBoostBadges(frame: GameFrame): string {
+  const boost = frame.hud.encounterBoost;
+  if (!boost) return "";
+  const badges: string[] = [];
+  if (boost.rarityBonus && boost.rarityBonus > 0) {
+    badges.push(
+      `<span class="encounter-badge" data-badge-kind="rarity">⭐ 희귀 +${Math.round(boost.rarityBonus * 100)}%</span>`,
+    );
+  }
+  if (boost.levelMax && boost.levelMax > 0) {
+    const min = boost.levelMin ?? boost.levelMax;
+    const range = min === boost.levelMax ? `+${boost.levelMax}` : `+${min}~${boost.levelMax}`;
+    badges.push(`<span class="encounter-badge" data-badge-kind="level">📈 LV ${range}</span>`);
+  }
+  if (boost.lockedType) {
+    const elementLabel = ELEMENT_KO[boost.lockedType] ?? boost.lockedType;
+    const emoji = ELEMENT_EMOJI[boost.lockedType] ?? "🔒";
+    badges.push(
+      `<span class="encounter-badge" data-badge-kind="type">${emoji} ${escapeHtml(elementLabel)} 고정</span>`,
+    );
+  }
+  if (badges.length === 0) return "";
+  return `<span class="encounter-badge-row">${badges.join("")}</span>`;
+}
+
+function renderShopCardInventoryBadge(action: FrameAction, frame: GameFrame): string {
+  if (action.action.type === "BUY_BALL") {
+    const count = frame.hud.balls[action.action.ball] ?? 0;
+    return `<span class="shop-ball-stock" aria-label="현재 보유">×${count}</span>`;
+  }
+  return "";
 }
 
 const HEAL_RATIO_BY_TIER: Record<1 | 2 | 3 | 4 | 5, number> = {
@@ -979,6 +1026,10 @@ function resolveShopCardGrade(action: FrameAction): ShopCardGrade | undefined {
 
   if (action.action.type === "BUY_TYPE_LOCK") {
     return "rare";
+  }
+
+  if (action.action.type === "REROLL_SHOP_INVENTORY") {
+    return "epic";
   }
 
   if (action.action.type === "BUY_BALL") {
@@ -1112,6 +1163,10 @@ function createCompactShopTitleLines(action: FrameAction, profile: ShopActionPro
   }
   if (action.action.type === "BUY_PREMIUM_DEX_UNLOCK") {
     return ["신화의", "발견"];
+  }
+
+  if (action.action.type === "REROLL_SHOP_INVENTORY") {
+    return ["상점", "재구성"];
   }
 
   return [profile.title];
@@ -1625,6 +1680,8 @@ function actionEmoji(action: FrameAction): string {
       return "🎴";
     case "BUY_PREMIUM_DEX_UNLOCK":
       return "📜";
+    case "REROLL_SHOP_INVENTORY":
+      return "🔄";
     case "SET_TRAINER_NAME":
       return "💾";
     default:
