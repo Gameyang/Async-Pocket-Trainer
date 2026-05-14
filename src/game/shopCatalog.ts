@@ -5,6 +5,7 @@ import type {
   HealScope,
   HealTier,
   LevelBoostTier,
+  PremiumOfferId,
   RarityBoostTier,
   ScoutKind,
   ScoutTier,
@@ -247,3 +248,56 @@ export function ballActionSlug(ball: BallType): string {
       return "masterball";
   }
 }
+
+export interface PremiumOffer {
+  id: PremiumOfferId;
+  tpCost: number;
+  label: string;
+  detail: string;
+}
+
+const premiumOffers: Record<PremiumOfferId, PremiumOffer> = {
+  "premium:masterball": {
+    id: "premium:masterball",
+    tpCost: 15,
+    label: "전설의 마스터볼",
+    detail: "마스터볼 +1",
+  },
+  "premium:revive": {
+    id: "premium:revive",
+    tpCost: 12,
+    label: "기적의 부활",
+    detail: "팀 전원 부활 + HP 100%",
+  },
+  "premium:coin-bag": {
+    id: "premium:coin-bag",
+    tpCost: 6,
+    label: "행운의 코인 주머니",
+    detail: "인게임 코인 +50",
+  },
+  "premium:team-reroll": {
+    id: "premium:team-reroll",
+    tpCost: 20,
+    label: "운명의 재추첨",
+    detail: "선택 포켓몬을 동등 희귀도 다른 종으로 교체",
+  },
+  "premium:dex-unlock": {
+    id: "premium:dex-unlock",
+    tpCost: 25,
+    label: "신화의 발견",
+    detail: "미언락 종 1개를 도감에 영구 추가",
+  },
+};
+
+export const premiumOfferIds: readonly PremiumOfferId[] = [
+  "premium:masterball",
+  "premium:revive",
+  "premium:coin-bag",
+  "premium:team-reroll",
+  "premium:dex-unlock",
+];
+
+export function getPremiumOffer(id: PremiumOfferId): PremiumOffer {
+  return premiumOffers[id];
+}
+

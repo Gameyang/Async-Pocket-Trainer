@@ -5,6 +5,7 @@ import {
   getBallCost,
   getHealProduct,
   getLevelBoostProduct,
+  getPremiumOffer,
   getRarityBoostProduct,
   getScoutProduct,
   getStatBoostProduct,
@@ -13,6 +14,7 @@ import {
   getTypeLockProduct,
   healTiers,
   levelBoostTiers,
+  premiumOfferIds,
   rarityBoostTiers,
   scoutKinds,
   scoutTiers,
@@ -20,6 +22,7 @@ import {
   teachMoveElements,
   typeLockElements,
 } from "../shopCatalog";
+import { SeededRng } from "../rng";
 import {
   formatMoney,
   formatWave,
@@ -50,6 +53,7 @@ import type {
   HealScope,
   MoveCategory,
   MoveDefinition,
+  PremiumOfferId,
   RouteId,
   SpeciesDefinition,
   TeamRecordChange,
@@ -82,6 +86,7 @@ export interface FrameHud {
   teamPower: number;
   teamHpRatio: number;
   gameOverReason?: string;
+  trainerPoints: number;
 }
 
 export interface FrameScene {
@@ -201,6 +206,7 @@ export interface FrameAction {
   targetEntityId?: string;
   cost?: number;
   originalCost?: number;
+  tpCost?: number;
   reason?: string;
 }
 
@@ -375,6 +381,7 @@ export function createGameFrame(
       teamPower: scoreTeam(state.team),
       teamHpRatio: Number(getTeamHealthRatio(state.team).toFixed(4)),
       gameOverReason: state.gameOverReason,
+      trainerPoints: state.metaCurrency?.trainerPoints ?? 0,
     },
     scene: {
       title: createSceneTitle(state),
@@ -1170,8 +1177,57 @@ function createReadyShopActions(state: GameState, balance: GameBalance): FrameAc
     ...createStatRerollActions(state),
     ...createTeachMoveActions(state),
     ...createTypeLockActions(state),
+    ...createPremiumActions(state),
   ];
   return baseActions.map((action) => applyShopDeal(action, state));
+}
+
+function createPremiumActions(state: GameState): FrameAction[] {
+  const tp = state.metaCurrency?.trainerPoints ?? 0;
+  const offerIds = resolveActivePremiumOffers(state);
+  return offerIds.map((offerId) => {
+    const offer = getPremiumOffer(offerId);
+    const action: GameAction = premiumActionFor(offerId);
+    return {
+      id: `shop:${offerId}`,
+      label: `${offer.label} ${offer.tpCost}TP`,
+      role: "secondary" as const,
+      enabled: tp >= offer.tpCost,
+      tpCost: offer.tpCost,
+      action,
+      reason: tp >= offer.tpCost ? undefined : "트레이너 포인트가 부족합니다",
+    };
+  });
+}
+
+function premiumActionFor(offerId: PremiumOfferId): GameAction {
+  switch (offerId) {
+    case "premium:masterball":
+      return { type: "BUY_PREMIUM_MASTERBALL" };
+    case "premium:revive":
+      return { type: "BUY_PREMIUM_REVIVE_ALL" };
+    case "premium:coin-bag":
+      return { type: "BUY_PREMIUM_COIN_BAG" };
+    case "premium:team-reroll":
+      return { type: "BUY_PREMIUM_TEAM_REROLL" };
+    case "premium:dex-unlock":
+      return { type: "BUY_PREMIUM_DEX_UNLOCK" };
+  }
+}
+
+function resolveActivePremiumOffers(state: GameState): PremiumOfferId[] {
+  const cached = state.premiumOfferIds;
+  if (cached && cached.wave === state.currentWave && cached.ids.length > 0) {
+    return cached.ids;
+  }
+  return rollPremiumOffers(state.seed, state.currentWave);
+}
+
+function rollPremiumOffers(seed: string, wave: number): PremiumOfferId[] {
+  const rng = new SeededRng(`${seed}:premium:${wave}`);
+  const shuffled = rng.shuffle(premiumOfferIds);
+  const count = 1 + Math.floor(rng.nextFloat() * 2);
+  return shuffled.slice(0, Math.min(count, shuffled.length));
 }
 
 function applyShopDeal(action: FrameAction, state: GameState): FrameAction {

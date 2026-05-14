@@ -10,6 +10,7 @@ import {
   rollStarterSpeciesIds,
 } from "./browser/starterSpeciesCache";
 import { CODE_SYNC_SETTINGS } from "./browser/syncSettings";
+import { loadTrainerPoints, saveTrainerPoints } from "./browser/trainerPointsStore";
 import { buildMetadata } from "./buildMetadata";
 import { HeadlessGameClient } from "./game/headlessClient";
 import { DEFAULT_BROWSER_TRAINER_NAME } from "./game/localization";
@@ -37,6 +38,37 @@ if (app) {
   });
   if (loaded.error) {
     console.warn("Recovered browser save data after validation error:", loaded.error);
+  }
+
+  // Hydrate trainer points (메타 화폐): localStorage 가 더 권위적
+  const persistedMeta = loadTrainerPoints(storage);
+  const snapshotMeta = client.getMetaCurrency();
+  const mergedMeta = {
+    trainerPoints: Math.max(persistedMeta.trainerPoints, snapshotMeta.trainerPoints),
+    claimedAchievements: Array.from(
+      new Set([...persistedMeta.claimedAchievements, ...snapshotMeta.claimedAchievements]),
+    ),
+    lastSheetClaim: persistedMeta.lastSheetClaim ?? snapshotMeta.lastSheetClaim,
+  };
+  // Daily 접속 보너스 — 시트 누적 승수 fetch 통합은 후속, 일단 +3 TP 매일 한 번
+  const today = new Date().toISOString().slice(0, 10);
+  let dailyBonusMessage: string | undefined;
+  if (mergedMeta.lastSheetClaim?.date !== today) {
+    const dailyBonus = 3;
+    mergedMeta.trainerPoints += dailyBonus;
+    mergedMeta.lastSheetClaim = {
+      date: today,
+      totalWins: mergedMeta.lastSheetClaim?.totalWins ?? 0,
+      teamId: mergedMeta.lastSheetClaim?.teamId,
+    };
+    dailyBonusMessage = `오늘의 접속 보너스 +${dailyBonus} TP를 받았습니다.`;
+  }
+  client.setMetaCurrency(mergedMeta);
+  saveTrainerPoints(storage, mergedMeta);
+  saveClientSnapshot(client.saveSnapshot(), storage);
+
+  if (dailyBonusMessage && typeof document !== "undefined") {
+    queueMicrotask(() => showDailyBonusBanner(dailyBonusMessage!));
   }
 
   let recordPrompt: PendingTeamRecord | undefined;
@@ -85,6 +117,7 @@ if (app) {
           };
         }
         saveClientSnapshot(client.saveSnapshot(), storage);
+        saveTrainerPoints(storage, client.getMetaCurrency());
         return state;
       },
     },
@@ -189,4 +222,18 @@ function saveBrowserTrainerName(storage: Storage, trainerName: string): string {
   const normalized = trainerName.trim() || DEFAULT_BROWSER_TRAINER_NAME;
   storage.setItem(TRAINER_NAME_STORAGE_KEY, normalized);
   return normalized;
+}
+
+function showDailyBonusBanner(message: string): void {
+  const existing = document.querySelector(".daily-bonus-banner");
+  if (existing) {
+    existing.remove();
+  }
+  const banner = document.createElement("div");
+  banner.className = "daily-bonus-banner";
+  banner.setAttribute("role", "status");
+  banner.textContent = `⭐ ${message}`;
+  banner.addEventListener("click", () => banner.remove(), { once: true });
+  setTimeout(() => banner.remove(), 6000);
+  document.body.appendChild(banner);
 }

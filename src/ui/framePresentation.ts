@@ -714,6 +714,10 @@ function scoreReadyShopAction(
       ? 45
       : 0;
 
+  if (action.tpCost !== undefined) {
+    return 220 + (action.enabled ? 60 : 0);
+  }
+
   if (action.action.type === "REST_TEAM") {
     return budgetFit + availability + onSale + (needsRest ? 140 : 30);
   }
@@ -939,6 +943,22 @@ export function createShopActionProfile(action: FrameAction, frame: GameFrame): 
       title: "타입 고정",
       detail: "다음 만남 속성 고정",
       meta: action.cost === undefined ? "선택" : formatMoney(action.cost),
+    };
+  }
+
+  if (
+    action.action.type === "BUY_PREMIUM_MASTERBALL" ||
+    action.action.type === "BUY_PREMIUM_REVIVE_ALL" ||
+    action.action.type === "BUY_PREMIUM_COIN_BAG" ||
+    action.action.type === "BUY_PREMIUM_TEAM_REROLL" ||
+    action.action.type === "BUY_PREMIUM_DEX_UNLOCK"
+  ) {
+    return {
+      kind: "premium",
+      kicker: "프리미엄",
+      title: action.label.replace(/\s\d+TP$/, ""),
+      detail: "트레이너 포인트로만 구매",
+      meta: action.tpCost !== undefined ? `${action.tpCost} TP` : action.label,
     };
   }
 

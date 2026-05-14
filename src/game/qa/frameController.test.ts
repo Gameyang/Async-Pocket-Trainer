@@ -43,6 +43,7 @@ function teamDecisionFrame(capturedPower: number): GameFrame {
       },
       teamPower: 300,
       teamHpRatio: 1,
+      trainerPoints: 0,
     },
     scene: {
       title: "4웨이브",

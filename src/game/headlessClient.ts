@@ -1,7 +1,13 @@
 import { runAutoBattle } from "./battle/battleEngine";
 import { attemptCapture } from "./capture/captureSystem";
 import { createCreature, healTeam, normalizeCreatureBattleLoadout } from "./creatureFactory";
-import { defaultBalance, getMove, movesById, starterSpeciesIds } from "./data/catalog";
+import {
+  defaultBalance,
+  getMove,
+  movesById,
+  speciesCatalog,
+  starterSpeciesIds,
+} from "./data/catalog";
 import {
   DEFAULT_HEADLESS_TRAINER_NAME,
   formatWave,
@@ -16,6 +22,7 @@ import {
   getBallCost,
   getHealProduct,
   getLevelBoostProduct,
+  getPremiumOffer,
   getRarityBoostProduct,
   getScoutProduct,
   getStatBoostProduct,
@@ -34,6 +41,13 @@ import {
 } from "./wave/waveSystem";
 import type { TrainerSnapshot } from "./sync/trainerSnapshot";
 import { applyOpponentBattleOutcomeToSummary } from "./sync/teamBattleRecord";
+import {
+  awardCheckpointDefeat,
+  awardDexUnlock,
+  awardWaveMilestone,
+  ensureMetaCurrency,
+  type AchievementAward,
+} from "./achievements";
 import type {
   AutoPlayOptions,
   BallType,
@@ -48,7 +62,9 @@ import type {
   HealScope,
   HealTier,
   LevelBoostTier,
+  MetaCurrencyState,
   MoveDefinition,
+  PremiumOfferId,
   RarityBoostTier,
   RouteId,
   RunSummary,
@@ -208,11 +224,144 @@ export class HeadlessGameClient {
       case "BUY_TYPE_LOCK":
         this.buyTypeLock(action.element);
         break;
+      case "BUY_PREMIUM_MASTERBALL":
+        this.buyPremium("premium:masterball");
+        break;
+      case "BUY_PREMIUM_REVIVE_ALL":
+        this.buyPremium("premium:revive");
+        break;
+      case "BUY_PREMIUM_COIN_BAG":
+        this.buyPremium("premium:coin-bag");
+        break;
+      case "BUY_PREMIUM_TEAM_REROLL":
+        this.buyPremium("premium:team-reroll", action.targetEntityId);
+        break;
+      case "BUY_PREMIUM_DEX_UNLOCK":
+        this.buyPremium("premium:dex-unlock");
+        break;
     }
 
+    this.detectWaveMilestones();
     this.syncRngState();
     this.frameId += 1;
     return this.getSnapshot();
+  }
+
+  private detectWaveMilestones(): void {
+    if (this.state.phase === "starterChoice") {
+      return;
+    }
+    const meta = ensureMetaCurrency(this.state);
+    const award = awardWaveMilestone(meta, this.state.currentWave);
+    if (award) {
+      this.recordAchievementAward(award);
+    }
+  }
+
+  private recordAchievementAward(award: AchievementAward): void {
+    this.addEvent("tp_earned", award.message, { id: award.id, trainerPoints: award.trainerPoints });
+  }
+
+  private buyPremium(offerId: PremiumOfferId, targetEntityId?: string): void {
+    if (this.state.phase !== "ready") {
+      this.addEvent("premium_ignored", "준비 상태에서만 프리미엄 상품을 구매할 수 있습니다.");
+      return;
+    }
+
+    const offer = getPremiumOffer(offerId);
+    const meta = ensureMetaCurrency(this.state);
+
+    if (meta.trainerPoints < offer.tpCost) {
+      this.addEvent("premium_denied", "트레이너 포인트가 부족합니다.");
+      return;
+    }
+
+    if (offerId === "premium:masterball") {
+      meta.trainerPoints -= offer.tpCost;
+      this.state.balls = {
+        ...this.state.balls,
+        masterBall: (this.state.balls.masterBall ?? 0) + 1,
+      };
+      this.addEvent("premium_purchased", "마스터볼이 인벤토리에 추가되었습니다.", { offerId });
+      return;
+    }
+
+    if (offerId === "premium:revive") {
+      meta.trainerPoints -= offer.tpCost;
+      this.state.team = this.state.team.map((creature) => ({
+        ...creature,
+        currentHp: creature.stats.hp,
+      }));
+      this.addEvent("premium_purchased", "팀 전원이 부활하고 HP가 회복되었습니다.", { offerId });
+      return;
+    }
+
+    if (offerId === "premium:coin-bag") {
+      meta.trainerPoints -= offer.tpCost;
+      this.state.money += 50;
+      this.addEvent("premium_purchased", "코인 +50을 받았습니다.", { offerId });
+      return;
+    }
+
+    if (offerId === "premium:team-reroll") {
+      const target = this.findTeamMember(targetEntityId);
+      if (!target) {
+        this.addEvent("premium_denied", "대상 포켓몬을 찾을 수 없습니다.");
+        return;
+      }
+      const speciesPool = speciesCatalog.filter(
+        (species) => species.id !== target.speciesId && species.rarity === getSpeciesRarity(target.speciesId),
+      );
+      const pickedSpecies = speciesPool.length > 0 ? this.rng.pick(speciesPool) : null;
+      if (!pickedSpecies) {
+        this.addEvent("premium_denied", "재추첨에 사용할 종이 부족합니다.");
+        return;
+      }
+      meta.trainerPoints -= offer.tpCost;
+      const replacement = createCreature({
+        rng: this.rng,
+        wave: this.state.currentWave,
+        balance: this.balance,
+        speciesId: pickedSpecies.id,
+        role: "trainer",
+      });
+      const replacedTeam = this.state.team.map((creature) =>
+        creature.instanceId === target.instanceId
+          ? { ...replacement, instanceId: target.instanceId }
+          : creature,
+      );
+      this.state.team = replacedTeam;
+      this.addEvent("premium_purchased", `${target.speciesName} → ${pickedSpecies.name} 재추첨 완료.`, {
+        offerId,
+        from: target.speciesId,
+        to: pickedSpecies.id,
+      });
+      return;
+    }
+
+    if (offerId === "premium:dex-unlock") {
+      const ownedSet = new Set(this.state.unlockedSpeciesIds ?? []);
+      const candidates = speciesCatalog.filter(
+        (species) =>
+          !ownedSet.has(species.id) && !starterSpeciesIds.includes(species.id) && species.rarity >= 3,
+      );
+      if (candidates.length === 0) {
+        this.addEvent("premium_denied", "도감에 추가할 새 종이 없습니다.");
+        return;
+      }
+      meta.trainerPoints -= offer.tpCost;
+      const picked = this.rng.pick(candidates);
+      this.state.unlockedSpeciesIds = [...(this.state.unlockedSpeciesIds ?? []), picked.id];
+      const dexAward = awardDexUnlock(meta, picked.id);
+      if (dexAward) {
+        this.recordAchievementAward(dexAward);
+      }
+      this.addEvent("premium_purchased", `${picked.name}이(가) 도감에 영구 추가되었습니다.`, {
+        offerId,
+        speciesId: picked.id,
+      });
+      return;
+    }
   }
 
   autoStep(strategy: AutoPlayOptions["strategy"] = "greedy"): GameState {
@@ -292,6 +441,8 @@ export class HeadlessGameClient {
       role: "starter",
     });
 
+    const previousMeta = this.state.metaCurrency;
+    const previousUnlocked = this.state.unlockedSpeciesIds;
     this.state = {
       version: 1,
       seed: this.state.seed,
@@ -304,6 +455,8 @@ export class HeadlessGameClient {
       team: [starter],
       selectedRoute: undefined,
       events: [],
+      metaCurrency: previousMeta,
+      unlockedSpeciesIds: previousUnlocked,
     };
     this.state.shopDeal = this.generateShopDeal();
     this.nextEventId = 1;
@@ -323,6 +476,8 @@ export class HeadlessGameClient {
       return;
     }
 
+    const previousMeta = this.state.metaCurrency;
+    const previousUnlocked = this.state.unlockedSpeciesIds;
     this.state = {
       version: 1,
       seed: this.state.seed,
@@ -334,8 +489,18 @@ export class HeadlessGameClient {
       balls: createStartingBalls(this.balance),
       team: [],
       events: [],
+      metaCurrency: previousMeta,
+      unlockedSpeciesIds: previousUnlocked,
     };
     this.nextEventId = 1;
+  }
+
+  setMetaCurrency(meta: MetaCurrencyState): void {
+    this.state.metaCurrency = { ...meta, claimedAchievements: [...meta.claimedAchievements] };
+  }
+
+  getMetaCurrency(): MetaCurrencyState {
+    return ensureMetaCurrency(this.state);
   }
 
   private setTrainerName(trainerName: string): void {
@@ -446,6 +611,11 @@ export class HeadlessGameClient {
     this.state.money += reward;
 
     if (encounter.kind === "trainer") {
+      const meta = ensureMetaCurrency(this.state);
+      const checkpointAward = awardCheckpointDefeat(meta, this.state.currentWave, this.balance);
+      if (checkpointAward) {
+        this.recordAchievementAward(checkpointAward);
+      }
       this.advanceWave();
       return;
     }
@@ -538,6 +708,20 @@ export class HeadlessGameClient {
         teamPower: scoreTeam(this.state.team),
       },
     );
+
+    if (accepted) {
+      const meta = ensureMetaCurrency(this.state);
+      const unlocked = new Set(this.state.unlockedSpeciesIds ?? []);
+      if (!unlocked.has(captured.speciesId)) {
+        unlocked.add(captured.speciesId);
+        this.state.unlockedSpeciesIds = Array.from(unlocked);
+      }
+      const dexAward = awardDexUnlock(meta, captured.speciesId);
+      if (dexAward) {
+        this.recordAchievementAward(dexAward);
+      }
+    }
+
     this.advanceWave();
   }
 
@@ -1337,6 +1521,14 @@ function signature(state: GameState): string {
     ...ballTypes.map((ball) => state.balls[ball]),
     state.events.length,
   ].join(":");
+}
+
+function getSpeciesRarity(speciesId: number): number {
+  try {
+    return speciesCatalog.find((entry) => entry.id === speciesId)?.rarity ?? 1;
+  } catch {
+    return 1;
+  }
 }
 
 function pickStrongMoveByType(element: ElementType): MoveDefinition | undefined {

@@ -258,6 +258,9 @@ function buildTargetedPayload(action: FrameAction, targetEntityId: string): Game
   if (action.action.type === "BUY_TEACH_MOVE") {
     return { type: "BUY_TEACH_MOVE", element: action.action.element, targetEntityId };
   }
+  if (action.action.type === "BUY_PREMIUM_TEAM_REROLL") {
+    return { type: "BUY_PREMIUM_TEAM_REROLL", targetEntityId };
+  }
   return undefined;
 }
 
@@ -268,7 +271,8 @@ function requiresShopTarget(action: FrameAction): boolean {
   return (
     action.action.type === "BUY_STAT_BOOST" ||
     action.action.type === "BUY_STAT_REROLL" ||
-    action.action.type === "BUY_TEACH_MOVE"
+    action.action.type === "BUY_TEACH_MOVE" ||
+    action.action.type === "BUY_PREMIUM_TEAM_REROLL"
   );
 }
 
@@ -444,7 +448,7 @@ function renderFrame(
     shopTargetAction,
   });
   return `
-    <main class="app-shell" data-frame-id="${frame.frameId}" data-protocol="${frame.protocolVersion}" data-phase="${frame.phase}" data-wave="${frame.hud.wave}" data-money="${frame.hud.money}" ${renderBallDataAttributes(frame)} data-team-size="${playerEntities.length}" data-team-hp-ratio="${frame.hud.teamHpRatio}" data-timeline-count="${frame.timeline.length}" data-battle-playback="${playback.isPlaying ? "playing" : "idle"}" data-battle-sequence="${playback.activeEvent?.sequence ?? 0}" data-battle-event-type="${escapeHtml(playback.activeEvent?.type ?? "")}">
+    <main class="app-shell" data-frame-id="${frame.frameId}" data-protocol="${frame.protocolVersion}" data-phase="${frame.phase}" data-wave="${frame.hud.wave}" data-money="${frame.hud.money}" data-trainer-points="${frame.hud.trainerPoints}" ${renderBallDataAttributes(frame)} data-team-size="${playerEntities.length}" data-team-hp-ratio="${frame.hud.teamHpRatio}" data-timeline-count="${frame.timeline.length}" data-battle-playback="${playback.isPlaying ? "playing" : "idle"}" data-battle-sequence="${playback.activeEvent?.sequence ?? 0}" data-battle-event-type="${escapeHtml(playback.activeEvent?.type ?? "")}">
       ${screen}
       ${playback.isPlaying ? "" : renderTeamRecordPanel(statusView.teamRecord, playerEntities)}
 
@@ -726,6 +730,7 @@ function renderReadyScreen({
       <div class="shop-top-panel">
         <div class="shop-board">
           <span class="shop-money">${formatMoney(frame.hud.money)}</span>
+          <span class="shop-trainer-points" aria-label="트레이너 포인트">⭐ ${frame.hud.trainerPoints} TP</span>
           ${
             shopTargetAction
               ? `<strong>${escapeHtml(createShopTargetLabel(shopTargetAction))}</strong><button type="button" class="shop-target-cancel" data-shop-target-cancel aria-label="대상 선택 취소">✕</button>`
@@ -891,8 +896,13 @@ function renderShopActionCard(action: FrameAction, frame: GameFrame): string {
   const featuredAttribute = action.id === "encounter:next" ? ' data-shop-featured="true"' : "";
   const grade = resolveShopCardGrade(action);
   const gradeAttribute = grade ? ` data-grade="${grade}"` : "";
+  const isPremium = action.tpCost !== undefined;
+  const premiumAttribute = isPremium ? ' data-tp-card="true"' : "";
   const isOnSale =
-    action.originalCost !== undefined && action.cost !== undefined && action.originalCost > action.cost;
+    !isPremium &&
+    action.originalCost !== undefined &&
+    action.cost !== undefined &&
+    action.originalCost > action.cost;
   const saleAttribute = isOnSale ? ' data-on-sale="true"' : "";
   const discountPercent =
     isOnSale && action.originalCost
@@ -903,13 +913,15 @@ function renderShopActionCard(action: FrameAction, frame: GameFrame): string {
         action.originalCost ?? 0,
       )}</span>`
     : "";
+  const premiumBadge = isPremium ? '<span class="shop-premium-badge">PREMIUM</span>' : "";
 
   return `
-    <button type="button" class="shop-card" data-action-id="${escapeHtml(action.id)}" data-shop-kind="${profile.kind}" data-role="${action.role}"${gradeAttribute}${featuredAttribute}${saleAttribute} aria-label="${escapeHtml(ariaLabel)}"${disabled}${reason}>
+    <button type="button" class="shop-card" data-action-id="${escapeHtml(action.id)}" data-shop-kind="${profile.kind}" data-role="${action.role}"${gradeAttribute}${featuredAttribute}${saleAttribute}${premiumAttribute} aria-label="${escapeHtml(ariaLabel)}"${disabled}${reason}>
       ${renderActionIcon(action)}
       <strong>${titleLines.map((line) => `<span>${escapeHtml(line)}</span>`).join("")}</strong>
       <small>${escapeHtml(compactMeta)}</small>
       ${saleBadge}
+      ${premiumBadge}
     </button>
   `;
 }
@@ -925,6 +937,10 @@ const HEAL_RATIO_BY_TIER: Record<1 | 2 | 3 | 4 | 5, number> = {
 type ShopCardGrade = "common" | "uncommon" | "rare" | "epic" | "legendary";
 
 function resolveShopCardGrade(action: FrameAction): ShopCardGrade | undefined {
+  if (action.tpCost !== undefined) {
+    return "legendary";
+  }
+
   if (action.id === "encounter:next") {
     return "legendary";
   }
@@ -1082,6 +1098,22 @@ function createCompactShopTitleLines(action: FrameAction, profile: ShopActionPro
     return ["보급", "루트"];
   }
 
+  if (action.action.type === "BUY_PREMIUM_MASTERBALL") {
+    return ["마스터", "볼"];
+  }
+  if (action.action.type === "BUY_PREMIUM_REVIVE_ALL") {
+    return ["기적의", "부활"];
+  }
+  if (action.action.type === "BUY_PREMIUM_COIN_BAG") {
+    return ["코인", "+50"];
+  }
+  if (action.action.type === "BUY_PREMIUM_TEAM_REROLL") {
+    return ["운명의", "재추첨"];
+  }
+  if (action.action.type === "BUY_PREMIUM_DEX_UNLOCK") {
+    return ["신화의", "발견"];
+  }
+
   return [profile.title];
 }
 
@@ -1097,6 +1129,10 @@ const ELEMENT_KO: Partial<Record<string, string>> = {
 function createCompactShopMeta(action: FrameAction, profile: ShopActionProfile): string {
   if (action.id === "encounter:next") {
     return "출발";
+  }
+
+  if (action.tpCost !== undefined) {
+    return `⭐ ${action.tpCost} TP`;
   }
 
   return profile.meta;
@@ -1579,6 +1615,16 @@ function actionEmoji(action: FrameAction): string {
       return ELEMENT_EMOJI[action.action.element] ?? "📘";
     case "BUY_TYPE_LOCK":
       return ELEMENT_EMOJI[action.action.element] ?? "🔒";
+    case "BUY_PREMIUM_MASTERBALL":
+      return "✨";
+    case "BUY_PREMIUM_REVIVE_ALL":
+      return "🌈";
+    case "BUY_PREMIUM_COIN_BAG":
+      return "💰";
+    case "BUY_PREMIUM_TEAM_REROLL":
+      return "🎴";
+    case "BUY_PREMIUM_DEX_UNLOCK":
+      return "📜";
     case "SET_TRAINER_NAME":
       return "💾";
     default:

@@ -98,6 +98,23 @@ export interface ShopDeal {
   discountRate: number;
 }
 
+export interface MetaCurrencyState {
+  trainerPoints: number;
+  claimedAchievements: string[];
+  lastSheetClaim?: {
+    date: string;
+    totalWins: number;
+    teamId?: string;
+  };
+}
+
+export type PremiumOfferId =
+  | "premium:masterball"
+  | "premium:revive"
+  | "premium:coin-bag"
+  | "premium:team-reroll"
+  | "premium:dex-unlock";
+
 export interface BattleStatusState {
   type: BattleStatus;
   turnsRemaining?: number;
@@ -446,6 +463,9 @@ export interface GameState {
   selectedRoute?: SelectedRoute;
   encounterBoost?: EncounterBoost;
   shopDeal?: ShopDeal;
+  metaCurrency?: MetaCurrencyState;
+  unlockedSpeciesIds?: number[];
+  premiumOfferIds?: { wave: number; ids: PremiumOfferId[] };
   supplyUsedAtWave?: number;
   pendingEncounter?: EncounterSnapshot;
   pendingCapture?: Creature;
@@ -472,7 +492,12 @@ export type GameAction =
   | { type: "BUY_STAT_BOOST"; tier: StatBoostTier; targetEntityId?: string }
   | { type: "BUY_STAT_REROLL"; targetEntityId?: string }
   | { type: "BUY_TEACH_MOVE"; element: ElementType; targetEntityId?: string }
-  | { type: "BUY_TYPE_LOCK"; element: ElementType };
+  | { type: "BUY_TYPE_LOCK"; element: ElementType }
+  | { type: "BUY_PREMIUM_MASTERBALL" }
+  | { type: "BUY_PREMIUM_REVIVE_ALL" }
+  | { type: "BUY_PREMIUM_COIN_BAG" }
+  | { type: "BUY_PREMIUM_TEAM_REROLL"; targetEntityId?: string }
+  | { type: "BUY_PREMIUM_DEX_UNLOCK" };
 
 export interface AutoPlayOptions {
   maxWaves: number;
