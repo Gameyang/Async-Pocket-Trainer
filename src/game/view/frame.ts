@@ -126,6 +126,7 @@ export interface FrameScene {
 export interface FrameStarterOption {
   speciesId: number;
   name: string;
+  level: number;
   typeLabels: string[];
   assetKey: string;
   assetPath: string;
@@ -657,6 +658,7 @@ export function speciesToStarterOption(species: SpeciesDefinition): FrameStarter
   return {
     speciesId: species.id,
     name: species.name,
+    level: 1,
     typeLabels: localizeTypes(species.types),
     assetKey: `monster:${species.id}`,
     assetPath: `resources/pokemon/${species.id.toString().padStart(4, "0")}.webp`,

@@ -20,30 +20,54 @@ This project does not include original Pokemon NPC portraits, BGM, or SFX.
 - Used in: trainer encounter badges. Sheet-sourced encounters use `sheet-rival.webp`; generated
   checkpoint trainers use `field-scout.webp` or `checkpoint-captain.webp`.
 
-## Audio — Element Battle SFX (procedural chiptune synth)
-
-- Source URL: local procedural generator, `scripts/generate-local-assets.mjs`.
-- License: project-owned generated placeholder audio.
-- Transform: the script synthesizes short mono tones and encodes browser-playable AAC/M4A files.
-- Used in:
-  - `src/resources/audio/sfx/battle-type-*.m4a`
-  - `src/resources/audio/sfx/battle-type-*-critical.m4a`
-  - `src/resources/audio/sfx/battle-support-type-*.m4a`
-
-## Audio — Common SFX (OpenGameArt)
+## Audio — SFX from "The Essential Retro Video Game Sound Effects Collection [512 sounds]"
 
 - Source URL: <https://opengameart.org/content/512-sound-effects-8-bit-style>
 - Author: Juhani Junkala (file: `The Essential Retro Video Game Sound Effects Collection [512 sounds].zip`)
 - License: CC0 (Public Domain Dedication) — no attribution required, retained voluntarily.
-- Transform: source `.wav` (44.1 kHz mono) re-encoded to AAC/M4A at 72 kbps via ffmpeg.
+- Transform: source `.wav` (44.1 kHz mono) re-encoded to AAC/M4A at 72 kbps via ffmpeg. Longer
+  samples are trimmed to ~1.5 s with an 80 ms tail fade-out.
 - Used in:
-  - `src/resources/audio/sfx/battle-hit.m4a` ← `General Sounds/Simple Damage Sounds/sfx_damage_hit3.wav`
-  - `src/resources/audio/sfx/battle-critical-hit.m4a` ← `Explosions/Short/sfx_exp_short_hard5.wav`
-  - `src/resources/audio/sfx/battle-miss.m4a` ← `General Sounds/Neutral Sounds/sfx_sound_neutral6.wav`
-  - `src/resources/audio/sfx/creature-faint.m4a` ← `Death Screams/Robot/sfx_deathscream_robot2.wav`
-  - `src/resources/audio/sfx/capture-success.m4a` ← `General Sounds/Positive Sounds/sfx_sounds_powerup3.wav`
-  - `src/resources/audio/sfx/capture-fail.m4a` ← `General Sounds/Negative Sounds/sfx_sounds_negative2.wav`
-  - `src/resources/audio/sfx/phase-change.m4a` ← `General Sounds/Fanfares/sfx_sounds_fanfare1.wav`
+  - Common SFX:
+    - `battle-hit.m4a` ← `General Sounds/Simple Damage Sounds/sfx_damage_hit3.wav`
+    - `battle-critical-hit.m4a` ← `Explosions/Short/sfx_exp_short_hard5.wav`
+    - `battle-miss.m4a` ← `General Sounds/Neutral Sounds/sfx_sound_neutral6.wav`
+    - `creature-faint.m4a` ← `Death Screams/Robot/sfx_deathscream_robot2.wav`
+    - `capture-success.m4a` ← `General Sounds/Positive Sounds/sfx_sounds_powerup3.wav`
+    - `capture-fail.m4a` ← `General Sounds/Negative Sounds/sfx_sounds_negative2.wav`
+    - `phase-change.m4a` ← `General Sounds/Fanfares/sfx_sounds_fanfare1.wav`
+  - Element battle SFX (`battle-type-{element}.m4a` / `-critical.m4a` / `battle-support-type-{element}.m4a`):
+    - `normal` ← `Impacts/sfx_sounds_impact3.wav`, `Impacts/sfx_sounds_impact12.wav`, `Neutral Sounds/sfx_sound_neutral4.wav`
+    - `grass` (support only) ← `Neutral Sounds/sfx_sound_neutral7.wav`
+    - `electric` ← `Lasers/sfx_wpn_laser4.wav`, `Lasers/sfx_wpn_laser9.wav`, `Bleeps/sfx_sounds_Blip5.wav`
+    - `poison` (critical/support) ← `Weird Sounds/sfx_sound_nagger1.wav`, `Weird Sounds/sfx_sound_depressurizing.wav`
+    - `ground` ← `Explosions/Medium Length/sfx_exp_medium5.wav`, `Explosions/Long/sfx_exp_long2.wav`, `Falling Sounds/sfx_sounds_falling4.wav`
+    - `flying` ← `Jumping/sfx_movement_jump10.wav`, `Portals/sfx_movement_portal4.wav`, `Falling/sfx_sounds_falling6.wav`
+    - `bug` ← `Weird Sounds/sfx_sound_mechanicalnoise{1,5,3}.wav`
+    - `fighting` ← `Melee/sfx_wpn_punch{2,4,1}.wav`
+    - `psychic` (critical/support) ← `Portals/sfx_movement_portal2.wav`, `Weird Sounds/sfx_sound_bling.wav`
+    - `ghost` ← `Weird Sounds/sfx_sound_shutdown1.wav`, `sfx_sound_vaporizing.wav`, `sfx_sound_refereewhistle.wav`
+    - `ice` (impact/critical) ← `High Pitched Sounds/sfx_sounds_high2.wav`, `Shotgun/sfx_weapon_shotgun2.wav`
+    - `fairy` (critical) ← `Fanfares/sfx_sounds_fanfare2.wav`
+
+## Audio — SFX from "80 CC0 RPG SFX"
+
+- Source URL: <https://opengameart.org/content/80-cc0-rpg-sfx>
+- Author: rubberduck (file: `80-CC0-RPG-SFX.zip`)
+- License: CC0 (Public Domain Dedication).
+- Transform: source `.ogg` re-encoded to AAC/M4A mono at 72 kbps.
+- Used in element battle SFX (`battle-type-{element}.m4a` / `-critical.m4a` / `battle-support-type-{element}.m4a`):
+  - `fire` ← `spell_fire_01.ogg`, `spell_fire_07.ogg`, `spell_fire_03.ogg`
+  - `water` ← `creature_slime_{03,01,04}.ogg`
+  - `grass` (impact/critical) ← `spell_01.ogg`, `spell_02.ogg`
+  - `poison` (impact) ← `creature_slime_02.ogg`
+  - `psychic` (impact) ← `book_02.ogg`
+  - `rock` ← `stones_{01,03,04}.ogg`
+  - `ice` (support) ← `item_gem_02.ogg`
+  - `dragon` ← `creature_roar_{02,03,01}.ogg`
+  - `dark` ← `creature_monster_04.ogg`, `creature_monster_02.ogg`, `creature_misc_03.ogg`
+  - `steel` ← `metal_02.ogg`, `blade_03.ogg`, `metal_01.ogg`
+  - `fairy` (impact/support) ← `item_gem_01.ogg`, `item_gem_03.ogg`
 
 ## Audio — BGM (OpenGameArt)
 

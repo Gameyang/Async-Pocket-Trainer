@@ -1199,9 +1199,12 @@ function renderBattleScreen({
   activeCue,
 }: ScreenRenderContext): string {
   const battleEntities = playerEntities.concat(opponentEntities);
-  const activeCueAttribute = activeCue
-    ? ` data-active-cue="${escapeHtml(activeCue.effectKey)}"`
-    : "";
+  const activeCueAttribute = [
+    activeCue ? ` data-active-cue="${escapeHtml(activeCue.effectKey)}"` : "",
+    shouldShakeBattleCamera(playback.activeEvent, playerEntities)
+      ? ' data-camera-shake="ally-damage"'
+      : "",
+  ].join("");
 
   return `
     <section class="screen encounter-panel" data-screen="battle"${activeCueAttribute} aria-label="전투 화면">
@@ -1227,6 +1230,18 @@ function renderBattleScreen({
       </div>
     </section>
   `;
+}
+
+function shouldShakeBattleCamera(
+  activeEvent: FrameBattleReplayEvent | undefined,
+  playerEntities: readonly FrameEntity[],
+): boolean {
+  return (
+    activeEvent?.type === "damage.apply" &&
+    (activeEvent.damage ?? 0) > 0 &&
+    (activeEvent.sourceSide === "player" ||
+      playerEntities.some((entity) => entity.id === activeEvent.sourceEntityId))
+  );
 }
 
 function renderStarterScreen(
@@ -1278,6 +1293,7 @@ function renderStarterOption(option: FrameStarterOption, actions: readonly Frame
         <span class="starter-dex-number">#${dexNumber}</span>
         <img src="${resolveAssetPath(option.assetPath)}" alt="${escapeHtml(`${displayName} 포켓몬`)}" />
         <h2>${escapeHtml(displayName)}</h2>
+        ${action || claimAction ? renderPokemonLevelBadge(option.level) : ""}
         <p>${escapeHtml(typeLine)}</p>
         ${claimAction ? "<span>💎 REWARD</span>" : action ? "<span>선택 가능</span>" : "<span>LOCKED</span>"}
       </button>
@@ -1298,6 +1314,10 @@ function renderRewardAlertBadge(source: FrameAction | string, amountOverride?: s
   const amount = amountOverride ?? label.match(/💎\s*\d+/)?.[0] ?? "!";
 
   return `<span class="reward-alert-badge" aria-label="${escapeHtml(label)}"><strong>!</strong><em>${escapeHtml(amount)}</em></span>`;
+}
+
+function renderPokemonLevelBadge(level: number): string {
+  return `<span class="pokemon-level-badge" aria-label="레벨 ${level}">Lv. ${level}</span>`;
 }
 
 function renderReadyScreen({
@@ -1451,7 +1471,10 @@ function renderShopTeamSlot(
       ${rewardBadge}
       <img src="${resolveAssetPath(entity.assetPath)}" alt="${escapeHtml(`${entity.name} 포켓몬`)}" />
       <div class="shop-slot-main">
-        <strong>${escapeHtml(entity.name)}</strong>
+        <div class="pokemon-name-line">
+          <strong>${escapeHtml(entity.name)}</strong>
+          ${renderPokemonLevelBadge(entity.level)}
+        </div>
         <p>${escapeHtml(entity.typeLabels.join(" / "))}</p>
       </div>
       <dl class="shop-slot-stats">
@@ -1499,7 +1522,10 @@ function renderTeamDetailPopup(entity: FrameEntity, actions: readonly FrameActio
           <img src="${resolveAssetPath(entity.assetPath)}" alt="${escapeHtml(`${entity.name} 포켓몬`)}" />
           <div>
             <span>${escapeHtml(entity.typeLabels.join(" / "))}</span>
-            <h2>${escapeHtml(entity.name)}</h2>
+            <div class="pokemon-title-line">
+              <h2>${escapeHtml(entity.name)}</h2>
+              ${renderPokemonLevelBadge(entity.level)}
+            </div>
             <p>HP ${entity.hp.current}/${entity.hp.max}</p>
           </div>
         </header>
@@ -1864,7 +1890,10 @@ function renderTeamCompareSlots(
         <span class="compare-slot-number">${index + 1}</span>
         <img src="${resolveAssetPath(entity.assetPath)}" alt="${escapeHtml(`${entity.name} 포켓몬`)}" />
         <div class="compare-slot-body">
-          <strong>${escapeHtml(entity.name)}</strong>
+          <div class="pokemon-name-line">
+            <strong>${escapeHtml(entity.name)}</strong>
+            ${renderPokemonLevelBadge(entity.level)}
+          </div>
           <p>전투력 ${entity.scores.power}</p>
           <span class="slot-meter" data-hp-state="${hpState}"><span style="width: ${Math.round(entity.hp.ratio * 100)}%"></span></span>
         </div>
@@ -1882,7 +1911,10 @@ function renderCandidateCard(entity: FrameEntity, weakestPower: number): string 
     <article class="candidate-card">
       <img src="${resolveAssetPath(entity.assetPath)}" alt="${escapeHtml(`${entity.name} 포켓몬`)}" />
       <div class="candidate-heading">
-        <h2>${escapeHtml(entity.name)}</h2>
+        <div class="pokemon-title-line">
+          <h2>${escapeHtml(entity.name)}</h2>
+          ${renderPokemonLevelBadge(entity.level)}
+        </div>
         <p>${escapeHtml(entity.typeLabels.join(" / "))}</p>
         ${
           weakestPower > 0
@@ -1961,7 +1993,10 @@ function renderFinalTeamSlot(entity: FrameEntity | undefined, index: number): st
       <span class="final-slot-number">${index + 1}</span>
       <img src="${resolveAssetPath(entity.assetPath)}" alt="${escapeHtml(`${entity.name} 포켓몬`)}" />
       <div class="final-slot-heading">
-        <strong>${escapeHtml(entity.name)}</strong>
+        <div class="pokemon-name-line">
+          <strong>${escapeHtml(entity.name)}</strong>
+          ${renderPokemonLevelBadge(entity.level)}
+        </div>
         <p>${escapeHtml(entity.typeLabels.join(" / "))}</p>
       </div>
       <dl>
@@ -2450,12 +2485,13 @@ function renderBattleCard(
   const hpRatio = entity?.hp.ratio ?? 0;
   const hpText = entity ? `${entity.hp.current}/${entity.hp.max}` : subtitle;
   const hpState = resolveHpState(hpRatio);
+  const levelBadge = entity ? renderPokemonLevelBadge(entity.level) : "";
 
   return `
     <aside class="battle-card ${className}" data-hp-state="${hpState}">
       <div class="name-row">
-        <span>${escapeHtml(name)}</span>
-        <span>${escapeHtml(hpText)}</span>
+        <span class="battle-name-main"><span class="battle-name-text">${escapeHtml(name)}</span>${levelBadge}</span>
+        <span class="battle-hp-text">${escapeHtml(hpText)}</span>
       </div>
       <div class="hp-line"><span style="width: ${Math.round(hpRatio * 100)}%"></span></div>
       ${renderBattleTags(entity)}

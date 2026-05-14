@@ -155,6 +155,12 @@ p {
     inset 0 -12px 0 rgba(0, 0, 0, 0.14);
 }
 
+.screen[data-screen="battle"][data-camera-shake="ally-damage"] {
+  animation: battle-camera-shake 360ms cubic-bezier(0.18, 0.86, 0.22, 1) both;
+  transform-origin: center;
+  will-change: transform;
+}
+
 .battlefield {
   position: absolute;
   inset: 0;
@@ -403,16 +409,64 @@ p {
   font-size: 0.72rem;
 }
 
-.name-row span {
+.name-row > span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.name-row span:last-child {
+.name-row > span:last-child {
   flex: 0 0 auto;
   color: var(--muted);
   font-size: 0.66rem;
+}
+
+.battle-name-main,
+.pokemon-name-line,
+.pokemon-title-line {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.battle-name-main {
+  flex: 1 1 auto;
+}
+
+.battle-name-text,
+.pokemon-name-line strong,
+.pokemon-title-line h2 {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pokemon-title-line h2 {
+  margin-bottom: 0;
+}
+
+.pokemon-level-badge {
+  flex: 0 0 auto;
+  display: inline-grid;
+  place-items: center;
+  pointer-events: none;
+  min-height: 16px;
+  border: 2px solid rgba(16, 23, 34, 0.66);
+  border-radius: 999px;
+  padding: 0 5px;
+  background: linear-gradient(180deg, #eaf9ff, #8fc5ea);
+  color: #17375b;
+  font-size: 0.52rem;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.battle-card .pokemon-level-badge {
+  min-height: 15px;
+  padding: 0 4px;
+  font-size: 0.5rem;
 }
 
 .battle-tags {
@@ -1521,6 +1575,11 @@ p {
   color: #6f6750;
 }
 
+.starter-option .pokemon-level-badge {
+  color: #17375b;
+  font-size: 0.5rem;
+}
+
 .starter-dex-number {
   justify-self: end;
   color: #275768;
@@ -2092,6 +2151,12 @@ button.shop-team-slot:hover:not(:disabled) {
   min-width: 0;
 }
 
+.shop-slot-main .pokemon-name-line,
+.compare-slot-body .pokemon-name-line,
+.final-slot-heading .pokemon-name-line {
+  justify-content: flex-start;
+}
+
 .shop-team-slot strong {
   display: block;
   font-size: 0.68rem;
@@ -2265,6 +2330,10 @@ button.shop-team-slot:hover:not(:disabled) {
   overflow-wrap: anywhere;
   font-size: 1.15rem;
   line-height: 1.05;
+}
+
+.team-detail-card .pokemon-title-line {
+  justify-content: flex-start;
 }
 
 .team-detail-stats {
@@ -4410,6 +4479,37 @@ button.move-detail-content:hover {
 
   .shop-card[data-shop-featured="true"] {
     grid-column: 1 / -1;
+  }
+}
+
+@keyframes battle-camera-shake {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+
+  12% {
+    transform: translate3d(-5px, 3px, 0);
+  }
+
+  24% {
+    transform: translate3d(6px, -3px, 0);
+  }
+
+  38% {
+    transform: translate3d(-4px, -2px, 0);
+  }
+
+  52% {
+    transform: translate3d(4px, 2px, 0);
+  }
+
+  68% {
+    transform: translate3d(-2px, 1px, 0);
+  }
+
+  84% {
+    transform: translate3d(2px, -1px, 0);
   }
 }
 

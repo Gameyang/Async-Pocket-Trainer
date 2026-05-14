@@ -219,12 +219,23 @@ function drawBattlefield(context: CanvasRenderingContext2D, draw: DrawContext): 
   drawPlatform(context, draw.width * 0.31, rect.y + rect.height * 0.74, 190, 58);
 }
 
-function drawStarterScreen(context: CanvasRenderingContext2D, frame: GameFrame, draw: DrawContext): void {
+function drawStarterScreen(
+  context: CanvasRenderingContext2D,
+  frame: GameFrame,
+  draw: DrawContext,
+): void {
   const rect = drawScreenFrame(context, draw, "#8bd8ff");
   context.fillStyle = "#69b97a";
   context.fillRect(rect.x, rect.y + rect.height * 0.42, rect.width, rect.height * 0.58);
   drawPlatform(context, draw.width * 0.5, rect.y + rect.height * 0.54, rect.width * 0.72, 62);
-  drawTextPanel(context, "함께 시작할 포켓몬을 선택하세요", rect.x + 22, rect.y + 20, rect.width - 44, 36);
+  drawTextPanel(
+    context,
+    "함께 시작할 포켓몬을 선택하세요",
+    rect.x + 22,
+    rect.y + 20,
+    rect.width - 44,
+    36,
+  );
 
   const cardWidth = (rect.width - 48) / 3;
   frame.scene.starterOptions.forEach((option, index) => {
@@ -250,7 +261,8 @@ function drawStarterCard(
   context.fillText(option.name.slice(0, 10), x + width / 2, y + 94);
   context.font = "700 9px sans-serif";
   context.fillStyle = "#34413c";
-  context.fillText(option.typeLabels.join("/").slice(0, 14), x + width / 2, y + 112);
+  context.fillText(`Lv. ${option.level}`, x + width / 2, y + 110);
+  context.fillText(option.typeLabels.join("/").slice(0, 14), x + width / 2, y + 124);
   context.fillText("시작 시 개체 수치 결정", x + width / 2, y + 136);
   context.textAlign = "left";
 }
@@ -289,7 +301,7 @@ function drawReadyScreen(
     drawImageByPath(context, lead.assetPath, draw, rect.x + 72, rect.y + 126, 70, "#48a7c5");
     context.fillStyle = "#17202a";
     context.font = "700 15px sans-serif";
-    context.fillText(lead.name.slice(0, 16), rect.x + 154, rect.y + 150);
+    context.fillText(`${lead.name} Lv.${lead.level}`.slice(0, 18), rect.x + 154, rect.y + 150);
     context.font = "700 11px sans-serif";
     context.fillText(`HP ${lead.hp.current}/${lead.hp.max}`, rect.x + 154, rect.y + 170);
     context.fillText(`전투력 ${lead.scores.power}`, rect.x + 154, rect.y + 188);
@@ -363,10 +375,18 @@ function drawTeamDecisionScreen(
     drawImageByPath(context, candidate.assetPath, draw, rect.x + 42, rect.y + 136, 74, "#8161cb");
     context.fillStyle = "#17202a";
     context.font = "700 16px sans-serif";
-    context.fillText(candidate.name.slice(0, 16), rect.x + 134, rect.y + 152);
+    context.fillText(
+      `${candidate.name} Lv.${candidate.level}`.slice(0, 18),
+      rect.x + 134,
+      rect.y + 152,
+    );
     context.font = "700 11px sans-serif";
     context.fillText(candidate.typeLabels.join(" / ").slice(0, 20), rect.x + 134, rect.y + 174);
-    context.fillText(`HP ${candidate.hp.max}  전투력 ${candidate.scores.power}`, rect.x + 134, rect.y + 196);
+    context.fillText(
+      `HP ${candidate.hp.max}  전투력 ${candidate.scores.power}`,
+      rect.x + 134,
+      rect.y + 196,
+    );
   }
 
   drawTextPanel(
@@ -465,7 +485,11 @@ function drawEntity(
   context.strokeRect(position.cardX, position.cardY, 150, 54);
   context.fillStyle = "#17202a";
   context.font = "700 11px sans-serif";
-  context.fillText(entity.name.slice(0, 14), position.cardX + 8, position.cardY + 16);
+  context.fillText(
+    `${entity.name} Lv.${entity.level}`.slice(0, 16),
+    position.cardX + 8,
+    position.cardY + 16,
+  );
   context.textAlign = "right";
   context.font = "700 10px sans-serif";
   context.fillText(
@@ -672,7 +696,7 @@ function drawBattleSummary(
   const summary = createBattleEventSummary(event, latestCue, frame.entities);
   const label = summary
     ? `${summary.title} / ${summary.result}`
-    : latestCue?.label ?? event?.label ?? frame.scene.subtitle;
+    : (latestCue?.label ?? event?.label ?? frame.scene.subtitle);
   const turn = event && event.turn > 0 ? `${event.turn}턴` : frame.scene.title;
   const top = draw.height - 178;
 

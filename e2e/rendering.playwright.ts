@@ -29,6 +29,7 @@ test("renders phase-specific screens with stable responsive layout", async ({ pa
   await expect(page.locator(".starter-choice-row")).toHaveAttribute("data-starter-density", "dex");
 
   const firstStarter = page.locator('.starter-option[data-starter-state="unlocked"]').first();
+  await expect(firstStarter.locator(".pokemon-level-badge")).toContainText("Lv. 1");
   await firstStarter.locator("[data-starter-pick]").click();
   await expect(page.locator(".starter-choice-row")).toHaveAttribute(
     "data-selection-active",
@@ -54,6 +55,7 @@ test("renders phase-specific screens with stable responsive layout", async ({ pa
   await expect(page.locator(".shop-team-slot")).toHaveCount(6);
   await expect(page.locator(".shop-team-slot .reward-alert-badge").first()).toBeVisible();
   await expect(page.locator(".shop-team-slot .reward-alert-badge").first()).toContainText("💎");
+  await expect(page.locator(".shop-team-slot .pokemon-level-badge").first()).toContainText(/Lv\./);
   await expect(page.locator(".shop-slot-stats").first()).toBeVisible();
   await expect(page.locator(".shop-slot-moves span").first()).toBeVisible();
   await expect(page.locator(".command-band")).toHaveCount(0);
@@ -61,6 +63,9 @@ test("renders phase-specific screens with stable responsive layout", async ({ pa
   await page.locator("[data-team-detail-id]").first().click();
   await expect(page.locator('.team-detail-popup[data-open="true"]')).toBeVisible();
   await expect(page.locator(".team-detail-stats")).toBeVisible();
+  await expect(page.locator(".team-detail-card .pokemon-level-badge").first()).toContainText(
+    /Lv\./,
+  );
   await expect(page.locator(".team-detail-move-card").first()).toBeVisible();
   await expect(page.locator(".move-detail-type").first()).toBeVisible();
   await expect(page.locator(".move-detail-power").first()).toBeVisible();
@@ -95,7 +100,9 @@ test("renders phase-specific screens with stable responsive layout", async ({ pa
   await expect(page.locator(".shop-trainer-points")).toContainText("💎");
   await page.locator('[data-action-id="shop:premium:ball:ultraball"]').click();
   await expect.poll(() => page.locator("#app").getAttribute("data-busy")).toBeNull();
-  await expect(page.locator('.currency-spend-burst[data-currency="gem"] span').first()).toBeVisible();
+  await expect(
+    page.locator('.currency-spend-burst[data-currency="gem"] span').first(),
+  ).toBeVisible();
 
   await openSnapshot(page, captureDecisionSnapshot());
   await assertPhaseScreen(page, "captureDecision", ".encounter-panel");
@@ -105,8 +112,12 @@ test("renders phase-specific screens with stable responsive layout", async ({ pa
   await assertPhaseScreen(page, "teamDecision", ".team-decision-screen");
   await expect(page.locator('.capture-overlay[data-capture-result="success"]')).toBeVisible();
   await expect(page.locator(".candidate-card")).toBeVisible();
+  await expect(page.locator(".candidate-card .pokemon-level-badge").first()).toContainText(/Lv\./);
   await expect(page.locator(".team-compare-panel")).toBeVisible();
   await expect(page.locator(".team-compare-slot")).toHaveCount(6);
+  await expect(page.locator(".team-compare-slot .pokemon-level-badge").first()).toContainText(
+    /Lv\./,
+  );
   await expect(page.locator(".command-band button")).toHaveCount(2);
 
   await openSnapshot(page, failedCaptureReadySnapshot());
@@ -120,6 +131,7 @@ test("renders phase-specific screens with stable responsive layout", async ({ pa
   await assertPhaseScreen(page, "gameOver", ".game-over-screen");
   await expect(page.locator(".final-team-panel")).toBeVisible();
   await expect(page.locator(".final-team-slot")).toHaveCount(6);
+  await expect(page.locator(".final-team-slot .pokemon-level-badge").first()).toContainText(/Lv\./);
   await expect(page.locator('[data-action-id="restart:team:0"]')).toBeVisible();
   await expect(page.locator('[data-action-id="restart:starter-choice"]')).toBeVisible();
   await expect(page.locator(".result-board")).toContainText("웨이브");
@@ -137,6 +149,7 @@ test("confirms battle replay, capture feedback, and ball count rendering", async
   await expect(page.locator(".enemy-mon img")).toBeVisible();
   await expect(page.locator(".battle-card.enemy")).toBeVisible();
   await expect(page.locator(".battle-card.hero")).toBeVisible();
+  await expect(page.locator(".battle-card .pokemon-level-badge").first()).toContainText(/Lv\./);
   await expect(page.locator(".battle-log")).toBeVisible();
   await expect(page.locator(".log-line")).not.toContainText(/[0-9a-f]{8}/);
 
@@ -162,6 +175,9 @@ test("confirms battle replay, capture feedback, and ball count rendering", async
   await expect(page.locator("[data-replay-skip]")).toHaveCount(0);
   await expect(page.locator(".battle-team-grid-panel .shop-team-grid")).toBeVisible();
   await expect(page.locator(".battle-team-grid-panel .shop-team-slot")).toHaveCount(6);
+  await expect(page.locator(".battle-team-grid-panel .pokemon-level-badge").first()).toContainText(
+    /Lv\./,
+  );
   await expect(page.locator(".battle-team-grid-panel .shop-slot-stats").first()).toBeVisible();
   await expect(page.locator(".battle-team-grid-panel button.shop-team-slot")).toHaveCount(0);
   await expect(page.locator(".battle-team-grid-panel [data-team-detail-id]")).toHaveCount(0);
