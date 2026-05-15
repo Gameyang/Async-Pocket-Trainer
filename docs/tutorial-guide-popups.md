@@ -1,10 +1,18 @@
 # 튜토리얼 가이드 팝업 설계
 
-이 문서는 현재 코드 구현을 기준으로, 처음 접속한 유저가 막히지 않도록 큰 가이드 팝업이 언제 뜨고 무엇을 말해야 하는지 정리한다.
+이 문서는 현재 게임 구현을 기준으로, 처음 접속한 유저에게 보여줄 큰 가이드 팝업의 등장 시점과 문구를 정리한다.
 
-## 실제 코드 기준 흐름
+팝업 시점은 아래 7개로 고정한다.
 
-신규 저장 데이터가 없으면 `HeadlessGameClient`는 `starterChoice`에서 시작한다. 브라우저 런타임은 저장된 스냅샷이 있으면 해당 상태에서 바로 시작할 수 있으므로, 튜토리얼은 "첫 접속 순서"만 믿지 말고 현재 `GameFrame.phase`와 화면 상태를 기준으로 골라야 한다.
+1. 게임 첫 접속
+2. 첫 상점 진입
+3. 첫 인게임 전투 시작 전, 월드맵 이전
+4. 첫 포켓몬 잡기 성공
+5. 첫 포켓몬 잡기 실패
+6. 첫 트레이너전 성공
+7. 첫 전투 실패
+
+## 실제 코드 흐름
 
 ```text
 starterChoice
@@ -24,36 +32,29 @@ gameOver
   -> START_RUN 또는 RETURN_TO_STARTER_CHOICE
 ```
 
-중요한 실제 구현 차이:
+구현상 중요한 점:
 
-- `ready` 화면은 전투 준비 화면이자 상점 화면이다. 스타터 선택 직후 이미 `shopDeal`과 `shopInventory`가 생성되고, `전투 시작` 버튼과 상점 카드가 함께 표시된다.
-- `starterChoice` 브라우저 화면은 3장 카드 화면이 아니라 151마리 도감형 카드 화면이다. 처음에는 `start:1`, `start:4`, `start:7`만 실제 선택 액션을 가진다.
-- `captureDecision`은 별도 포획 화면이 아니라 전투 화면(`data-screen="battle"`) 위에 포획 선택 액션이 command band로 붙는 상태다.
-- 전투 직후에는 리플레이가 먼저 재생된다. 튜토리얼 팝업은 `playback.isPlaying === false`가 된 뒤 띄워야 한다.
-- 포획 실패는 별도 상태가 아니다. 실패 후 바로 다음 웨이브 `ready`로 이동하고, `frame.scene.capture.result === "failure"`가 ready 화면 오버레이로 남는다.
-- 체크포인트 기록 화면은 별도 `GamePhase`가 아니다. `frame.phase === "ready"`이지만 `statusView.teamRecord`가 있으면 렌더러가 `checkpointVictory` 화면을 보여준다.
-- 루트 선택 액션은 타입과 로직은 남아 있지만, 현재 `createFrameActions`에서는 `route:*` 액션을 만들지 않는다. 튜토리얼에서 루트 선택 팝업을 넣으면 실제 UI와 맞지 않는다.
+- `ready`는 전투 준비 화면이자 상점 화면이다. 스타터 선택 직후 바로 상점 카드와 `전투 시작` 버튼이 함께 보인다.
+- 브라우저의 `starterChoice` 화면은 151마리 도감형 화면이다. 처음에는 `start:1`, `start:4`, `start:7`만 선택 가능하다.
+- 전투 시작 뒤에는 전투 리플레이와 월드맵 인트로가 재생될 수 있다. "첫 인게임 전투 시작" 팝업은 `RESOLVE_NEXT_ENCOUNTER`를 실행하기 전에 보여줘야 월드맵보다 먼저 뜬다.
+- 포획 실패는 별도 phase가 아니다. 실패하면 바로 다음 웨이브 `ready`로 가고, `frame.scene.capture.result === "failure"`가 오버레이로 남는다.
+- 첫 트레이너전 성공 화면은 별도 phase가 아니다. `frame.phase === "ready"`이지만 `statusView.teamRecord`가 있으면 `checkpointVictory` 화면으로 렌더된다.
 
 ## 팝업 등장 시점 요약
 
-| ID | 실제 감지 조건 | 실제 화면/액션 | 팝업 목적 | 닫기 조건 |
+| ID | 사용자 시점 | 실제 감지 조건 | 강조 대상 | 닫기 조건 |
 | --- | --- | --- | --- | --- |
-| `starter-dex` | `frame.phase === "starterChoice"` | `data-screen="starterChoice"`, `start:*` 액션 | 선택 가능한 첫 포켓몬을 고르게 함 | `START_RUN` 실행 |
-| `starter-confirm` | 스타터 카드 선택 후 `.starter-option[data-starter-selected]` 존재 | `.starter-confirm[data-action-id="start:*"]` | 카드 선택 뒤 확인 버튼을 눌러야 함을 안내 | `START_RUN` 실행 또는 선택 취소 |
-| `ready-first` | 첫 `ready`, `frame.hud.wave === 1` | `encounter:next`, `shop:*` | 전투 시작과 상점이 같은 화면임을 안내 | `RESOLVE_NEXT_ENCOUNTER` 또는 상점 구매 |
-| `shop-first` | 첫 `ready`에서 `shop:*` 카드가 보임 | `.shop-card-grid`, 코인/보석 HUD | 회복, 볼 구매, 강화 카드 설명 | 상점 구매, 재구성, 전투 시작 |
-| `shop-target` | `ready`에서 대상 필요 상점 액션 클릭 후 `shopTargetAction` 존재 | `data-shop-targeting="true"`, 팀 슬롯 | 회복/강화/기술머신 대상 선택 안내 | 대상 슬롯 선택 또는 취소 |
-| `battle-replay` | `RESOLVE_NEXT_ENCOUNTER` 뒤 `playback.isPlaying === true` | `data-screen="battle"` | 전투가 자동으로 재생됨을 안내 | 리플레이 종료 |
-| `capture-choice` | `frame.phase === "captureDecision"`이고 리플레이 종료 | `capture:*`, `capture:skip` | 볼을 던지거나 포기하게 함 | `ATTEMPT_CAPTURE` 또는 `DISCARD_CAPTURE` |
-| `capture-failed` | `frame.phase === "ready"`이고 `frame.scene.capture.result === "failure"` | ready 화면의 capture overlay | 실패 후 다음 행동 안내 | 다음 액션 실행 |
-| `team-decision` | `frame.phase === "teamDecision"`이고 팀 크기 `< 6` | `team:keep`, `team:release` | 잡은 포켓몬을 팀에 넣을지 안내 | `ACCEPT_CAPTURE` 또는 `DISCARD_CAPTURE` |
-| `team-full` | `frame.phase === "teamDecision"`이고 팀 크기 `>= 6` | 추천 `team:replace:*`, `team:release` | 팀이 꽉 찼을 때 교체/놓아주기 안내 | 교체 또는 놓아주기 |
-| `checkpoint-victory` | `frame.phase === "ready"` + `statusView.teamRecord` 존재 | `data-screen="checkpointVictory"` | 팀 기록 저장 화면 안내 | 기록 제출 |
-| `game-over` | `frame.phase === "gameOver"`이고 리플레이 종료 | `restart:team:*`, `restart:starter-choice` | 재도전 방법 안내 | 재시작 액션 |
+| `first-visit` | 게임 첫 접속 | 튜토리얼 기록 없음 + `frame.phase === "starterChoice"` | 선택 가능한 스타터 카드 | 스타터 선택 완료 |
+| `first-shop` | 첫 상점 진입 | 첫 `ready` 렌더, `frame.hud.wave === 1`, `shop:*` 액션 존재 | 코인/보석, 팀 슬롯, 상점 카드, 전투 시작 버튼 | 확인 또는 첫 행동 |
+| `first-battle-start` | 첫 인게임 전투 시작 전, 월드맵 이전 | `encounter:next` 첫 클릭, `RESOLVE_NEXT_ENCOUNTER` 실행 전 | `전투 시작` 버튼 | 확인 후 원래 전투 시작 실행 |
+| `first-capture-success` | 첫 포켓몬 잡기 성공 | `frame.phase === "teamDecision"` + `frame.scene.capture.result === "success"` | 잡은 포켓몬, 팀 추가/놓아주기 버튼 | `ACCEPT_CAPTURE` 또는 `DISCARD_CAPTURE` |
+| `first-capture-failure` | 첫 포켓몬 잡기 실패 | `frame.phase === "ready"` + `frame.scene.capture.result === "failure"` | 실패 오버레이, 볼 구매 카드, 전투 시작 버튼 | 다음 행동 |
+| `first-trainer-win` | 첫 트레이너전 성공 | `frame.phase === "ready"` + `statusView.teamRecord` 존재 | 체크포인트 승리 카드, 기록 저장 폼 | 기록 저장 |
+| `first-battle-loss` | 첫 전투 실패 | `frame.phase === "gameOver"` + 리플레이 종료 | 재출발 버튼, 스타터 화면 버튼 | 재시작 행동 |
 
-## 상세 팝업 문구
+## 팝업 상세 내용
 
-### `starter-dex`
+### `first-visit` - 게임 첫 접속
 
 - 제목: `첫 친구를 골라요`
 - 본문:
@@ -61,152 +62,127 @@ gameOver
 ```text
 밝게 보이는 포켓몬만 고를 수 있어요.
 처음에는 이상해씨, 파이리, 꼬부기를 고를 수 있어요.
-마음에 드는 카드를 눌러요.
+마음에 드는 카드를 누르고 선택을 눌러요.
 ```
 
-- 강조 대상: `.starter-option[data-starter-state="unlocked"]`
-- 주의: 151개 카드가 보이므로 "셋 중 하나"라고만 말하면 실제 화면과 맞지 않는다.
+- 실제 화면: `data-screen="starterChoice"`
+- 실제 액션: `start:1`, `start:4`, `start:7`
+- 강조 대상:
+  - `.starter-option[data-starter-state="unlocked"]`
+  - 카드 선택 후 `.starter-confirm[data-action-id^="start:"]`
 
-### `starter-confirm`
+### `first-shop` - 첫 상점 진입
 
-- 제목: `선택 버튼을 눌러요`
+- 제목: `이곳에서 준비해요`
 - 본문:
 
 ```text
-카드를 고르면 선택 버튼이 나와요.
-선택을 누르면 모험이 시작돼요.
-```
-
-- 강조 대상: `.starter-confirm[data-action-id^="start:"]`
-- 닫기: `START_RUN` 실행 또는 `취소`
-
-### `ready-first`
-
-- 제목: `전투를 시작해요`
-- 본문:
-
-```text
-이곳에서 준비하고 전투를 시작해요.
-전투 시작을 누르면 다음 포켓몬을 만나요.
-전투는 자동으로 진행돼요.
-```
-
-- 강조 대상: `.shop-start-action[data-action-id="encounter:next"]`
-
-### `shop-first`
-
-- 제목: `상점 카드도 볼 수 있어요`
-- 본문:
-
-```text
+여기는 전투 전에 쉬는 곳이에요.
 코인으로 회복하거나 볼을 살 수 있어요.
-강화 카드는 다음 만남을 도와줘요.
-잘 모르겠으면 전투 시작을 눌러도 괜찮아요.
+준비가 끝나면 전투 시작을 눌러요.
 ```
 
-- 강조 대상: `.shop-card-grid`, `.shop-money`
-- 실제 구현: `selectReadyShopActions`가 최대 9개 상점 카드만 골라 보여준다.
+- 실제 화면: `frame.phase === "ready"`인 상점 화면
+- 실제 액션:
+  - `encounter:next`
+  - `shop:*`
+  - `claim:skill:*`가 있을 수 있음
+- 강조 대상:
+  - `.shop-money`
+  - `.shop-trainer-points`
+  - `.shop-card-grid`
+  - `.shop-start-action[data-action-id="encounter:next"]`
+- 주의: 상점은 별도 메뉴 진입이 아니라 스타터 선택 직후 첫 `ready` 화면 자체다.
 
-### `shop-target`
+### `first-battle-start` - 첫 인게임 전투 시작 전, 월드맵 이전
 
-- 제목: `누구에게 쓸까요?`
+- 제목: `이제 전투가 시작돼요`
 - 본문:
 
 ```text
-몇몇 카드는 팀 친구를 골라야 해요.
-강화하거나 회복할 포켓몬을 눌러요.
-그만하려면 X를 눌러요.
+전투는 자동으로 진행돼요.
+길을 지나 포켓몬을 만나러 가요.
+잠깐 기다리면 결과가 나와요.
 ```
 
-- 강조 대상: `.shop-team-slot[data-shop-target-id]`, `[data-shop-target-cancel]`
-- 트리거 예: 단일 회복, 능력치 강화, 능력치 재추첨, 기술머신
+- 실제 트리거: `encounter:next` 버튼을 처음 눌렀을 때
+- 구현 위치: `RESOLVE_NEXT_ENCOUNTER` dispatch 전에 인터셉트해서 1회 표시
+- 강조 대상: `.shop-start-action[data-action-id="encounter:next"]`
+- 닫기 동작:
+  - 확인 버튼을 누르면 기존 `RESOLVE_NEXT_ENCOUNTER` 액션을 그대로 실행한다.
+- 주의:
+  - 이 팝업은 전투 화면이나 월드맵 인트로가 나오기 전에 떠야 한다.
+  - 이미 전투 리플레이가 시작된 뒤에는 이 팝업을 띄우지 않는다.
 
-### `battle-replay`
+### `first-capture-success` - 첫 포켓몬 잡기 성공
 
-- 제목: `전투는 자동이에요`
+- 제목: `잡았어요`
 - 본문:
 
 ```text
-포켓몬들이 자동으로 싸워요.
-잠깐 보고 있으면 결과가 나와요.
-버튼은 전투가 끝나면 누를 수 있어요.
+새 포켓몬을 잡았어요.
+팀에 넣으면 함께 싸울 수 있어요.
+원하지 않으면 놓아주기를 눌러요.
 ```
 
-- 강조 대상: `.battle-log`, `.replay-row`
-- 주의: 이 팝업은 화면을 막는 큰 팝업보다 짧은 안내 배너가 적합하다. 리플레이 중 액션 버튼은 잠긴다.
+- 실제 조건:
+  - `frame.phase === "teamDecision"`
+  - `frame.scene.capture?.result === "success"`
+- 실제 액션:
+  - `team:keep`
+  - `team:replace:*`가 있을 수 있음
+  - `team:release`
+- 강조 대상:
+  - `.candidate-panel`
+  - `.command-band [data-action-id="team:keep"]`
+  - `.command-band [data-action-id^="team:replace:"]`
+  - `.command-band [data-action-id="team:release"]`
+- 팀이 6마리 미만이면 `팀에 추가`를 우선 안내한다.
+- 팀이 6마리면 교체 또는 놓아주기를 안내한다.
 
-### `capture-choice`
-
-- 제목: `잡아볼까요?`
-- 본문:
-
-```text
-이기면 잡을 기회가 생겨요.
-볼을 누르면 잡기를 시도해요.
-잡고 싶지 않으면 포획 포기를 눌러요.
-```
-
-- 강조 대상: `.command-band [data-action-id^="capture:"]`
-- 실제 상태: `frame.phase === "captureDecision"`, `frame.scene.capture.result === "choosing"`
-
-### `capture-failed`
+### `first-capture-failure` - 첫 포켓몬 잡기 실패
 
 - 제목: `실패해도 괜찮아요`
 - 본문:
 
 ```text
 포켓몬이 볼에서 나올 때도 있어요.
-다음 웨이브로 바로 이동했어요.
+다음 웨이브로 이동했어요.
 볼이 부족하면 상점에서 사요.
 ```
 
-- 강조 대상: `.capture-overlay[data-capture-result="failure"]`, 볼 구매 카드, 전투 시작 버튼
-- 실제 상태: `frame.phase === "ready"`이고 `frame.scene.capture.result === "failure"`
+- 실제 조건:
+  - `frame.phase === "ready"`
+  - `frame.scene.capture?.result === "failure"`
+- 강조 대상:
+  - `.capture-overlay[data-capture-result="failure"]`
+  - 볼 구매 상점 카드
+  - `.shop-start-action[data-action-id="encounter:next"]`
+- 주의: 실패 직후에는 이미 다음 웨이브 `ready` 상태다.
 
-### `team-decision`
+### `first-trainer-win` - 첫 트레이너전 성공
 
-- 제목: `팀에 넣을까요?`
+- 제목: `트레이너에게 이겼어요`
 - 본문:
 
 ```text
-잡은 포켓몬을 팀에 넣을 수 있어요.
-처음에는 팀에 추가해도 좋아요.
-원하지 않으면 놓아주기를 눌러요.
-```
-
-- 강조 대상: `.candidate-panel`, `.command-band [data-action-id="team:keep"]`, `.command-band [data-action-id="team:release"]`
-- 실제 상태: `frame.phase === "teamDecision"`이고 팀 크기 6 미만
-
-### `team-full`
-
-- 제목: `팀 자리가 꽉 찼어요`
-- 본문:
-
-```text
-팀은 최대 6마리예요.
-새 포켓몬을 데려오려면 한 마리와 바꿔요.
-바꾸기 싫으면 놓아주기를 눌러요.
-```
-
-- 강조 대상: `.team-compare-panel`, command band의 추천 `team:replace:*`, `team:release`
-- 실제 구현 주의: `frame.actions`에는 6개 교체 액션이 있지만, 현재 command band는 추천 교체 1개와 놓아주기만 보여준다.
-
-### `checkpoint-victory`
-
-- 제목: `팀 기록을 남겨요`
-- 본문:
-
-```text
-트레이너에게 이겼어요.
-지금 팀 이름과 인사말을 남길 수 있어요.
+강한 트레이너를 이겼어요.
+지금 팀 기록을 남길 수 있어요.
 정산 저장을 누르면 기록돼요.
 ```
 
-- 강조 대상: `.checkpoint-victory-card`, `[data-team-record-form]`
-- 실제 조건: `RESOLVE_NEXT_ENCOUNTER`가 체크포인트 웨이브에서 승리했고, `BrowserGameRuntime.getStatusView().teamRecord`가 존재한다.
+- 실제 조건:
+  - 체크포인트 웨이브에서 `RESOLVE_NEXT_ENCOUNTER` 승리
+  - `frame.phase === "ready"`
+  - `statusView.teamRecord` 존재
+- 실제 화면: `data-screen="checkpointVictory"`
+- 강조 대상:
+  - `.checkpoint-victory-card`
+  - `[data-team-record-form]`
+  - 정산 저장 버튼
 - 기본 체크포인트: `defaultBalance.checkpointInterval === 5`
 
-### `game-over`
+### `first-battle-loss` - 첫 전투 실패
 
 - 제목: `다시 도전해요`
 - 본문:
@@ -217,17 +193,25 @@ gameOver
 처음 화면으로 돌아가 새로 골라도 돼요.
 ```
 
-- 강조 대상: `.command-band [data-action-id^="restart:team:"]`, `.command-band [data-action-id="restart:starter-choice"]`
-- 주의: 패배 직후 전투 리플레이가 먼저 보일 수 있으므로, `playback.isPlaying === false` 이후 표시한다.
+- 실제 조건:
+  - `frame.phase === "gameOver"`
+  - `playback.isPlaying === false`
+- 실제 액션:
+  - `restart:team:*`
+  - `restart:starter-choice`
+- 강조 대상:
+  - `.command-band [data-action-id^="restart:team:"]`
+  - `.command-band [data-action-id="restart:starter-choice"]`
+- 주의: 패배 직후 전투 리플레이가 남아 있을 수 있으므로 리플레이 종료 뒤 표시한다.
 
 ## 저장 정책
 
 튜토리얼 진행 기록은 브라우저 저장소에 저장한다.
 
 - 추천 키: `apt:tutorial:v1`
-- 팝업 ID별 `seen` 값을 저장한다.
-- 저장된 게임이 `ready`, `teamDecision`, `gameOver` 등 중간 상태에서 시작할 수 있으므로, 아직 보지 않은 팝업 중 현재 조건에 맞는 것만 보여준다.
-- 닫기 버튼을 누르거나 해당 액션을 실행하면 본 것으로 저장한다.
+- 7개 팝업 ID별 `seen` 값을 저장한다.
+- 저장된 게임이 중간 상태에서 시작할 수 있으므로, 현재 조건에 맞고 아직 보지 않은 팝업만 보여준다.
+- 팝업을 닫거나 해당 핵심 액션이 실행되면 본 것으로 저장한다.
 - 개발/설정용 초기화 버튼은 `apt:tutorial:v1`만 지운다.
 
 예시:
@@ -235,36 +219,31 @@ gameOver
 ```json
 {
   "seen": {
-    "starter-dex": true,
-    "starter-confirm": true,
-    "ready-first": true,
-    "shop-first": true,
-    "shop-target": true,
-    "battle-replay": true,
-    "capture-choice": true,
-    "capture-failed": true,
-    "team-decision": true,
-    "team-full": true,
-    "checkpoint-victory": true,
-    "game-over": true
+    "first-visit": true,
+    "first-shop": true,
+    "first-battle-start": true,
+    "first-capture-success": true,
+    "first-capture-failure": true,
+    "first-trainer-win": true,
+    "first-battle-loss": true
   }
 }
 ```
 
 ## 구현 기준
 
-- 팝업 선택은 `GameFrame.phase`, `frame.scene.capture`, `statusView.teamRecord`, `playback.isPlaying`, 현재 DOM의 `data-screen`을 함께 본다.
 - 큰 팝업은 한 번에 하나만 표시한다.
-- 전투 리플레이 중에는 큰 팝업을 띄우지 않는다. 필요한 경우 `battle-replay`만 짧은 배너로 표시한다.
-- 액션 실행 전 seen 처리를 먼저 하고, 기존 `bindActions` 흐름을 막지 않는다.
+- `first-battle-start`는 액션 실행 전 팝업이므로 `bindActions`에서 `encounter:next` 첫 클릭을 가로채야 한다.
+- 나머지 팝업은 렌더된 `GameFrame`, `statusView`, `playback` 상태를 기준으로 선택한다.
+- 전투 리플레이 중에는 `first-battle-loss` 같은 큰 팝업을 띄우지 않는다.
 - 강조 대상 DOM이 없으면 팝업은 띄우되 하이라이트는 생략한다.
 
 ## 확인 기준
 
-- 신규 저장 데이터에서 도감형 스타터 화면의 선택 가능 카드만 안내한다.
-- 스타터 선택 후 첫 `ready` 화면에서 전투 시작과 상점이 같은 화면임을 설명한다.
-- 야생전 승리 후 리플레이가 끝난 뒤 포획 안내가 뜬다.
-- 포획 실패는 `ready` 화면 오버레이 기준으로 안내한다.
-- 포획 성공 후 `teamDecision` 안내가 command band 액션과 맞는다.
-- 5웨이브 같은 체크포인트 승리 후 `checkpointVictory` 기록 화면 안내가 뜬다.
-- 패배 후 리플레이가 끝난 뒤 `gameOver` 재도전 안내가 뜬다.
+- 신규 저장 데이터에서 첫 접속 팝업이 스타터 도감 화면에 뜬다.
+- 스타터 선택 후 첫 `ready` 화면에서 첫 상점 진입 팝업이 뜬다.
+- 첫 `전투 시작` 클릭 시 월드맵/전투 리플레이보다 먼저 전투 시작 팝업이 뜬다.
+- 첫 포획 성공은 `teamDecision` 화면에서 안내한다.
+- 첫 포획 실패는 다음 웨이브 `ready` 화면의 실패 오버레이에서 안내한다.
+- 첫 체크포인트 트레이너 승리는 `checkpointVictory` 화면에서 안내한다.
+- 첫 패배는 `gameOver` 화면에서 리플레이 종료 후 안내한다.
