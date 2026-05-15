@@ -106,6 +106,28 @@ describe("game frame contract", () => {
     );
   });
 
+  it("exposes active battle status on renderer-facing entities", () => {
+    const client = new HeadlessGameClient({ seed: "frame-status-badge" });
+    client.dispatch({ type: "START_RUN", starterSpeciesId: 1 });
+    const snapshot = client.saveSnapshot();
+    const starter = snapshot.state.team[0];
+
+    if (!starter) {
+      throw new Error("Expected starter in status badge frame test.");
+    }
+
+    starter.status = { type: "paralysis" };
+    client.loadSnapshot(snapshot);
+    const frame = client.getFrame();
+    const player = frame.entities.find((entity) => entity.owner === "player");
+
+    expect(validateFrameContract(frame)).toEqual([]);
+    expect(player).toMatchObject({
+      battleStatus: "paralysis",
+      flags: expect.arrayContaining(["status:paralysis"]),
+    });
+  });
+
   it("exposes the run battle field order as a world-map node graph", () => {
     const client = new HeadlessGameClient({ seed: "field-map" });
     client.dispatch({ type: "START_RUN", starterSpeciesId: 1 });
@@ -327,6 +349,33 @@ describe("game frame contract", () => {
     });
     expect(supportCue?.soundKeys ?? []).toEqual([]);
     expect(superEffectiveEvent?.label).not.toMatch(/\d+-\d+-[0-9a-f]+/);
+  });
+
+  it("keeps cues for the full battle replay so early turns can play effects", () => {
+    const frame = createBattleFrame("long-cues-4-2", 1, 4);
+    const firstCueEvent = frame.battleReplay.events.find(
+      (event) => event.type === "move.miss" || event.type === "damage.apply",
+    );
+
+    if (!firstCueEvent) {
+      throw new Error("Expected a battle replay event with a cue");
+    }
+
+    const battleCueCount = frame.visualCues.filter(
+      (cue) =>
+        cue.type === "battle.hit" ||
+        cue.type === "battle.miss" ||
+        cue.type === "battle.support" ||
+        cue.type === "creature.faint",
+    ).length;
+
+    expect(battleCueCount).toBeGreaterThan(12);
+    expect(frame.visualCues).toContainEqual(
+      expect.objectContaining({
+        type: firstCueEvent.type === "move.miss" ? "battle.miss" : "battle.hit",
+        sequence: firstCueEvent.sourceSequence ?? firstCueEvent.sequence,
+      }),
+    );
   });
 
   it("keeps failed capture feedback visible after advancing to the next ready wave", () => {

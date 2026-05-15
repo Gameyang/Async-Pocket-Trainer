@@ -49,6 +49,18 @@ describe("renderer contract boundaries", () => {
     expect(source).toContain("resolveEffectShape");
   });
 
+  it("keeps battle status badges attached to HP bars", () => {
+    const source = readSource("htmlRenderer.ts");
+    const css = readRootSource("style.css");
+
+    expect(source).toContain("currentStatuses.set");
+    expect(source).toContain('event.type === "status.apply"');
+    expect(source).toContain("renderBattleStatusBadge");
+    expect(source).toContain("data-battle-status-badge");
+    expect(css).toContain(".battle-card .hp-line");
+    expect(css).toContain(".battle-status-badge");
+  });
+
   it("keeps battle effects able to layer Lottie templates over DOM shapes", () => {
     const engine = readEffectsSource("engine.ts");
     const lottie = readEffectsSource("lottieDirector.ts");
@@ -67,6 +79,10 @@ describe("renderer contract boundaries", () => {
 
 function readSource(fileName: string): string {
   return readFileSync(new URL(`./${fileName}`, import.meta.url), "utf8");
+}
+
+function readRootSource(fileName: string): string {
+  return readFileSync(new URL(`../${fileName}`, import.meta.url), "utf8");
 }
 
 function readEffectsSource(fileName: string): string {

@@ -277,6 +277,7 @@ export interface FrameEntity {
     max: number;
     ratio: number;
   };
+  battleStatus?: BattleStatus;
   stats: {
     hp: number;
     attack: number;
@@ -1138,6 +1139,7 @@ function toFrameEntity(
       ratio:
         creature.stats.hp === 0 ? 0 : Number((creature.currentHp / creature.stats.hp).toFixed(4)),
     },
+    ...(creature.status ? { battleStatus: creature.status.type } : {}),
     stats: { ...creature.stats },
     moves: creature.moves.map(toFrameMoveSummary),
     moveDex: createMoveDexEntries(creature, dexContext),
@@ -2175,7 +2177,6 @@ function createVisualCues(state: GameState): FrameVisualCue[] {
         isSupportCueEvent(event) ||
         event.type === "creature.faint",
     )
-    .slice(-12)
     .map((event) => battleReplayEventToCue(event, lookup))
     .filter((cue): cue is FrameVisualCue => Boolean(cue));
   const captureCue = createCaptureCue(state);

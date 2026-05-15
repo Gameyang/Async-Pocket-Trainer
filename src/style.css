@@ -1479,6 +1479,62 @@ p {
   color: #7f2720;
 }
 
+.battle-card .hp-line {
+  position: relative;
+  overflow: visible;
+}
+
+.battle-card .hp-line > span {
+  border-radius: 3px;
+}
+
+.battle-status-badge {
+  position: absolute;
+  top: 50%;
+  right: -2px;
+  display: inline-grid;
+  place-items: center;
+  min-width: 26px;
+  height: 17px;
+  border: 2px solid var(--line);
+  border-radius: 999px;
+  padding: 0 5px;
+  background: #fff8d8;
+  color: #43290d;
+  box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.18);
+  font-size: 0.52rem;
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: 0;
+  white-space: nowrap;
+  transform: translateY(-50%);
+}
+
+.battle-status-badge[data-battle-status-badge="burn"] {
+  background: #ffe0c7;
+  color: #7f2d13;
+}
+
+.battle-status-badge[data-battle-status-badge="poison"] {
+  background: #e7d7ff;
+  color: #4d207d;
+}
+
+.battle-status-badge[data-battle-status-badge="paralysis"] {
+  background: #fff0a8;
+  color: #5b4300;
+}
+
+.battle-status-badge[data-battle-status-badge="sleep"] {
+  background: #dbeafe;
+  color: #1d3e75;
+}
+
+.battle-status-badge[data-battle-status-badge="freeze"] {
+  background: #dffbff;
+  color: #0f5261;
+}
+
 .battle-log {
   position: absolute;
   z-index: 4;

@@ -2280,6 +2280,7 @@ function createEntityPlaybackView(
   }
 
   const currentHp = new Map(initialHp);
+  const currentStatuses = new Map<string, BattleStatus>();
   for (const event of playback.visibleEvents) {
     if (
       event.type === "damage.apply" &&
@@ -2293,8 +2294,21 @@ function createEntityPlaybackView(
       currentHp.set(event.entityId, event.hpAfter);
     }
 
+    if (
+      event.type === "status.apply" &&
+      event.targetEntityId &&
+      isMajorBattleStatus(event.status)
+    ) {
+      currentStatuses.set(event.targetEntityId, event.status);
+    }
+
+    if (event.type === "status.clear" && event.entityId) {
+      currentStatuses.delete(event.entityId);
+    }
+
     if (event.type === "creature.faint" && event.entityId) {
       currentHp.set(event.entityId, 0);
+      currentStatuses.delete(event.entityId);
     }
   }
 
@@ -2303,14 +2317,21 @@ function createEntityPlaybackView(
       0,
       Math.min(entity.hp.max, currentHp.get(entity.id) ?? entity.hp.current),
     );
-    const flags = new Set(entity.flags.filter((flag) => flag !== "fainted"));
+    const battleStatus =
+      current > 0 ? (currentStatuses.get(entity.id) ?? entity.battleStatus) : undefined;
+    const flags = new Set(
+      entity.flags.filter((flag) => flag !== "fainted" && !flag.startsWith("status:")),
+    );
 
     if (current <= 0) {
       flags.add("fainted");
+    } else if (battleStatus) {
+      flags.add(`status:${battleStatus}`);
     }
 
     return {
       ...entity,
+      battleStatus,
       hp: {
         ...entity.hp,
         current,
@@ -4175,14 +4196,18 @@ function renderBattleCard(
   const hpText = entity ? `${entity.hp.current}/${entity.hp.max}` : subtitle;
   const hpState = resolveHpState(hpRatio);
   const levelBadge = entity ? renderPokemonLevelBadge(entity.level) : "";
+  const battleStatus = resolveEntityBattleStatus(entity);
+  const statusAttribute = battleStatus ? ` data-battle-status="${escapeHtml(battleStatus)}"` : "";
+  const statusLineAttribute = battleStatus ? ' data-has-status="true"' : "";
+  const statusBadge = battleStatus ? renderBattleStatusBadge(battleStatus) : "";
 
   return `
-    <aside class="battle-card ${className}" data-hp-state="${hpState}">
+    <aside class="battle-card ${className}" data-hp-state="${hpState}"${statusAttribute}>
       <div class="name-row">
         <span class="battle-name-main"><span class="battle-name-text">${escapeHtml(name)}</span>${levelBadge}</span>
         <span class="battle-hp-text">${escapeHtml(hpText)}</span>
       </div>
-      <div class="hp-line"><span style="width: ${Math.round(hpRatio * 100)}%"></span></div>
+      <div class="hp-line"${statusLineAttribute}><span style="width: ${Math.round(hpRatio * 100)}%"></span>${statusBadge}</div>
       ${renderBattleTags(entity)}
     </aside>
   `;
@@ -4196,18 +4221,43 @@ function renderBattleTags(entity: FrameEntity | undefined): string {
   const typeTags = entity.typeLabels
     .slice(0, 2)
     .map((label) => `<span data-tag-kind="type">${escapeHtml(label)}</span>`);
-  const statusTags = entity.flags
-    .filter((flag) => flag.startsWith("status:"))
-    .map((flag) => {
-      const status = flag.replace("status:", "") as BattleStatus;
-      return `<span data-tag-kind="status">${localizeBattleStatus(status)}</span>`;
-    });
   const faintedTag = entity.flags.includes("fainted")
     ? ['<span data-tag-kind="fainted">기절</span>']
     : [];
-  const tags = [...typeTags, ...statusTags, ...faintedTag];
+  const tags = [...typeTags, ...faintedTag];
 
   return tags.length > 0 ? `<div class="battle-tags">${tags.join("")}</div>` : "";
+}
+
+function renderBattleStatusBadge(status: BattleStatus): string {
+  const label = localizeBattleStatus(status);
+
+  return `<b class="battle-status-badge" data-battle-status-badge="${escapeHtml(status)}" aria-label="${escapeHtml(label)}">${escapeHtml(label)}</b>`;
+}
+
+function resolveEntityBattleStatus(entity: FrameEntity | undefined): BattleStatus | undefined {
+  if (!entity || entity.hp.current <= 0 || entity.flags.includes("fainted")) {
+    return undefined;
+  }
+
+  if (entity.battleStatus) {
+    return entity.battleStatus;
+  }
+
+  const statusFlag = entity.flags.find((flag) => flag.startsWith("status:"));
+  const status = statusFlag?.slice("status:".length);
+
+  return isMajorBattleStatus(status) ? status : undefined;
+}
+
+function isMajorBattleStatus(status: string | undefined): status is BattleStatus {
+  return (
+    status === "burn" ||
+    status === "poison" ||
+    status === "paralysis" ||
+    status === "sleep" ||
+    status === "freeze"
+  );
 }
 
 function renderTeamDots(entities: readonly FrameEntity[]): string {
