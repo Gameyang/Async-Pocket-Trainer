@@ -50,6 +50,7 @@ import { effectEngine } from "./effects/engine";
 import { resolveEffectDescriptor, resolveEffectShape } from "./effects/mapping";
 import { getElementPalette } from "./effects/palette";
 import { AudioMixer } from "./audio/audioMixer";
+import { resolveLocalSfxStem } from "./audio/sfxRouting";
 import { ScreenWakeLock } from "./screenWakeLock";
 
 const BATTLE_REPLAY_STEP_MS = 540;
@@ -99,6 +100,11 @@ const showdownBgmAssetUrls = import.meta.glob<string>("../resources/audio/bgm/sh
   query: "?url",
 });
 const showdownCryAssetUrls = import.meta.glob<string>("../resources/audio/cries/showdown/*.m4a", {
+  eager: true,
+  import: "default",
+  query: "?url",
+});
+const localSfxAssetUrls = import.meta.glob<string>("../resources/audio/sfx/*.m4a", {
   eager: true,
   import: "default",
   query: "?url",
@@ -176,20 +182,9 @@ const showdownNotificationAssetUrls = import.meta.glob<string>(
     query: "?url",
   },
 );
-const legacyPhaseChangeAssetUrls = import.meta.glob<string>(
-  "../resources/audio/sfx/phase-change.m4a",
-  {
-    eager: true,
-    import: "default",
-    query: "?url",
-  },
-);
 
 const showdownNotificationUrl =
   showdownNotificationAssetUrls["../resources/audio/bgm/showdown/notification.m4a"];
-const legacyPhaseChangeUrl =
-  legacyPhaseChangeAssetUrls["../resources/audio/sfx/phase-change.m4a"];
-const phaseChangeSfxUrl = showdownNotificationUrl ?? legacyPhaseChangeUrl;
 
 const showdownBgmUrl = (stem: string): string | undefined =>
   showdownBgmAssetUrls[`../resources/audio/bgm/showdown/${stem}.m4a`];
@@ -198,6 +193,11 @@ const showdownCryUrl = (stem: string): string | undefined =>
   showdownCryAssetUrls[`../resources/audio/cries/showdown/${resolveShowdownCryStem(stem)}.m4a`];
 
 const resolveShowdownCryStem = (stem: string): string => SHOWDOWN_CRY_STEM_OVERRIDES[stem] ?? stem;
+
+const localSfxUrl = (stem: string): string | undefined =>
+  localSfxAssetUrls[`../resources/audio/sfx/${stem}.m4a`];
+
+const phaseChangeSfxUrl = localSfxUrl("phase-change") ?? showdownNotificationUrl;
 
 const showdownElementSfxPattern = /^sfx\.battle\.(?:support\.)?type\.([a-z-]+)(?:\.critical)?$/;
 
@@ -327,6 +327,7 @@ export function mountHtmlRenderer(
   const audioMixer = new AudioMixer({
     resolveSfxUrl,
     resolveBgmUrl,
+    preloadSfxUrls: () => Object.values(localSfxAssetUrls),
     warn: (message, error) => {
       console.warn(`[audio] ${message}`, error ?? "");
     },
@@ -1604,6 +1605,18 @@ function renderWorldMap(
     ? `${activeNode.label} ${activeNode.timeLabel} · ${activeNode.elementLabel} · ${activeNode.levelLabel}`
     : modeLabel;
   const activePosition = positions.find((_, index) => map.nodes[index]?.status === "active");
+  const previousPosition = positions.find((_, index) => map.nodes[index]?.status === "previous");
+  const trainerStyle =
+    activePosition && previousPosition
+      ? [
+          `left: ${activePosition.x}%`,
+          `top: ${activePosition.y}%`,
+          `--journey-from-x: ${previousPosition.x}%`,
+          `--journey-from-y: ${previousPosition.y}%`,
+          `--journey-to-x: ${activePosition.x}%`,
+          `--journey-to-y: ${activePosition.y}%`,
+        ].join("; ")
+      : "";
 
   return `
     <section class="journey-map" data-map-mode="${map.mode}" data-active-index="${map.activeIndex}" aria-label="모험 월드맵">
@@ -1621,8 +1634,8 @@ function renderWorldMap(
           ${map.nodes.map((node, index) => renderWorldMapNode(node, positions[index])).join("")}
         </div>
         ${
-          trainerPortrait && activePosition
-            ? `<span class="journey-trainer" style="left: ${activePosition.x}%; top: ${activePosition.y}%;" aria-hidden="true"><img src="${resolveTrainerAssetPath(trainerPortrait.assetPath)}" alt="" /></span>`
+          trainerPortrait && trainerStyle
+            ? `<span class="journey-trainer" style="${trainerStyle};" aria-hidden="true"><img src="${resolveTrainerAssetPath(trainerPortrait.assetPath)}" alt="" /></span>`
             : ""
         }
       </div>
@@ -1634,11 +1647,13 @@ function renderWorldMapNode(
   node: FrameBattleFieldMapNode,
   position: { x: number; y: number },
 ): string {
+  const markerLabel = node.kind === "start" ? "S" : String(node.index + 1);
+
   return `
-    <article class="journey-node" data-node-status="${node.status}" data-node-type="${node.element}" data-battle-field="${escapeHtml(node.id)}" data-time-of-day="${node.timeOfDay}" style="left: ${position.x}%; top: ${position.y}%;">
-      <span class="journey-node-index">${node.index + 1}</span>
+    <article class="journey-node" data-node-status="${node.status}" data-node-kind="${node.kind}" data-node-type="${node.element}" data-battle-field="${escapeHtml(node.id)}" data-time-of-day="${node.timeOfDay}" style="left: ${position.x}%; top: ${position.y}%;">
+      <span class="journey-node-index">${escapeHtml(markerLabel)}</span>
       <strong>${escapeHtml(node.label)}</strong>
-      <span class="journey-node-role">${escapeHtml(worldMapNodeRoleLabel(node.status))}</span>
+      <span class="journey-node-role">${escapeHtml(worldMapNodeRoleLabel(node))}</span>
       <span class="journey-node-meta">
         <em>${escapeHtml(node.elementLabel)}</em>
         <small>${escapeHtml(node.levelLabel)}</small>
@@ -1647,8 +1662,12 @@ function renderWorldMapNode(
   `;
 }
 
-function worldMapNodeRoleLabel(status: FrameBattleFieldMapNode["status"]): string {
-  switch (status) {
+function worldMapNodeRoleLabel(node: FrameBattleFieldMapNode): string {
+  if (node.kind === "start") {
+    return "출발";
+  }
+
+  switch (node.status) {
     case "previous":
       return "이전";
     case "active":
@@ -2267,12 +2286,7 @@ function statBarFill(value: number, cap: number = STAT_BAR_BASE_CAP): number {
   return Math.min(1, value / cap);
 }
 
-function renderStatRow(
-  label: string,
-  value: number,
-  statKey: string,
-  cap?: number,
-): string {
+function renderStatRow(label: string, value: number, statKey: string, cap?: number): string {
   const fill = statBarFill(value, cap).toFixed(3);
   return `
     <div class="stat-row" data-stat="${statKey}" style="--stat-fill: ${fill}">
@@ -3506,8 +3520,16 @@ function resolveTrainerAssetPath(assetPath: string): string {
 }
 
 function resolveSfxUrl(soundKey: string): string | undefined {
-  if (soundKey === "sfx.phase.change") {
-    return phaseChangeSfxUrl;
+  const localSfxStem = resolveLocalSfxStem(soundKey);
+  if (localSfxStem) {
+    const localUrl = localSfxUrl(localSfxStem);
+    if (localUrl) {
+      return localUrl;
+    }
+
+    if (soundKey === "sfx.phase.change") {
+      return phaseChangeSfxUrl;
+    }
   }
 
   const poolMatch = showdownCryPoolKeyPattern.exec(soundKey);

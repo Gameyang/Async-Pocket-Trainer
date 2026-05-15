@@ -147,6 +147,8 @@ export interface FrameScene {
 
 export type FrameBattleFieldMapMode = "start" | "transition" | "travel";
 export type FrameBattleFieldMapNodeStatus = "previous" | "active" | "next";
+export type FrameBattleFieldMapNodeKind = "field" | "start";
+export type FrameBattleFieldMapNodeId = BattleFieldId | "starter-town";
 
 export interface FrameBattleFieldMap {
   mode: FrameBattleFieldMapMode;
@@ -160,7 +162,8 @@ export interface FrameBattleFieldMap {
 
 export interface FrameBattleFieldMapNode {
   index: number;
-  id: BattleFieldId;
+  id: FrameBattleFieldMapNodeId;
+  kind: FrameBattleFieldMapNodeKind;
   label: string;
   element: ElementType;
   elementLabel: string;
@@ -573,11 +576,43 @@ function createBattleFieldWorldMap(state: GameState): FrameBattleFieldMap {
     normalizedWave === 1 ? "start" : progressInField === 1 ? "transition" : "travel";
   const previousBlock =
     activeBlock === 0 ? cycleIndex * order.length + previousIndex : activeBlock - 1;
-  const nodeBlocks = [
-    { index: previousIndex, block: previousBlock, status: "previous" as const },
-    { index: activeIndex, block: activeBlock, status: "active" as const },
-    { index: nextIndex, block: activeBlock + 1, status: "next" as const },
-  ];
+  const nodeBlocks =
+    normalizedWave === 1
+      ? [
+          { index: -1, block: -1, status: "previous" as const, kind: "start" as const },
+          {
+            index: activeIndex,
+            block: activeBlock,
+            status: "active" as const,
+            kind: "field" as const,
+          },
+          {
+            index: nextIndex,
+            block: activeBlock + 1,
+            status: "next" as const,
+            kind: "field" as const,
+          },
+        ]
+      : [
+          {
+            index: previousIndex,
+            block: previousBlock,
+            status: "previous" as const,
+            kind: "field" as const,
+          },
+          {
+            index: activeIndex,
+            block: activeBlock,
+            status: "active" as const,
+            kind: "field" as const,
+          },
+          {
+            index: nextIndex,
+            block: activeBlock + 1,
+            status: "next" as const,
+            kind: "field" as const,
+          },
+        ];
 
   return {
     mode,
@@ -587,11 +622,16 @@ function createBattleFieldWorldMap(state: GameState): FrameBattleFieldMap {
     progressInField,
     progressTotal: BATTLE_FIELD_WAVE_SPAN,
     nodes: nodeBlocks.map((node) => {
+      if (node.kind === "start") {
+        return createStarterTownWorldMapNode();
+      }
+
       const nodeWave = node.block * BATTLE_FIELD_WAVE_SPAN + 1;
       const field = resolveBattleFieldForWave(nodeWave, order);
       return {
         index: node.index,
         id: field.id,
+        kind: node.kind,
         label: field.label,
         element: field.element,
         elementLabel: localizeType(field.element),
@@ -603,6 +643,23 @@ function createBattleFieldWorldMap(state: GameState): FrameBattleFieldMap {
         status: node.status,
       };
     }),
+  };
+}
+
+function createStarterTownWorldMapNode(): FrameBattleFieldMapNode {
+  return {
+    index: -1,
+    id: "starter-town",
+    kind: "start",
+    label: "태초마을",
+    element: "normal",
+    elementLabel: "마을",
+    timeOfDay: "day",
+    timeLabel: "출발",
+    waveStart: 0,
+    waveEnd: 0,
+    levelLabel: "START",
+    status: "previous",
   };
 }
 

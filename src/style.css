@@ -2811,6 +2811,12 @@ p {
   animation: journey-map-scroll-left 1280ms cubic-bezier(0.18, 0.82, 0.22, 1) both;
 }
 
+.journey-map[data-map-mode="start"] .journey-trainer {
+  animation:
+    journey-trainer-start-walk 1280ms cubic-bezier(0.18, 0.82, 0.22, 1) both,
+    journey-trainer-bob 540ms ease-in-out infinite alternate;
+}
+
 .journey-map-lines {
   position: absolute;
   inset: 0;
@@ -2971,6 +2977,11 @@ p {
 
 .journey-node[data-node-type="normal"] {
   --node-color: #e3d9c8;
+}
+
+.journey-node[data-node-kind="start"] {
+  --node-color: #a8dfa4;
+  opacity: 0.92;
 }
 .journey-node[data-node-type="fire"] {
   --node-color: #ffba4a;
@@ -3447,11 +3458,7 @@ button.shop-team-slot:hover:not(:disabled) {
   inset: -25% -10% auto -10%;
   height: 80%;
   pointer-events: none;
-  background: radial-gradient(
-    ellipse at 22% 26%,
-    var(--card-type-secondary) 0%,
-    transparent 58%
-  );
+  background: radial-gradient(ellipse at 22% 26%, var(--card-type-secondary) 0%, transparent 58%);
   opacity: 0.34;
   animation: team-detail-glow-breath 4s ease-in-out infinite;
 }
@@ -3599,12 +3606,24 @@ button.shop-team-slot:hover:not(:disabled) {
   height: 11px;
 }
 
-.team-detail-card__stats .stat-row:nth-child(1) .stat-row__bar i { animation-delay: 0.04s; }
-.team-detail-card__stats .stat-row:nth-child(2) .stat-row__bar i { animation-delay: 0.10s; }
-.team-detail-card__stats .stat-row:nth-child(3) .stat-row__bar i { animation-delay: 0.16s; }
-.team-detail-card__stats .stat-row:nth-child(4) .stat-row__bar i { animation-delay: 0.22s; }
-.team-detail-card__stats .stat-row:nth-child(5) .stat-row__bar i { animation-delay: 0.28s; }
-.team-detail-card__stats .stat-row:nth-child(6) .stat-row__bar i { animation-delay: 0.34s; }
+.team-detail-card__stats .stat-row:nth-child(1) .stat-row__bar i {
+  animation-delay: 0.04s;
+}
+.team-detail-card__stats .stat-row:nth-child(2) .stat-row__bar i {
+  animation-delay: 0.1s;
+}
+.team-detail-card__stats .stat-row:nth-child(3) .stat-row__bar i {
+  animation-delay: 0.16s;
+}
+.team-detail-card__stats .stat-row:nth-child(4) .stat-row__bar i {
+  animation-delay: 0.22s;
+}
+.team-detail-card__stats .stat-row:nth-child(5) .stat-row__bar i {
+  animation-delay: 0.28s;
+}
+.team-detail-card__stats .stat-row:nth-child(6) .stat-row__bar i {
+  animation-delay: 0.34s;
+}
 
 .team-detail-moves {
   position: relative;
@@ -3723,24 +3742,60 @@ button.move-detail-content:hover {
     0 0 0 1px rgba(0, 0, 0, 0.25);
 }
 
-.move-type-dot[data-type="normal"]   { background: #bfb3a4; }
-.move-type-dot[data-type="fire"]     { background: #ff7044; }
-.move-type-dot[data-type="water"]    { background: #3aa6ff; }
-.move-type-dot[data-type="grass"]    { background: #6fc24a; }
-.move-type-dot[data-type="electric"] { background: #ffd83a; }
-.move-type-dot[data-type="poison"]   { background: #9c5cc4; }
-.move-type-dot[data-type="ground"]   { background: #c69a5b; }
-.move-type-dot[data-type="flying"]   { background: #8fb6e8; }
-.move-type-dot[data-type="bug"]      { background: #9ec23a; }
-.move-type-dot[data-type="fighting"] { background: #c64a4a; }
-.move-type-dot[data-type="psychic"]  { background: #ff5c9a; }
-.move-type-dot[data-type="rock"]     { background: #a8946a; }
-.move-type-dot[data-type="ghost"]    { background: #7a5cff; }
-.move-type-dot[data-type="ice"]      { background: #6fd5e0; }
-.move-type-dot[data-type="dragon"]   { background: #4a6cff; }
-.move-type-dot[data-type="dark"]     { background: #5a4a66; }
-.move-type-dot[data-type="steel"]    { background: #8fa8b8; }
-.move-type-dot[data-type="fairy"]    { background: #ff8fc8; }
+.move-type-dot[data-type="normal"] {
+  background: #bfb3a4;
+}
+.move-type-dot[data-type="fire"] {
+  background: #ff7044;
+}
+.move-type-dot[data-type="water"] {
+  background: #3aa6ff;
+}
+.move-type-dot[data-type="grass"] {
+  background: #6fc24a;
+}
+.move-type-dot[data-type="electric"] {
+  background: #ffd83a;
+}
+.move-type-dot[data-type="poison"] {
+  background: #9c5cc4;
+}
+.move-type-dot[data-type="ground"] {
+  background: #c69a5b;
+}
+.move-type-dot[data-type="flying"] {
+  background: #8fb6e8;
+}
+.move-type-dot[data-type="bug"] {
+  background: #9ec23a;
+}
+.move-type-dot[data-type="fighting"] {
+  background: #c64a4a;
+}
+.move-type-dot[data-type="psychic"] {
+  background: #ff5c9a;
+}
+.move-type-dot[data-type="rock"] {
+  background: #a8946a;
+}
+.move-type-dot[data-type="ghost"] {
+  background: #7a5cff;
+}
+.move-type-dot[data-type="ice"] {
+  background: #6fd5e0;
+}
+.move-type-dot[data-type="dragon"] {
+  background: #4a6cff;
+}
+.move-type-dot[data-type="dark"] {
+  background: #5a4a66;
+}
+.move-type-dot[data-type="steel"] {
+  background: #8fa8b8;
+}
+.move-type-dot[data-type="fairy"] {
+  background: #ff8fc8;
+}
 
 .move-detail-name {
   min-width: 0;
@@ -3763,24 +3818,77 @@ button.move-detail-content:hover {
   white-space: nowrap;
 }
 
-.move-detail-type[data-type="normal"]   { background: #e3d9c8; }
-.move-detail-type[data-type="fire"]     { background: #ffba4a; color: #5a2410; }
-.move-detail-type[data-type="water"]    { background: #6fd8ff; color: #0d3c5d; }
-.move-detail-type[data-type="grass"]    { background: #b6e07a; color: #1f4814; }
-.move-detail-type[data-type="electric"] { background: #fff48a; color: #4a3a00; }
-.move-detail-type[data-type="poison"]   { background: #c290da; color: #34104a; }
-.move-detail-type[data-type="ground"]   { background: #e2c089; color: #432a08; }
-.move-detail-type[data-type="flying"]   { background: #c0d6f3; color: #1f3258; }
-.move-detail-type[data-type="bug"]      { background: #c8db70; color: #2e3d0c; }
-.move-detail-type[data-type="fighting"] { background: #e08080; color: #3e0a0a; }
-.move-detail-type[data-type="psychic"]  { background: #ffa5c8; color: #4a0e2c; }
-.move-detail-type[data-type="rock"]     { background: #cdb88e; color: #3a2c0e; }
-.move-detail-type[data-type="ghost"]    { background: #b59cff; color: #2a1466; }
-.move-detail-type[data-type="ice"]      { background: #a8e8ee; color: #0c4046; }
-.move-detail-type[data-type="dragon"]   { background: #7e9bff; color: #0e1c66; }
-.move-detail-type[data-type="dark"]     { background: #8c7a98; color: #f0e8f8; }
-.move-detail-type[data-type="steel"]    { background: #b8c9d4; color: #1e2e3a; }
-.move-detail-type[data-type="fairy"]    { background: #ffb8dc; color: #5a1240; }
+.move-detail-type[data-type="normal"] {
+  background: #e3d9c8;
+}
+.move-detail-type[data-type="fire"] {
+  background: #ffba4a;
+  color: #5a2410;
+}
+.move-detail-type[data-type="water"] {
+  background: #6fd8ff;
+  color: #0d3c5d;
+}
+.move-detail-type[data-type="grass"] {
+  background: #b6e07a;
+  color: #1f4814;
+}
+.move-detail-type[data-type="electric"] {
+  background: #fff48a;
+  color: #4a3a00;
+}
+.move-detail-type[data-type="poison"] {
+  background: #c290da;
+  color: #34104a;
+}
+.move-detail-type[data-type="ground"] {
+  background: #e2c089;
+  color: #432a08;
+}
+.move-detail-type[data-type="flying"] {
+  background: #c0d6f3;
+  color: #1f3258;
+}
+.move-detail-type[data-type="bug"] {
+  background: #c8db70;
+  color: #2e3d0c;
+}
+.move-detail-type[data-type="fighting"] {
+  background: #e08080;
+  color: #3e0a0a;
+}
+.move-detail-type[data-type="psychic"] {
+  background: #ffa5c8;
+  color: #4a0e2c;
+}
+.move-detail-type[data-type="rock"] {
+  background: #cdb88e;
+  color: #3a2c0e;
+}
+.move-detail-type[data-type="ghost"] {
+  background: #b59cff;
+  color: #2a1466;
+}
+.move-detail-type[data-type="ice"] {
+  background: #a8e8ee;
+  color: #0c4046;
+}
+.move-detail-type[data-type="dragon"] {
+  background: #7e9bff;
+  color: #0e1c66;
+}
+.move-detail-type[data-type="dark"] {
+  background: #8c7a98;
+  color: #f0e8f8;
+}
+.move-detail-type[data-type="steel"] {
+  background: #b8c9d4;
+  color: #1e2e3a;
+}
+.move-detail-type[data-type="fairy"] {
+  background: #ffb8dc;
+  color: #5a1240;
+}
 
 .team-detail-move-card[data-move-state="locked"] .move-detail-type {
   background: #d2c8b3;
@@ -3868,8 +3976,12 @@ button.move-detail-content:hover {
 }
 
 @keyframes team-detail-backdrop-in {
-  from { background: rgba(16, 23, 34, 0); }
-  to { background: rgba(16, 23, 34, 0.68); }
+  from {
+    background: rgba(16, 23, 34, 0);
+  }
+  to {
+    background: rgba(16, 23, 34, 0.68);
+  }
 }
 
 @keyframes team-detail-card-in {
@@ -3884,7 +3996,8 @@ button.move-detail-content:hover {
 }
 
 @keyframes team-detail-glow-breath {
-  0%, 100% {
+  0%,
+  100% {
     opacity: 0.28;
     transform: scale(1);
   }
@@ -3895,7 +4008,8 @@ button.move-detail-content:hover {
 }
 
 @keyframes team-detail-move-pulse {
-  0%, 100% {
+  0%,
+  100% {
     box-shadow:
       inset 0 0 0 2px rgba(255, 255, 255, 0.55),
       2px 3px 0 rgba(122, 79, 23, 0.32),
@@ -7042,6 +7156,19 @@ button.move-detail-content:hover {
 
   100% {
     transform: translateX(0);
+  }
+}
+
+@keyframes journey-trainer-start-walk {
+  0% {
+    left: var(--journey-from-x);
+    top: var(--journey-from-y);
+  }
+
+  72%,
+  100% {
+    left: var(--journey-to-x);
+    top: var(--journey-to-y);
   }
 }
 

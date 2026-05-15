@@ -115,13 +115,15 @@ describe("game frame contract", () => {
     expect(frame.scene.worldMap?.mode).toBe("start");
     expect(frame.scene.worldMap?.activeIndex).toBe(0);
     expect(frame.scene.worldMap?.nodes.map((node) => node.id)).toEqual([
-      order[17],
+      "starter-town",
       order[0],
       order[1],
     ]);
     expect(frame.scene.worldMap?.nodes).toHaveLength(3);
     expect(frame.scene.worldMap?.nodes[0]).toMatchObject({
-      id: order[17],
+      id: "starter-town",
+      kind: "start",
+      label: "태초마을",
       status: "previous",
     });
     expect(frame.scene.worldMap?.nodes[1]).toMatchObject({

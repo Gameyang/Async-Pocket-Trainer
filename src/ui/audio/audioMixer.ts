@@ -12,9 +12,24 @@ const MASTER_GAIN = 0.85;
 const BGM_BASE_GAIN = 0.4;
 const BGM_DUCKED_GAIN = 0.2;
 const SFX_BASE_GAIN = 0.6;
-const SFX_VOICE_LIMIT = 12;
+const SFX_TOTAL_VOICE_LIMIT = 56;
 const BGM_DUCK_ATTACK_SEC = 0.04;
 const BGM_DUCK_RELEASE_SEC = 0.25;
+
+export type SfxLayer = "impact" | "cry" | "ui";
+
+const SFX_LAYER_CONFIG: Record<
+  SfxLayer,
+  {
+    gain: number;
+    priority: number;
+    voiceLimit: number;
+  }
+> = {
+  impact: { gain: 1.0, priority: 3, voiceLimit: 32 },
+  cry: { gain: 0.95, priority: 2, voiceLimit: 20 },
+  ui: { gain: 0.9, priority: 1, voiceLimit: 10 },
+};
 
 export interface AudioMixerFrame {
   bgmKey: string;
@@ -28,6 +43,7 @@ export interface AudioMixerFrame {
 export interface AudioMixerOptions {
   resolveSfxUrl: (soundKey: string) => string | undefined;
   resolveBgmUrl: (bgmKey: string) => string | undefined;
+  preloadSfxUrls?: () => readonly string[];
   warn?: (message: string, error?: unknown) => void;
 }
 
@@ -35,6 +51,13 @@ interface BgmSlot {
   key: string;
   loadSeq: number;
   source?: AudioBufferSourceNode;
+}
+
+interface SfxVoice {
+  source: AudioBufferSourceNode;
+  layer: SfxLayer;
+  priority: number;
+  startedAt: number;
 }
 
 export class AudioMixer {
@@ -45,13 +68,15 @@ export class AudioMixer {
   private masterGain?: GainNode;
   private bgmGain?: GainNode;
   private sfxGain?: GainNode;
+  private sfxLayerGains?: Record<SfxLayer, GainNode>;
   private compressor?: DynamicsCompressorNode;
   private bgm?: BgmSlot;
   private bgmLoadCounter = 0;
-  private activeSfxSources = new Set<AudioBufferSourceNode>();
+  private activeSfxVoices: SfxVoice[] = [];
   private bufferCache = new Map<string, Promise<AudioBuffer | undefined>>();
   private playedCueIds = new Set<string>();
   private lastReplayKey = "";
+  private didPreloadSfx = false;
   private listenerCleanup: Array<() => void> = [];
 
   constructor(options: AudioMixerOptions) {
@@ -64,6 +89,7 @@ export class AudioMixer {
     if (!this.ensureGraph()) {
       return;
     }
+    this.preloadSfx();
     void this.ctx?.resume().catch(() => undefined);
   }
 
@@ -77,8 +103,13 @@ export class AudioMixer {
       return;
     }
 
-    if (this.ctx?.state === "suspended") {
-      void this.ctx.resume().catch(() => undefined);
+    const ctx = this.ctx;
+    if (!ctx) {
+      return;
+    }
+
+    if (ctx.state === "suspended") {
+      void ctx.resume().catch(() => undefined);
     }
 
     if (frame.battleReplayKey !== this.lastReplayKey) {
@@ -89,9 +120,8 @@ export class AudioMixer {
     this.setBgm(frame.bgmKey);
 
     const cues = frame.visualCues.filter((cue) => this.shouldPlayCue(cue, frame));
-    const hasPriority = cues.some((cue) => cue.type !== "phase.change");
     for (const cue of cues) {
-      const soundKeys = resolveCueSoundKeys(cue, !(hasPriority && cue.type === "phase.change"));
+      const soundKeys = resolveCueSoundKeys(cue);
       if (this.playedCueIds.has(cue.id)) {
         continue;
       }
@@ -99,8 +129,9 @@ export class AudioMixer {
         continue;
       }
       this.playedCueIds.add(cue.id);
+      const cueStartTime = ctx.currentTime;
       for (const soundKey of soundKeys) {
-        this.playSfx(soundKey);
+        this.playSfx(soundKey, cueStartTime);
       }
     }
   }
@@ -126,14 +157,10 @@ export class AudioMixer {
     }
     this.bgm = undefined;
 
-    for (const source of this.activeSfxSources) {
-      try {
-        source.stop();
-      } catch {
-        // already stopped
-      }
+    for (const voice of this.activeSfxVoices) {
+      this.stopSfxVoice(voice);
     }
-    this.activeSfxSources.clear();
+    this.activeSfxVoices.length = 0;
     this.playedCueIds.clear();
 
     if (this.ctx) {
@@ -144,10 +171,16 @@ export class AudioMixer {
     this.masterGain?.disconnect();
     this.bgmGain?.disconnect();
     this.sfxGain?.disconnect();
+    if (this.sfxLayerGains) {
+      for (const gain of Object.values(this.sfxLayerGains)) {
+        gain.disconnect();
+      }
+    }
     this.compressor = undefined;
     this.masterGain = undefined;
     this.bgmGain = undefined;
     this.sfxGain = undefined;
+    this.sfxLayerGains = undefined;
   }
 
   // === internals ===
@@ -182,6 +215,15 @@ export class AudioMixer {
     bgmGain.gain.value = BGM_BASE_GAIN;
     const sfxGain = ctx.createGain();
     sfxGain.gain.value = SFX_BASE_GAIN;
+    const sfxLayerGains = {
+      impact: ctx.createGain(),
+      cry: ctx.createGain(),
+      ui: ctx.createGain(),
+    } satisfies Record<SfxLayer, GainNode>;
+    for (const [layer, gain] of Object.entries(sfxLayerGains) as Array<[SfxLayer, GainNode]>) {
+      gain.gain.value = SFX_LAYER_CONFIG[layer].gain;
+      gain.connect(sfxGain);
+    }
 
     bgmGain.connect(masterGain);
     sfxGain.connect(masterGain);
@@ -203,7 +245,21 @@ export class AudioMixer {
     this.masterGain = masterGain;
     this.bgmGain = bgmGain;
     this.sfxGain = sfxGain;
+    this.sfxLayerGains = sfxLayerGains;
     return true;
+  }
+
+  private preloadSfx(): void {
+    if (this.didPreloadSfx || !this.ctx) {
+      return;
+    }
+
+    this.didPreloadSfx = true;
+    for (const url of this.options.preloadSfxUrls?.() ?? []) {
+      if (url) {
+        void this.loadBuffer(url);
+      }
+    }
   }
 
   private installLifecycleListeners(): void {
@@ -301,8 +357,8 @@ export class AudioMixer {
     });
   }
 
-  private playSfx(soundKey: string): void {
-    if (!this.ensureGraph() || !this.ctx || !this.sfxGain) {
+  private playSfx(soundKey: string, requestedAt: number): void {
+    if (!this.ensureGraph() || !this.ctx || !this.sfxLayerGains) {
       return;
     }
 
@@ -313,49 +369,90 @@ export class AudioMixer {
     }
 
     const volume = resolveSfxVolume(soundKey);
+    const layer = resolveSfxLayer(soundKey);
     const shouldDuck = soundKey !== "sfx.phase.change";
 
     void this.loadBuffer(url).then((buffer) => {
-      if (!buffer || !this.ctx || !this.sfxGain) {
+      if (!buffer || !this.ctx || !this.sfxLayerGains) {
         return;
       }
       if (this.lifecycleHidden || !this.unlocked) {
         return;
       }
 
-      if (this.activeSfxSources.size >= SFX_VOICE_LIMIT) {
-        const oldest = this.activeSfxSources.values().next().value;
-        if (oldest) {
-          try {
-            oldest.stop();
-          } catch {
-            // already stopped
-          }
-          this.activeSfxSources.delete(oldest);
-        }
-      }
+      this.reserveSfxVoice(layer);
 
       const source = this.ctx.createBufferSource();
       source.buffer = buffer;
       const gain = this.ctx.createGain();
       gain.gain.value = volume;
-      source.connect(gain).connect(this.sfxGain);
+      source.connect(gain).connect(this.sfxLayerGains[layer]);
+      const startedAt = Math.max(
+        this.ctx.currentTime,
+        requestedAt + resolveSfxStartOffset(soundKey),
+      );
+      const voice: SfxVoice = {
+        source,
+        layer,
+        priority: SFX_LAYER_CONFIG[layer].priority,
+        startedAt,
+      };
       source.addEventListener("ended", () => {
-        this.activeSfxSources.delete(source);
+        this.releaseSfxVoice(voice);
       });
-      this.activeSfxSources.add(source);
+      this.activeSfxVoices.push(voice);
 
       if (shouldDuck) {
         this.duckBgm(buffer.duration);
       }
 
       try {
-        source.start();
+        source.start(startedAt);
       } catch (error) {
         this.options.warn?.(`sfx start failed for ${soundKey}`, error);
-        this.activeSfxSources.delete(source);
+        this.releaseSfxVoice(voice);
       }
     });
+  }
+
+  private reserveSfxVoice(layer: SfxLayer): void {
+    const layerLimit = SFX_LAYER_CONFIG[layer].voiceLimit;
+    while (this.activeSfxVoices.filter((voice) => voice.layer === layer).length >= layerLimit) {
+      const oldestLayerVoice = this.activeSfxVoices
+        .filter((voice) => voice.layer === layer)
+        .sort((left, right) => left.startedAt - right.startedAt)[0];
+      if (!oldestLayerVoice) {
+        break;
+      }
+      this.stopSfxVoice(oldestLayerVoice);
+      this.releaseSfxVoice(oldestLayerVoice);
+    }
+
+    while (this.activeSfxVoices.length >= SFX_TOTAL_VOICE_LIMIT) {
+      const lowestPriorityVoice = this.activeSfxVoices
+        .slice()
+        .sort((left, right) => left.priority - right.priority || left.startedAt - right.startedAt)[0];
+      if (!lowestPriorityVoice) {
+        break;
+      }
+      this.stopSfxVoice(lowestPriorityVoice);
+      this.releaseSfxVoice(lowestPriorityVoice);
+    }
+  }
+
+  private releaseSfxVoice(voice: SfxVoice): void {
+    const index = this.activeSfxVoices.indexOf(voice);
+    if (index >= 0) {
+      this.activeSfxVoices.splice(index, 1);
+    }
+  }
+
+  private stopSfxVoice(voice: SfxVoice): void {
+    try {
+      voice.source.stop();
+    } catch {
+      // already stopped
+    }
   }
 
   private duckBgm(sfxDurationSec: number): void {
@@ -425,12 +522,8 @@ function isBattleSfxCue(cue: FrameVisualCue): boolean {
   );
 }
 
-function resolveCueSoundKeys(cue: FrameVisualCue, includePrimary: boolean): string[] {
+export function resolveCueSoundKeys(cue: FrameVisualCue): string[] {
   const supplemental = cue.soundKeys ?? [];
-  if (!includePrimary) {
-    return dedupeSoundKeys([...supplemental, ...(cue.cryKey ? [cue.cryKey] : [])]);
-  }
-
   const keys = [cue.soundKey, ...supplemental];
   if (cue.cryKey && cue.cryKey !== cue.soundKey) {
     keys.push(cue.cryKey);
@@ -442,33 +535,51 @@ function dedupeSoundKeys(keys: string[]): string[] {
   return [...new Set(keys)];
 }
 
-function resolveSfxVolume(soundKey: string): number {
+export function resolveSfxLayer(soundKey: string): SfxLayer {
   if (soundKey.startsWith("sfx.cry.")) {
-    return 0.46;
+    return "cry";
+  }
+  if (
+    soundKey === "sfx.phase.change" ||
+    soundKey === "sfx.capture.success" ||
+    soundKey === "sfx.capture.fail"
+  ) {
+    return "ui";
+  }
+  return "impact";
+}
+
+function resolveSfxStartOffset(soundKey: string): number {
+  return resolveSfxLayer(soundKey) === "cry" ? 0.025 : 0;
+}
+
+export function resolveSfxVolume(soundKey: string): number {
+  if (soundKey.startsWith("sfx.cry.")) {
+    return 0.9;
   }
   if (soundKey === "sfx.battle.critical.hit") {
-    return 0.72;
+    return 1.0;
   }
   if (soundKey.startsWith("sfx.battle.support.")) {
-    return 0.42;
+    return 0.9;
   }
   if (soundKey.startsWith("sfx.battle.type.")) {
-    return soundKey.endsWith(".critical") ? 0.62 : 0.55;
+    return 1.0;
   }
   if (soundKey === "sfx.battle.hit") {
-    return 0.55;
+    return 1.0;
   }
   if (soundKey === "sfx.battle.miss") {
-    return 0.42;
+    return 0.85;
   }
   if (soundKey === "sfx.creature.faint") {
-    return 0.68;
+    return 1.0;
   }
   if (soundKey === "sfx.capture.success" || soundKey === "sfx.capture.fail") {
-    return 0.6;
+    return 1.0;
   }
   if (soundKey === "sfx.phase.change") {
-    return 0.32;
+    return 0.75;
   }
-  return 0.4;
+  return 1.0;
 }
