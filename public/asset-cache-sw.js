@@ -1,4 +1,7 @@
-const CACHE_NAME = "apt-game-assets-v1";
+// Keep this aligned with the client game version so old asset caches can be dropped.
+const CACHE_PREFIX = "apt-game-assets-";
+const CACHE_VERSION = "2";
+const CACHE_NAME = `${CACHE_PREFIX}v${CACHE_VERSION}`;
 const CACHEABLE_PATH_PARTS = ["/assets/", "/src/resources/"];
 
 self.addEventListener("install", (event) => {
@@ -6,7 +9,19 @@ self.addEventListener("install", (event) => {
 });
 
 self.addEventListener("activate", (event) => {
-  event.waitUntil(self.clients.claim());
+  event.waitUntil(
+    (async () => {
+      await self.clients.claim();
+
+      const cacheNames = await caches.keys();
+      await Promise.all(
+        cacheNames
+          .filter((cacheName) => cacheName.startsWith(CACHE_PREFIX))
+          .filter((cacheName) => cacheName !== CACHE_NAME)
+          .map((cacheName) => caches.delete(cacheName)),
+      );
+    })(),
+  );
 });
 
 self.addEventListener("fetch", (event) => {

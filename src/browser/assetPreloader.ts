@@ -1,3 +1,5 @@
+import { buildMetadata } from "../buildMetadata";
+
 const pokemonAssetUrls = import.meta.glob<string>("../resources/pokemon/*.webp", {
   eager: true,
   import: "default",
@@ -43,8 +45,10 @@ const showdownCryAssetUrls = import.meta.glob<string>("../resources/audio/cries/
   query: "?url",
 });
 
-export const GAME_ASSET_CACHE_NAME = "apt-game-assets-v1";
-export const GAME_ASSET_PRELOAD_MANIFEST_KEY = "apt.gameAssetPreloadManifest.v1";
+const GAME_ASSET_CACHE_VERSION = String(buildMetadata.gameVersion);
+const GAME_ASSET_CACHE_PREFIX = "apt-game-assets-";
+export const GAME_ASSET_CACHE_NAME = `${GAME_ASSET_CACHE_PREFIX}v${GAME_ASSET_CACHE_VERSION}`;
+export const GAME_ASSET_PRELOAD_MANIFEST_KEY = `apt.gameAssetPreloadManifest.v${GAME_ASSET_CACHE_VERSION}`;
 
 const DEFAULT_PRELOAD_CONCURRENCY = 6;
 const DEFAULT_DELAYED_PRELOAD_CONCURRENCY = 2;
@@ -126,9 +130,7 @@ export function getPreloadableGameAssets(): readonly GameAssetPreloadItem[] {
 }
 
 export function getDelayedGameAssets(): readonly GameAssetPreloadItem[] {
-  const assets = [
-    ...entriesToAssets(showdownCryAssetUrls, "pokemon-cry", "Pokemon cry"),
-  ];
+  const assets = [...entriesToAssets(showdownCryAssetUrls, "pokemon-cry", "Pokemon cry")];
 
   const dedupedByUrl = new Map<string, GameAssetPreloadItem>();
   for (const asset of assets) {
@@ -144,6 +146,7 @@ export async function preloadGameAssets(
   options: PreloadGameAssetsOptions = {},
 ): Promise<GameAssetPreloadResult> {
   await registerGameAssetServiceWorker();
+  await purgeLegacyGameAssetCaches();
 
   const assets = getPreloadableGameAssets();
   const state: AssetPreloadState = {
@@ -204,6 +207,7 @@ export async function preloadDelayedGameAssets(
   options: PreloadGameAssetsOptions = {},
 ): Promise<GameAssetPreloadResult> {
   await registerGameAssetServiceWorker();
+  await purgeLegacyGameAssetCaches();
 
   const assets = getDelayedGameAssets();
   const state: AssetPreloadState = {
@@ -263,9 +267,12 @@ export async function registerGameAssetServiceWorker(): Promise<void> {
   }
 
   try {
-    await navigator.serviceWorker.register(`${import.meta.env.BASE_URL}asset-cache-sw.js`, {
-      scope: import.meta.env.BASE_URL,
-    });
+    await navigator.serviceWorker.register(
+      `${import.meta.env.BASE_URL}asset-cache-sw.js?v=${GAME_ASSET_CACHE_VERSION}`,
+      {
+        scope: import.meta.env.BASE_URL,
+      },
+    );
   } catch (error) {
     console.warn("Unable to register asset cache service worker:", error);
   }
@@ -343,6 +350,24 @@ async function openGameAssetCache(): Promise<Cache | null> {
   }
 }
 
+async function purgeLegacyGameAssetCaches(): Promise<void> {
+  if (typeof window === "undefined" || !("caches" in window)) {
+    return;
+  }
+
+  try {
+    const cacheNames = await window.caches.keys();
+    await Promise.all(
+      cacheNames
+        .filter((cacheName) => cacheName.startsWith(GAME_ASSET_CACHE_PREFIX))
+        .filter((cacheName) => cacheName !== GAME_ASSET_CACHE_NAME)
+        .map((cacheName) => window.caches.delete(cacheName)),
+    );
+  } catch {
+    // Cache cleanup is best effort; a blocked profile should still load the game.
+  }
+}
+
 function createAssetRequest(url: string): Request {
   const absoluteUrl = new URL(url, window.location.href).toString();
   return new Request(absoluteUrl, {
@@ -386,10 +411,7 @@ function emitProgress(
   });
 }
 
-function writePreloadManifest(
-  storage: Storage | undefined,
-  result: GameAssetPreloadResult,
-): void {
+function writePreloadManifest(storage: Storage | undefined, result: GameAssetPreloadResult): void {
   if (!storage) {
     return;
   }
