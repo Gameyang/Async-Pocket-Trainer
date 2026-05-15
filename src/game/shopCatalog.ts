@@ -75,7 +75,13 @@ export type PremiumOfferEffect =
   | { kind: "levelBoost"; min: number; max: number }
   | { kind: "typeLock"; element: ElementType }
   | { kind: "statBoost"; stat: ShopStatKey; bonus: number }
-  | { kind: "teachMove"; element: ElementType; grade: 1 | 2 | 3 };
+  | { kind: "teachMove"; element: ElementType; grade: 1 | 2 | 3 }
+  | { kind: "sellCoin" }
+  | { kind: "sellBall" }
+  | { kind: "speciesLure"; chance: number }
+  | { kind: "fuseEvolution" }
+  | { kind: "fuseStats"; multiplier: number }
+  | { kind: "fuseMoveDex" };
 
 export interface PremiumOffer {
   id: PremiumOfferId;
@@ -84,6 +90,8 @@ export interface PremiumOffer {
   detail: string;
   weight: number;
   targetRequired?: boolean;
+  targetCount?: 1 | 2;
+  sameSpeciesRequired?: boolean;
   effect: PremiumOfferEffect;
 }
 
@@ -390,11 +398,18 @@ export function ballActionSlug(ball: BallType): string {
 
 function createPremiumOffers(): PremiumOffer[] {
   const offers: PremiumOffer[] = [
-    premiumOffer("premium:heal:single:3", 3, getHealItemName(3), "선택한 포켓몬 1마리 HP 50% 회복", 4, {
-      kind: "heal",
-      scope: "single",
-      healRatio: 0.5,
-    }),
+    premiumOffer(
+      "premium:heal:single:3",
+      3,
+      getHealItemName(3),
+      "선택한 포켓몬 1마리 HP 50% 회복",
+      4,
+      {
+        kind: "heal",
+        scope: "single",
+        healRatio: 0.5,
+      },
+    ),
     premiumOffer("premium:heal:team:3", 4, `팀 ${getHealItemName(3)}`, "팀 전체 HP 50% 회복", 4, {
       kind: "heal",
       scope: "team",
@@ -405,43 +420,159 @@ function createPremiumOffers(): PremiumOffer[] {
       ball: "ultraBall",
       quantity: 1,
     }),
-    premiumOffer("premium:ball:masterball:2", 16, "마스터볼 2개 세트", "마스터볼 2개 즉시 획득", 2, {
-      kind: "ball",
-      ball: "masterBall",
-      quantity: 2,
-    }),
-    premiumOffer("premium:ball:masterball:3", 24, "마스터볼 3개 세트", "마스터볼 3개 즉시 획득", 1, {
-      kind: "ball",
-      ball: "masterBall",
-      quantity: 3,
-    }),
-    premiumOffer("premium:rarity-boost:2", 4, "희귀 포켓몬 확률 +25%", "다음 만남에서 높은 종족값 등장률 증가", 4, {
-      kind: "rarityBoost",
-      bonus: 0.25,
-    }),
-    premiumOffer("premium:rarity-boost:4", 8, "희귀 포켓몬 확률 +75%", "다음 만남에서 희귀 포켓몬 등장률 크게 증가", 2, {
-      kind: "rarityBoost",
-      bonus: 0.75,
-    }),
-    premiumOffer("premium:rarity-boost:5", 12, "희귀 포켓몬 확률 +100%", "다음 만남에서 희귀 포켓몬 등장률 대폭 증가", 1, {
-      kind: "rarityBoost",
-      bonus: 1,
-    }),
-    premiumOffer("premium:level-boost:2", 3, "다음 만남 레벨 +1~3", "다음 포켓몬 레벨이 1~3 오른 상태로 등장", 4, {
-      kind: "levelBoost",
-      min: 1,
-      max: 3,
-    }),
-    premiumOffer("premium:level-boost:5", 8, "다음 만남 레벨 +4~8", "강한 포켓몬을 노릴 때 쓰는 고급 레벨 보너스", 2, {
-      kind: "levelBoost",
-      min: 4,
-      max: 8,
-    }),
-    premiumOffer("premium:level-boost:6", 12, "다음 만남 레벨 +6~10", "다음 포켓몬이 매우 높은 레벨로 등장", 1, {
-      kind: "levelBoost",
-      min: 6,
-      max: 10,
-    }),
+    premiumOffer(
+      "premium:ball:masterball:2",
+      16,
+      "마스터볼 2개 세트",
+      "마스터볼 2개 즉시 획득",
+      2,
+      {
+        kind: "ball",
+        ball: "masterBall",
+        quantity: 2,
+      },
+    ),
+    premiumOffer(
+      "premium:ball:masterball:3",
+      24,
+      "마스터볼 3개 세트",
+      "마스터볼 3개 즉시 획득",
+      1,
+      {
+        kind: "ball",
+        ball: "masterBall",
+        quantity: 3,
+      },
+    ),
+    premiumOffer(
+      "premium:rarity-boost:2",
+      4,
+      "희귀 포켓몬 확률 +25%",
+      "다음 만남에서 높은 종족값 등장률 증가",
+      4,
+      {
+        kind: "rarityBoost",
+        bonus: 0.25,
+      },
+    ),
+    premiumOffer(
+      "premium:rarity-boost:4",
+      8,
+      "희귀 포켓몬 확률 +75%",
+      "다음 만남에서 희귀 포켓몬 등장률 크게 증가",
+      2,
+      {
+        kind: "rarityBoost",
+        bonus: 0.75,
+      },
+    ),
+    premiumOffer(
+      "premium:rarity-boost:5",
+      12,
+      "희귀 포켓몬 확률 +100%",
+      "다음 만남에서 희귀 포켓몬 등장률 대폭 증가",
+      1,
+      {
+        kind: "rarityBoost",
+        bonus: 1,
+      },
+    ),
+    premiumOffer(
+      "premium:level-boost:2",
+      3,
+      "다음 만남 레벨 +1~3",
+      "다음 포켓몬 레벨이 1~3 오른 상태로 등장",
+      4,
+      {
+        kind: "levelBoost",
+        min: 1,
+        max: 3,
+      },
+    ),
+    premiumOffer(
+      "premium:level-boost:5",
+      8,
+      "다음 만남 레벨 +4~8",
+      "강한 포켓몬을 노릴 때 쓰는 고급 레벨 보너스",
+      2,
+      {
+        kind: "levelBoost",
+        min: 4,
+        max: 8,
+      },
+    ),
+    premiumOffer(
+      "premium:level-boost:6",
+      12,
+      "다음 만남 레벨 +6~10",
+      "다음 포켓몬이 매우 높은 레벨로 등장",
+      1,
+      {
+        kind: "levelBoost",
+        min: 6,
+        max: 10,
+      },
+    ),
+    premiumOffer(
+      "premium:sell:coin",
+      2,
+      "코인 매각",
+      "선택한 포켓몬을 보내고 전투력에 비례한 코인 획득",
+      4,
+      { kind: "sellCoin" },
+      true,
+    ),
+    premiumOffer(
+      "premium:sell:ball",
+      3,
+      "볼 매각",
+      "선택한 포켓몬을 보내고 랜덤 등급 포켓볼 획득",
+      3,
+      { kind: "sellBall" },
+      true,
+    ),
+    premiumOffer(
+      "premium:sell:lure",
+      4,
+      "동종 유인",
+      "선택한 포켓몬을 보내고 다음 야생 포켓몬 80% 동종 유인",
+      3,
+      { kind: "speciesLure", chance: 0.8 },
+      true,
+    ),
+    premiumOffer(
+      "premium:fusion:evolve",
+      8,
+      "진화 합성",
+      "같은 포켓몬 2마리를 다음 진화형 1마리로 합성",
+      2,
+      { kind: "fuseEvolution" },
+      true,
+      2,
+      true,
+    ),
+    premiumOffer(
+      "premium:fusion:stat",
+      7,
+      "능력 합성",
+      "같은 포켓몬 2마리를 평균 능력치 120% 개체로 합성",
+      2,
+      { kind: "fuseStats", multiplier: 1.2 },
+      true,
+      2,
+      true,
+    ),
+    premiumOffer(
+      "premium:fusion:move-dex",
+      8,
+      "비전 합성",
+      "같은 포켓몬 2마리를 합쳐 스킬 도감의 ??? 기술을 개방",
+      2,
+      { kind: "fuseMoveDex" },
+      true,
+      2,
+      true,
+    ),
   ];
 
   for (const stat of shopStatKeys) {
@@ -480,10 +611,17 @@ function createPremiumOffers(): PremiumOffer[] {
   for (const element of shopElementTypes) {
     const label = typeLabels[element];
     offers.push(
-      premiumOffer(`premium:type-lock:${element}`, 4, `${label} 타입 고정`, "다음 만남을 해당 타입으로 고정", 3, {
-        kind: "typeLock",
-        element,
-      }),
+      premiumOffer(
+        `premium:type-lock:${element}`,
+        4,
+        `${label} 타입 고정`,
+        "다음 만남을 해당 타입으로 고정",
+        3,
+        {
+          kind: "typeLock",
+          element,
+        },
+      ),
       premiumOffer(
         `premium:teach-move:${element}:1`,
         4,
@@ -525,6 +663,8 @@ function premiumOffer(
   weight: number,
   effect: PremiumOfferEffect,
   targetRequired = false,
+  targetCount?: 1 | 2,
+  sameSpeciesRequired = false,
 ): PremiumOffer {
   return {
     id,
@@ -533,6 +673,8 @@ function premiumOffer(
     detail,
     weight,
     targetRequired,
+    targetCount: targetCount ?? (targetRequired ? 1 : undefined),
+    sameSpeciesRequired,
     effect,
   };
 }

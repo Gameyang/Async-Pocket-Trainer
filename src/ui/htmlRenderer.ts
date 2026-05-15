@@ -261,6 +261,7 @@ type BattleEffectVisualCue =
 
 interface ShopTargetState {
   action?: FrameAction;
+  selectedEntityIds?: string[];
   currencyBurstOrigin?: CurrencyBurstOrigin;
 }
 
@@ -309,14 +310,7 @@ interface TutorialGuideState {
 }
 
 type TutorialGuideTone = "dex" | "shop" | "battle" | "capture" | "success" | "warning";
-type TutorialCueTone =
-  | TutorialGuideTone
-  | "coin"
-  | "gem"
-  | "team"
-  | "hp"
-  | "action"
-  | "info";
+type TutorialCueTone = TutorialGuideTone | "coin" | "gem" | "team" | "hp" | "action" | "info";
 
 interface TutorialVisualCue {
   tone: TutorialCueTone;
@@ -338,10 +332,7 @@ interface TutorialViewportState {
 const TUTORIAL_LANDSCAPE_MEDIA_QUERY =
   "(orientation: landscape) and (min-width: 700px) and (max-height: 720px)";
 
-const TUTORIAL_VIEWPORT_TEXT: Record<
-  TutorialViewportLayout,
-  Record<TutorialTextToken, string>
-> = {
+const TUTORIAL_VIEWPORT_TEXT: Record<TutorialViewportLayout, Record<TutorialTextToken, string>> = {
   portrait: {
     starterSelectButtonArea: "카드 아래",
     readyTeamArea: "위쪽 팀 칸",
@@ -647,6 +638,7 @@ export function mountHtmlRenderer(
     screenWakeLock.setEnabled(shouldKeepScreenAwake(frame));
     if (frame.phase !== "ready") {
       shopTarget.action = undefined;
+      shopTarget.selectedEntityIds = undefined;
       shopTarget.currencyBurstOrigin = undefined;
     }
     updateBattlePlayback(battlePlayback, frame);
@@ -659,6 +651,7 @@ export function mountHtmlRenderer(
       playbackView,
       Boolean(options.onStarterReroll),
       shopTarget.action,
+      shopTarget.selectedEntityIds,
       transientFeedback,
       tutorialGuide,
       tutorialViewport.layout,
@@ -837,15 +830,36 @@ function bindActions(
       }
 
       const action = frame.actions.find((candidate) => candidate.id === button.dataset.actionId);
+      audioDebugRendererLog("action.click", {
+        actionId: button.dataset.actionId,
+        resolvedActionId: action?.id,
+        actionType: action?.action.type,
+        enabled: action?.enabled,
+        playbackPlaying: playback.isPlaying,
+        phase: frame.phase,
+        wave: frame.hud.wave,
+        busy,
+      });
 
       if (action?.enabled && !playback.isPlaying) {
         if (shouldInterceptTutorialAction(tutorialGuide, action, frame)) {
+          audioDebugRendererLog("action.intercept.tutorial", {
+            actionId: action.id,
+            phase: frame.phase,
+            wave: frame.hud.wave,
+          });
           render();
           return;
         }
 
         if (requiresShopTarget(action)) {
+          audioDebugRendererLog("action.target.wait", {
+            actionId: action.id,
+            actionType: action.action.type,
+            targetCount: action.targetCount ?? 1,
+          });
           shopTarget.action = action;
+          shopTarget.selectedEntityIds = [];
           shopTarget.currencyBurstOrigin = captureCurrencyBurstOrigin(action, button);
           render();
           return;
@@ -861,12 +875,24 @@ function bindActions(
         let dispatched = false;
 
         try {
+          audioDebugRendererLog("action.dispatch.start", {
+            actionId: action.id,
+            actionType: action.action.type,
+            phase: frame.phase,
+            wave: frame.hud.wave,
+          });
           await client.dispatch(action.action);
           dispatched = true;
+          audioDebugRendererLog("action.dispatch.done", {
+            actionId: action.id,
+            actionType: action.action.type,
+            dispatched,
+          });
         } finally {
           busy = false;
           delete root.dataset.busy;
           shopTarget.action = undefined;
+          shopTarget.selectedEntityIds = undefined;
           shopTarget.currencyBurstOrigin = undefined;
           render();
           if (dispatched && currencyBurstOrigin) {
@@ -888,6 +914,7 @@ function bindShopTargetSelection(
     .querySelector<HTMLButtonElement>("[data-shop-target-cancel]")
     ?.addEventListener("click", () => {
       shopTarget.action = undefined;
+      shopTarget.selectedEntityIds = undefined;
       shopTarget.currencyBurstOrigin = undefined;
       render();
     });
@@ -901,10 +928,25 @@ function bindShopTargetSelection(
         return;
       }
 
-      const payload = buildTargetedPayload(action, targetEntityId);
+      const selectedEntityIds = [...(shopTarget.selectedEntityIds ?? []), targetEntityId];
+      const targetCount = action.targetCount ?? 1;
+
+      if (selectedEntityIds.length < targetCount) {
+        shopTarget.selectedEntityIds = selectedEntityIds;
+        render();
+        return;
+      }
+
+      const payload = buildTargetedPayload(action, selectedEntityIds);
       if (!payload) {
         return;
       }
+      audioDebugRendererLog("action.target.dispatch.start", {
+        actionId: action.id,
+        actionType: action.action.type,
+        selectedEntityIds,
+        payloadType: payload.type,
+      });
 
       root.dataset.busy = "true";
       const currencyBurstOrigin =
@@ -914,9 +956,16 @@ function bindShopTargetSelection(
       try {
         await client.dispatch(payload);
         dispatched = true;
+        audioDebugRendererLog("action.target.dispatch.done", {
+          actionId: action.id,
+          actionType: action.action.type,
+          selectedEntityIds,
+          payloadType: payload.type,
+        });
       } finally {
         delete root.dataset.busy;
         shopTarget.action = undefined;
+        shopTarget.selectedEntityIds = undefined;
         shopTarget.currencyBurstOrigin = undefined;
         render();
         if (dispatched && currencyBurstOrigin) {
@@ -984,7 +1033,11 @@ function spawnCurrencySpendBurst(origin: CurrencyBurstOrigin): void {
   window.setTimeout(() => burst.remove(), CURRENCY_BURST_DURATION_MS);
 }
 
-function buildTargetedPayload(action: FrameAction, targetEntityId: string): GameAction | undefined {
+function buildTargetedPayload(
+  action: FrameAction,
+  targetEntityIds: readonly string[],
+): GameAction | undefined {
+  const targetEntityId = targetEntityIds[0];
   if (action.action.type === "BUY_HEAL") {
     return {
       type: "BUY_HEAL",
@@ -1008,7 +1061,12 @@ function buildTargetedPayload(action: FrameAction, targetEntityId: string): Game
     return { type: "BUY_TEACH_MOVE", element: action.action.element, targetEntityId };
   }
   if (action.action.type === "BUY_PREMIUM_SHOP_ITEM") {
-    return { type: "BUY_PREMIUM_SHOP_ITEM", offerId: action.action.offerId, targetEntityId };
+    return {
+      type: "BUY_PREMIUM_SHOP_ITEM",
+      offerId: action.action.offerId,
+      targetEntityId,
+      targetEntityIds: [...targetEntityIds],
+    };
   }
   return undefined;
 }
@@ -1139,6 +1197,7 @@ function renderFrame(
   playback: BattlePlaybackView,
   canRerollStarter: boolean,
   shopTargetAction?: FrameAction,
+  shopTargetSelectedIds?: readonly string[],
   transientFeedback?: TransientFeedbackState,
   tutorialGuide?: TutorialGuideState,
   tutorialLayout: TutorialViewportLayout = "portrait",
@@ -1187,6 +1246,7 @@ function renderFrame(
     activeCue,
     canRerollStarter,
     shopTargetAction,
+    shopTargetSelectedIds,
     teamRecord: statusView.teamRecord,
     transientFeedback,
   });
@@ -1222,10 +1282,7 @@ function createTutorialViewportState(): TutorialViewportState {
   };
 }
 
-function bindTutorialViewportLayout(
-  state: TutorialViewportState,
-  render: () => void,
-): void {
+function bindTutorialViewportLayout(state: TutorialViewportState, render: () => void): void {
   if (typeof window === "undefined") {
     return;
   }
@@ -1240,9 +1297,7 @@ function bindTutorialViewportLayout(
     render();
   };
 
-  window
-    .matchMedia?.(TUTORIAL_LANDSCAPE_MEDIA_QUERY)
-    ?.addEventListener?.("change", update);
+  window.matchMedia?.(TUTORIAL_LANDSCAPE_MEDIA_QUERY)?.addEventListener?.("change", update);
   window.addEventListener("resize", update);
   window.addEventListener("orientationchange", update);
 }
@@ -1555,10 +1610,7 @@ function renderTutorialGuideText(text: string): string {
   });
 }
 
-function resolveTutorialGuideTextTokens(
-  text: string,
-  layout: TutorialViewportLayout,
-): string {
+function resolveTutorialGuideTextTokens(text: string, layout: TutorialViewportLayout): string {
   return text.replace(TUTORIAL_TOKEN_PATTERN, (token, key: string) => {
     const replacements = TUTORIAL_VIEWPORT_TEXT[layout];
     return Object.hasOwn(replacements, key) ? replacements[key as TutorialTextToken] : token;
@@ -1609,7 +1661,12 @@ function resolveTutorialVisualCue(
     return { tone: "success", icon: "✅" };
   }
 
-  if (text.includes("실패") || text.includes("패배") || text.includes("쓰러") || text.includes("부족")) {
+  if (
+    text.includes("실패") ||
+    text.includes("패배") ||
+    text.includes("쓰러") ||
+    text.includes("부족")
+  ) {
     return { tone: "warning", icon: "!" };
   }
 
@@ -2087,6 +2144,7 @@ interface ScreenRenderContext {
   activeCue?: FrameVisualCue;
   canRerollStarter: boolean;
   shopTargetAction?: FrameAction;
+  shopTargetSelectedIds?: readonly string[];
   teamRecord?: HtmlRendererTeamRecordView;
   transientFeedback?: TransientFeedbackState;
 }
@@ -2403,6 +2461,7 @@ function renderReadyScreen({
   frame,
   playerEntities,
   shopTargetAction,
+  shopTargetSelectedIds,
   transientFeedback,
 }: ScreenRenderContext): string {
   const shopActions = selectReadyShopActions(frame, playerEntities);
@@ -2434,7 +2493,7 @@ function renderReadyScreen({
               : ""
           }
         </div>
-        ${renderShopTeamGrid(playerEntities, shopTargetAction, frame.scene.teamEffect)}
+        ${renderShopTeamGrid(playerEntities, shopTargetAction, shopTargetSelectedIds, frame.scene.teamEffect)}
       </div>
       ${nextAction ? `<div class="shop-start-row">${renderShopStartAction(nextAction, frame)}</div>` : ""}
       <div class="shop-card-grid" data-shop-card-count="${shopActions.length}">
@@ -2580,6 +2639,9 @@ function createReadyCaptureFeedbackKey(frame: GameFrame): string {
 }
 
 function createShopTargetLabel(action: FrameAction): string {
+  if ((action.targetCount ?? 1) > 1) {
+    return `${action.label} 대상 2마리 선택`;
+  }
   return action.action.type === "BUY_HEAL" ? `${action.label} 대상 선택` : action.label;
 }
 
@@ -2600,6 +2662,7 @@ function renderShopStartAction(action: FrameAction, frame: GameFrame): string {
 function renderShopTeamGrid(
   playerEntities: readonly FrameEntity[],
   targetAction: FrameAction | undefined,
+  selectedEntityIds: readonly string[] | undefined,
   teamEffect?: { entityId: string; kind: string; key: string },
   options: { interactive?: boolean; showRewardBadges?: boolean } = {},
 ): string {
@@ -2609,7 +2672,7 @@ function renderShopTeamGrid(
 
   return `
     <div class="shop-team-grid" data-targeting="${targetAction ? "true" : "false"}" data-interactive="${interactive ? "true" : "false"}">
-      ${slots.map((entity, index) => renderShopTeamSlot(entity, index, targetAction, teamEffect, { interactive, showRewardBadges })).join("")}
+      ${slots.map((entity, index) => renderShopTeamSlot(entity, index, targetAction, selectedEntityIds, playerEntities, teamEffect, { interactive, showRewardBadges })).join("")}
     </div>
   `;
 }
@@ -2618,6 +2681,8 @@ function renderShopTeamSlot(
   entity: FrameEntity | undefined,
   index: number,
   targetAction: FrameAction | undefined,
+  selectedEntityIds: readonly string[] | undefined,
+  playerEntities: readonly FrameEntity[],
   teamEffect?: { entityId: string; kind: string; key: string },
   options: { interactive?: boolean; showRewardBadges?: boolean } = {},
 ): string {
@@ -2634,10 +2699,15 @@ function renderShopTeamSlot(
     entity.hp.max > 0 && entity.hp.ratio <= 0.2 ? ' data-hp-critical="true"' : "";
   const requiresHealable =
     targetAction?.action.type === "BUY_HEAL" && targetAction.action.scope === "single";
-  const targetAllowed =
-    !targetAction?.eligibleTargetIds || targetAction.eligibleTargetIds.includes(entity.id);
+  const selectedIds = selectedEntityIds ?? [];
+  const selectedEntities = selectedIds
+    .map((id) => playerEntities.find((candidate) => candidate.id === id))
+    .filter((candidate): candidate is FrameEntity => Boolean(candidate));
+  const alreadySelected = selectedIds.includes(entity.id);
+  const targetAllowed = isShopTargetAllowed(entity, targetAction, selectedEntities);
   const selectable =
     Boolean(targetAction) &&
+    !alreadySelected &&
     targetAllowed &&
     (!requiresHealable || entity.hp.current < entity.hp.max);
   const interactive = options.interactive ?? true;
@@ -2653,10 +2723,11 @@ function renderShopTeamSlot(
     teamEffect && teamEffect.entityId === entity.id
       ? ` data-team-effect="${escapeHtml(teamEffect.kind)}" data-team-effect-key="${escapeHtml(teamEffect.key)}"`
       : "";
+  const selectedAttribute = alreadySelected ? ' data-shop-target-selected="true"' : "";
   const rewardBadge = (options.showRewardBadges ?? true) ? renderShopTeamRewardBadge(entity) : "";
 
   return `
-    <${tag}${typeAttribute} class="shop-team-slot" data-team-slot="${index + 1}" data-slot-state="${hpState}"${targetAttribute}${detailAttribute}${effectAttribute}${disabled}>
+    <${tag}${typeAttribute} class="shop-team-slot" data-team-slot="${index + 1}" data-slot-state="${hpState}"${targetAttribute}${detailAttribute}${effectAttribute}${selectedAttribute}${disabled}>
       <span class="shop-slot-number">${index + 1}</span>
       ${rewardBadge}
       <img src="${resolveAssetPath(entity.assetPath)}" alt="${escapeHtml(`${entity.name} 포켓몬`)}" />
@@ -2678,6 +2749,30 @@ function renderShopTeamSlot(
       <span class="slot-meter" data-hp-state="${hpState}"${criticalHpAttribute}><span style="width: ${Math.round(entity.hp.ratio * 100)}%"></span></span>
     </${tag}>
   `;
+}
+
+function isShopTargetAllowed(
+  entity: FrameEntity,
+  targetAction: FrameAction | undefined,
+  selectedEntities: readonly FrameEntity[],
+): boolean {
+  if (!targetAction) {
+    return true;
+  }
+
+  if (targetAction.eligibleTargetIds && !targetAction.eligibleTargetIds.includes(entity.id)) {
+    return false;
+  }
+
+  if (
+    targetAction.sameSpeciesRequired &&
+    selectedEntities.length > 0 &&
+    selectedEntities[0].speciesId !== entity.speciesId
+  ) {
+    return false;
+  }
+
+  return true;
 }
 
 function renderShopTeamRewardBadge(entity: FrameEntity): string {
@@ -3427,7 +3522,7 @@ function renderCommandBand(
 function renderBattleTeamStatusBand(playerEntities: readonly FrameEntity[]): string {
   return `
     <section class="battle-team-grid-panel" data-status-count="${playerEntities.length}" aria-label="전투 중 팀 상태">
-      ${renderShopTeamGrid(playerEntities, undefined, undefined, { interactive: false, showRewardBadges: false })}
+      ${renderShopTeamGrid(playerEntities, undefined, undefined, undefined, { interactive: false, showRewardBadges: false })}
     </section>
   `;
 }
@@ -4473,25 +4568,22 @@ function scheduleBattlePlayback(
     activeType: activeEvent?.type,
     activeCeremonyStage: activeEvent?.ceremonyStage,
   });
-  playback.timerId = window.setTimeout(
-    () => {
-      playback.timerId = undefined;
-      if (lifecycle.suspended) {
-        return;
-      }
-      playback.cursor = Math.min(playback.cursor + 1, frame.battleReplay.events.length - 1);
-      const nextEvent = frame.battleReplay.events[playback.cursor];
-      audioDebugRendererLog("playback.advance", {
-        cursor: playback.cursor,
-        activeSequence: nextEvent?.sequence,
-        activeSourceSequence: nextEvent?.sourceSequence,
-        activeType: nextEvent?.type,
-        activeCeremonyStage: nextEvent?.ceremonyStage,
-      });
-      render();
-    },
-    delayMs,
-  );
+  playback.timerId = window.setTimeout(() => {
+    playback.timerId = undefined;
+    if (lifecycle.suspended) {
+      return;
+    }
+    playback.cursor = Math.min(playback.cursor + 1, frame.battleReplay.events.length - 1);
+    const nextEvent = frame.battleReplay.events[playback.cursor];
+    audioDebugRendererLog("playback.advance", {
+      cursor: playback.cursor,
+      activeSequence: nextEvent?.sequence,
+      activeSourceSequence: nextEvent?.sourceSequence,
+      activeType: nextEvent?.type,
+      activeCeremonyStage: nextEvent?.ceremonyStage,
+    });
+    render();
+  }, delayMs);
 }
 
 function clearBattlePlaybackTimer(playback: BattlePlaybackState): void {
@@ -4602,8 +4694,8 @@ function resolveSfxUrl(soundKey: string): string | undefined {
 function createInitialSfxPreloadUrls(): readonly string[] {
   return [
     ...new Set(
-      [...Object.values(localSfxAssetUrls), phaseChangeSfxUrl].filter(
-        (url): url is string => Boolean(url),
+      [...Object.values(localSfxAssetUrls), phaseChangeSfxUrl].filter((url): url is string =>
+        Boolean(url),
       ),
     ),
   ];

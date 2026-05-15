@@ -313,6 +313,8 @@ export interface FrameAction {
   tpCost?: number;
   portrait?: FrameTrainerPortrait;
   requiresTarget?: boolean;
+  targetCount?: 1 | 2;
+  sameSpeciesRequired?: boolean;
   eligibleTargetIds?: string[];
   reason?: string;
 }
@@ -1738,18 +1740,8 @@ function createPremiumActions(state: GameState): FrameAction[] {
   return offerIds.map((offerId) => {
     const offer = getPremiumOffer(offerId);
     const effect = offer.effect;
-    const eligibleTargetIds =
-      effect.kind === "teachMove"
-        ? state.team
-            .filter(
-              (creature) =>
-                getLearnableLevelUpMoves(creature, effect.element, {
-                  grade: effect.grade,
-                }).length > 0,
-            )
-            .map((creature) => creature.instanceId)
-        : undefined;
-    const targetBlocked = effect.kind === "teachMove" && eligibleTargetIds?.length === 0;
+    const eligibleTargetIds = resolvePremiumEligibleTargetIds(state, offer);
+    const targetBlocked = offer.targetRequired && eligibleTargetIds?.length === 0;
     return {
       id: `shop:${offerId}`,
       label: `${offer.label.replace(/^TP\s+/, "")} ${formatTrainerPoints(offer.tpCost)}`,
@@ -1757,16 +1749,104 @@ function createPremiumActions(state: GameState): FrameAction[] {
       enabled: tp >= offer.tpCost && !targetBlocked,
       tpCost: offer.tpCost,
       requiresTarget: offer.targetRequired,
+      targetCount: offer.targetCount,
+      sameSpeciesRequired: offer.sameSpeciesRequired,
       eligibleTargetIds,
       action: { type: "BUY_PREMIUM_SHOP_ITEM" as const, offerId },
       reason:
         tp < offer.tpCost
           ? "보석이 부족합니다"
           : targetBlocked
-            ? "배울 수 있는 팀원이 없습니다"
+            ? resolvePremiumTargetBlockedReason(effect.kind)
             : undefined,
     };
   });
+}
+
+function resolvePremiumEligibleTargetIds(
+  state: GameState,
+  offer: ReturnType<typeof getPremiumOffer>,
+): string[] | undefined {
+  const effect = offer.effect;
+
+  if (effect.kind === "teachMove") {
+    return state.team
+      .filter(
+        (creature) =>
+          getLearnableLevelUpMoves(creature, effect.element, {
+            grade: effect.grade,
+          }).length > 0,
+      )
+      .map((creature) => creature.instanceId);
+  }
+
+  if (effect.kind === "sellCoin" || effect.kind === "sellBall" || effect.kind === "speciesLure") {
+    return state.team.length > 1 ? state.team.map((creature) => creature.instanceId) : [];
+  }
+
+  if (
+    effect.kind === "fuseEvolution" ||
+    effect.kind === "fuseStats" ||
+    effect.kind === "fuseMoveDex"
+  ) {
+    const duplicateSpeciesIds = findDuplicateSpeciesIds(state.team);
+    return state.team
+      .filter((creature) => {
+        if (!duplicateSpeciesIds.has(creature.speciesId)) {
+          return false;
+        }
+        if (
+          effect.kind === "fuseEvolution" &&
+          getSpecies(creature.speciesId).evolvesTo.length === 0
+        ) {
+          return false;
+        }
+        if (effect.kind === "fuseMoveDex" && !hasLockedMoveDexCandidate(creature, state)) {
+          return false;
+        }
+        return true;
+      })
+      .map((creature) => creature.instanceId);
+  }
+
+  return undefined;
+}
+
+function findDuplicateSpeciesIds(team: readonly Creature[]): Set<number> {
+  const counts = new Map<number, number>();
+  for (const creature of team) {
+    counts.set(creature.speciesId, (counts.get(creature.speciesId) ?? 0) + 1);
+  }
+  return new Set(
+    [...counts.entries()].filter(([, count]) => count >= 2).map(([speciesId]) => speciesId),
+  );
+}
+
+function hasLockedMoveDexCandidate(creature: Creature, state: GameState): boolean {
+  const unlockedMoveIds = new Set(state.unlockedMoveIds ?? []);
+  const knownMoveIds = new Set(creature.moves.map((move) => move.id));
+  return getSpecies(creature.speciesId).levelUpMoves.some(
+    (entry) => !unlockedMoveIds.has(entry.moveId) && !knownMoveIds.has(entry.moveId),
+  );
+}
+
+function resolvePremiumTargetBlockedReason(effectKind: string): string {
+  switch (effectKind) {
+    case "teachMove":
+      return "배울 수 있는 팀원이 없습니다";
+    case "sellCoin":
+    case "sellBall":
+    case "speciesLure":
+      return "마지막 팀원은 보낼 수 없습니다";
+    case "fuseEvolution":
+      return "진화 가능한 같은 포켓몬 2마리가 필요합니다";
+    case "fuseStats":
+      return "같은 포켓몬 2마리가 필요합니다";
+    case "fuseMoveDex":
+      return "숨겨진 스킬이 있는 같은 포켓몬 2마리가 필요합니다";
+    default:
+      return "대상 팀원이 없습니다";
+  }
 }
 
 function createTrainerPortraitActions(state: GameState): FrameAction[] {
@@ -1796,7 +1876,11 @@ function createTrainerPortraitActions(state: GameState): FrameAction[] {
         tpCost: owned ? undefined : portrait.tpCost,
         portrait: portraitView,
         action: { type: "BUY_TRAINER_PORTRAIT", portraitId: portrait.id },
-        reason: selected ? "이미 적용 중인 스킨입니다" : owned || canAfford ? undefined : "보석이 부족합니다",
+        reason: selected
+          ? "이미 적용 중인 스킨입니다"
+          : owned || canAfford
+            ? undefined
+            : "보석이 부족합니다",
       };
     },
   );

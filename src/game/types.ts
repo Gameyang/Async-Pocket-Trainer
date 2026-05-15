@@ -123,6 +123,8 @@ export interface EncounterBoost {
   levelMin?: number;
   levelMax?: number;
   lockedType?: ElementType;
+  preferredSpeciesId?: number;
+  preferredSpeciesChance?: number;
 }
 
 export interface ShopDeal {
@@ -241,6 +243,7 @@ export interface SpeciesDefinition {
   baseStats: Stats;
   movePool: string[];
   levelUpMoves: SpeciesLevelUpMove[];
+  evolvesTo: number[];
   weightHg: number;
   captureRate: number;
   rarity: number;
@@ -570,7 +573,12 @@ export type GameAction =
   | { type: "BUY_TEACH_MOVE"; element: ElementType; targetEntityId?: string }
   | { type: "BUY_TYPE_LOCK"; element: ElementType }
   | { type: "SORT_TEAM"; sortBy: TeamSortKey; direction: SortDirection }
-  | { type: "BUY_PREMIUM_SHOP_ITEM"; offerId: PremiumOfferId; targetEntityId?: string }
+  | {
+      type: "BUY_PREMIUM_SHOP_ITEM";
+      offerId: PremiumOfferId;
+      targetEntityId?: string;
+      targetEntityIds?: string[];
+    }
   | { type: "BUY_PREMIUM_MASTERBALL" }
   | { type: "BUY_PREMIUM_REVIVE_ALL" }
   | { type: "BUY_PREMIUM_COIN_BAG" }

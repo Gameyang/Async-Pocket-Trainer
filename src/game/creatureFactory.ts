@@ -301,18 +301,35 @@ function pickMovesForRole(
   role: CreatureFactoryOptions["role"],
   rng: SeededRng,
 ): MoveDefinition[] {
+  if (role === "starter" && level <= 5) {
+    return pickOpeningStarterMoves(species, level, rng);
+  }
+
   const originalOpeningLoadout =
-    role === "starter" && level <= 5
-      ? ORIGINAL_OPENING_STARTER_LOADOUTS[species.id]
-      : role === "wild" && level <= 5
-        ? ORIGINAL_OPENING_WILD_LOADOUTS[species.id]
-        : undefined;
+    role === "wild" && level <= 5 ? ORIGINAL_OPENING_WILD_LOADOUTS[species.id] : undefined;
 
   if (originalOpeningLoadout) {
     return originalOpeningLoadout.map((moveId) => cloneMoveDefinition(getMove(moveId)));
   }
 
   return pickMoves(species, level, rng);
+}
+
+function pickOpeningStarterMoves(
+  species: SpeciesDefinition,
+  level: number,
+  rng: SeededRng,
+): MoveDefinition[] {
+  const originalOpeningLoadout = ORIGINAL_OPENING_STARTER_LOADOUTS[species.id];
+
+  if (originalOpeningLoadout) {
+    return originalOpeningLoadout.map((moveId) => cloneMoveDefinition(getMove(moveId)));
+  }
+
+  const attack = getMoveCandidates(species.id, level, isOpeningStarterAttackMove, "tackle")[0];
+  const support = rng.pick(getMoveCandidates(species.id, level, isSupportMove, "harden"));
+
+  return [attack, support].map(cloneMoveDefinition);
 }
 
 function pickMoves(species: SpeciesDefinition, level: number, rng: SeededRng): MoveDefinition[] {
@@ -355,6 +372,10 @@ function isAttackMove(move: MoveDefinition, speciesTypes: readonly ElementType[]
   }
 
   return speciesTypes.includes(move.type) && move.power >= STAB_LOW_POWER_ATTACK_FLOOR;
+}
+
+function isOpeningStarterAttackMove(move: MoveDefinition): boolean {
+  return move.category !== "status" && move.power >= BATTLE_READY_ATTACK_POWER;
 }
 
 function isSupportMove(move: MoveDefinition): boolean {

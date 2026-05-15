@@ -33,6 +33,8 @@
     "qa:headless:50": "tsx src/tools/headless-run.ts --seed stress --runs 200 --waves 50 --strategy greedy",
     "qa:headless:100": "tsx src/tools/headless-run.ts --seed endurance --runs 100 --waves 100 --strategy greedy --min-average-wave 35 --min-completed 5",
     "qa:headless:conserve": "tsx src/tools/headless-run.ts --seed conserve --runs 100 --waves 30 --strategy conserveBalls",
+    "qa:shop-economy": "tsx src/tools/shop-economy-run.ts",
+    "qa:shop-economy:big": "tsx src/tools/shop-economy-run.ts --seeds 20 --runs 50 --waves 50 --format csv --out tmp/shop-economy-big.csv",
     "test": "vitest run",
     "test:watch": "vitest",
     "verify": "npm run lint && npm run test && npm run qa:headless && npm run build"

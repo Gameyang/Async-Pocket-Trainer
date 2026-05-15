@@ -77,6 +77,36 @@ describe("creature move assignment", () => {
     }
   });
 
+  it("gives arbitrary level-five starters a battle-ready opening attack fallback", () => {
+    for (const speciesId of [13, 43, 92, 108, 120]) {
+      const created = createCreature({
+        rng: new SeededRng(`arbitrary-opening-starter-${speciesId}`),
+        wave: 1,
+        balance: defaultBalance,
+        speciesId,
+        level: 5,
+        role: "starter",
+      });
+
+      expect(created.moves[0].id).toBe("tackle");
+      expect(created.moves[0].power).toBeGreaterThanOrEqual(35);
+      expect(created.moves[1].category).toBe("status");
+    }
+  });
+
+  it("keeps usable level-five attacks for arbitrary starters that already have one", () => {
+    const created = createCreature({
+      rng: new SeededRng("arbitrary-opening-pikachu"),
+      wave: 1,
+      balance: defaultBalance,
+      speciesId: 25,
+      level: 5,
+      role: "starter",
+    });
+
+    expect(created.moves[0].id).toBe("thunder-shock");
+  });
+
   it("assigns exactly one attack and one support move", () => {
     const created = createCreature({
       rng: new SeededRng("expanded-move-pool"),

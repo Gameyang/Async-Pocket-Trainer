@@ -118,6 +118,7 @@ function toSpeciesDefinition(record: PokemonRecord): SpeciesDefinition {
     baseStats,
     movePool: movePool.length > 0 ? movePool : fallbackMove,
     levelUpMoves,
+    evolvesTo: record.evolvesTo.map((target) => target.speciesId),
     weightHg: record.weightHg,
     captureRate: clamp(record.species.captureRate / 255, 0.08, 0.78),
     rarity,

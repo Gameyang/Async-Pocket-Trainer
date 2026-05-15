@@ -5,6 +5,7 @@ import {
   createCreature,
   healTeam,
   normalizeCreatureBattleLoadout,
+  recalculateCreatureStats,
   rerollCreatureStatProfile,
   replaceCreatureMoveByRole,
 } from "./creatureFactory";
@@ -98,6 +99,7 @@ import type {
   ShopInventoryEntry,
   ShopStatKey,
   SortDirection,
+  Stats,
   StatBoostTier,
   TeamEffectFlash,
   TeamSortKey,
@@ -260,7 +262,7 @@ export class HeadlessGameClient {
         this.sortTeam(action.sortBy, action.direction);
         break;
       case "BUY_PREMIUM_SHOP_ITEM":
-        this.buyPremiumShopItem(action.offerId, action.targetEntityId);
+        this.buyPremiumShopItem(action.offerId, action.targetEntityId, action.targetEntityIds);
         break;
       case "BUY_PREMIUM_MASTERBALL":
         this.buyPremiumShopItem("premium:ball:masterball:2");
@@ -532,7 +534,11 @@ export class HeadlessGameClient {
     this.state.unlockedMoveIds = Array.from(moveIds);
   }
 
-  private buyPremiumShopItem(offerId: PremiumOfferId, targetEntityId?: string): void {
+  private buyPremiumShopItem(
+    offerId: PremiumOfferId,
+    targetEntityId?: string,
+    targetEntityIds?: readonly string[],
+  ): void {
     if (this.state.phase !== "ready") {
       this.addEvent("premium_ignored", "준비 상태에서만 프리미엄 상품을 구매할 수 있습니다.");
       return;
@@ -547,6 +553,7 @@ export class HeadlessGameClient {
     }
 
     const effect = offer.effect;
+    const selectedTargetIds = normalizePremiumTargetIds(targetEntityId, targetEntityIds);
 
     if (effect.kind === "statBoost") {
       const target = this.findTeamMember(targetEntityId);
@@ -600,6 +607,130 @@ export class HeadlessGameClient {
         "premium_purchased",
         `${withJosa(target.speciesName, "이/가")} ${learnedMove.name}을(를) 배웠습니다.`,
         { offerId, target: target.speciesName, move: learnedMove.id, element: effect.element },
+      );
+      return;
+    }
+
+    if (effect.kind === "sellCoin") {
+      const target = this.findTeamMember(selectedTargetIds[0]);
+      if (!target || this.state.team.length <= 1) {
+        this.addEvent("premium_denied", "매각할 포켓몬을 찾을 수 없거나 마지막 팀원입니다.");
+        return;
+      }
+
+      const saleValue = calculateCreatureSaleValue(target);
+      meta.trainerPoints -= offer.tpCost;
+      this.removeTeamMembers([target.instanceId]);
+      this.state.money += saleValue;
+      this.addEvent(
+        "premium_purchased",
+        `${target.speciesName}를 보내고 ${saleValue}코인을 얻었습니다.`,
+        { offerId, target: target.speciesName, money: saleValue },
+      );
+      return;
+    }
+
+    if (effect.kind === "sellBall") {
+      const target = this.findTeamMember(selectedTargetIds[0]);
+      if (!target || this.state.team.length <= 1) {
+        this.addEvent("premium_denied", "교환할 포켓몬을 찾을 수 없거나 마지막 팀원입니다.");
+        return;
+      }
+
+      const loot = rollCreatureSaleBallLoot(target, this.rng);
+      meta.trainerPoints -= offer.tpCost;
+      this.removeTeamMembers([target.instanceId]);
+      this.state.balls = {
+        ...this.state.balls,
+        [loot.ball]: this.state.balls[loot.ball] + loot.quantity,
+      };
+      this.addEvent(
+        "premium_purchased",
+        `${target.speciesName}를 보내고 ${localizeBall(loot.ball)} ${loot.quantity}개를 얻었습니다.`,
+        { offerId, target: target.speciesName, ball: loot.ball, quantity: loot.quantity },
+      );
+      return;
+    }
+
+    if (effect.kind === "speciesLure") {
+      const target = this.findTeamMember(selectedTargetIds[0]);
+      if (!target || this.state.team.length <= 1) {
+        this.addEvent("premium_denied", "유인할 포켓몬을 찾을 수 없거나 마지막 팀원입니다.");
+        return;
+      }
+
+      const existing =
+        this.state.encounterBoost?.wave === this.state.currentWave
+          ? this.state.encounterBoost
+          : { wave: this.state.currentWave };
+      meta.trainerPoints -= offer.tpCost;
+      this.removeTeamMembers([target.instanceId]);
+      this.state.encounterBoost = {
+        ...existing,
+        preferredSpeciesId: target.speciesId,
+        preferredSpeciesChance: Math.max(existing.preferredSpeciesChance ?? 0, effect.chance),
+      };
+      this.addEvent(
+        "premium_purchased",
+        `${target.speciesName}를 보내고 다음 야생 ${target.speciesName} 유인 확률을 ${Math.round(
+          effect.chance * 100,
+        )}%로 올렸습니다.`,
+        { offerId, target: target.speciesName, speciesId: target.speciesId, chance: effect.chance },
+      );
+      return;
+    }
+
+    if (
+      effect.kind === "fuseEvolution" ||
+      effect.kind === "fuseStats" ||
+      effect.kind === "fuseMoveDex"
+    ) {
+      const pair = this.resolveSameSpeciesFusionTargets(selectedTargetIds);
+      if (!pair) {
+        this.addEvent("premium_denied", "같은 포켓몬 2마리를 선택해야 합니다.");
+        return;
+      }
+
+      const [left, right] = pair;
+      let fused: Creature | undefined;
+      let detail: Record<string, unknown> = {
+        offerId,
+        sourceSpeciesId: left.speciesId,
+        source: left.speciesName,
+      };
+
+      if (effect.kind === "fuseEvolution") {
+        const evolutionSpeciesId = this.resolveFusionEvolutionSpeciesId(left);
+        if (!evolutionSpeciesId) {
+          this.addEvent("premium_denied", `${left.speciesName}은(는) 더 진화할 수 없습니다.`);
+          return;
+        }
+        fused = this.createFusionEvolution(left, right, evolutionSpeciesId);
+        detail = { ...detail, resultSpeciesId: fused.speciesId, result: fused.speciesName };
+      } else if (effect.kind === "fuseStats") {
+        fused = this.createStatFusion(left, right, effect.multiplier);
+        detail = { ...detail, multiplier: effect.multiplier, result: fused.speciesName };
+      } else {
+        const move = this.pickLockedFusionMove(left);
+        if (!move) {
+          this.addEvent("premium_denied", `${left.speciesName}의 숨겨진 스킬 후보가 없습니다.`);
+          return;
+        }
+        fused = this.createMoveDexFusion(left, right, move);
+        detail = { ...detail, move: move.id, result: fused.speciesName };
+      }
+
+      meta.trainerPoints -= offer.tpCost;
+      this.replaceTeamMembersWithCreature([left.instanceId, right.instanceId], fused);
+      this.discoverOwnedDexEntries([fused]);
+      this.flashTeamEffect(
+        fused.instanceId,
+        effect.kind === "fuseMoveDex" ? "teach-move" : "stat-boost",
+      );
+      this.addEvent(
+        "premium_purchased",
+        `${left.speciesName} 2마리를 합쳐 ${fused.speciesName}를 얻었습니다.`,
+        detail,
       );
       return;
     }
@@ -1323,6 +1454,116 @@ export class HeadlessGameClient {
     return this.state.team.find((creature) => creature.instanceId === targetEntityId);
   }
 
+  private removeTeamMembers(targetEntityIds: readonly string[]): void {
+    const targets = new Set(targetEntityIds);
+    this.state.team = this.state.team.filter((creature) => !targets.has(creature.instanceId));
+  }
+
+  private resolveSameSpeciesFusionTargets(
+    targetEntityIds: readonly string[],
+  ): [Creature, Creature] | undefined {
+    const uniqueTargetIds = [...new Set(targetEntityIds)];
+    if (uniqueTargetIds.length < 2) {
+      return undefined;
+    }
+
+    const pair = uniqueTargetIds
+      .slice(0, 2)
+      .map((id) => this.findTeamMember(id))
+      .filter((creature): creature is Creature => Boolean(creature));
+
+    if (pair.length !== 2 || pair[0].speciesId !== pair[1].speciesId) {
+      return undefined;
+    }
+
+    return [pair[0], pair[1]];
+  }
+
+  private replaceTeamMembersWithCreature(
+    targetEntityIds: readonly string[],
+    fused: Creature,
+  ): void {
+    const targets = new Set(targetEntityIds);
+    const firstIndex = this.state.team.findIndex((creature) => targets.has(creature.instanceId));
+    const nextTeam = this.state.team.filter((creature) => !targets.has(creature.instanceId));
+    nextTeam.splice(Math.max(0, firstIndex), 0, fused);
+    this.state.team = nextTeam.slice(0, this.balance.maxTeamSize);
+  }
+
+  private resolveFusionEvolutionSpeciesId(creature: Creature): number | undefined {
+    const candidates = getSpecies(creature.speciesId).evolvesTo.filter(isValidSpeciesId);
+    return candidates.length > 0 ? this.rng.pick(candidates) : undefined;
+  }
+
+  private createFusionEvolution(
+    left: Creature,
+    right: Creature,
+    evolutionSpeciesId: number,
+  ): Creature {
+    return createCreature({
+      rng: this.rng,
+      wave: this.state.currentWave,
+      balance: this.balance,
+      speciesId: evolutionSpeciesId,
+      level: resolveFusionLevel(left, right) + 1,
+      role: "trainer",
+    });
+  }
+
+  private createStatFusion(left: Creature, right: Creature, multiplier: number): Creature {
+    const level = resolveFusionLevel(left, right);
+    const base = createCreature({
+      rng: this.rng,
+      wave: this.state.currentWave,
+      balance: this.balance,
+      speciesId: left.speciesId,
+      level,
+      role: "trainer",
+    });
+    const targetStats = mapStats((stat) =>
+      Math.max(1, Math.round(((left.stats[stat] + right.stats[stat]) / 2) * multiplier)),
+    );
+    const statBonuses = mapStats((stat) => Math.max(0, targetStats[stat] - base.stats[stat]));
+    const fused = recalculateCreatureStats({
+      ...base,
+      statBonuses,
+    });
+
+    return {
+      ...fused,
+      currentHp: fused.stats.hp,
+      powerScore: scoreCreature({ stats: fused.stats, moves: fused.moves, types: fused.types }),
+    };
+  }
+
+  private pickLockedFusionMove(creature: Creature): MoveDefinition | undefined {
+    const unlockedMoveIds = new Set(this.state.unlockedMoveIds ?? []);
+    const knownMoveIds = new Set(creature.moves.map((move) => move.id));
+    const speciesMoves = getSpecies(creature.speciesId)
+      .levelUpMoves.map((entry) => getMove(entry.moveId))
+      .filter(
+        (move, index, moves) => moves.findIndex((candidate) => candidate.id === move.id) === index,
+      );
+    const lockedCandidates = speciesMoves.filter(
+      (move) => !unlockedMoveIds.has(move.id) && !knownMoveIds.has(move.id),
+    );
+    const fallbackCandidates = speciesMoves.filter((move) => !knownMoveIds.has(move.id));
+    const candidates = lockedCandidates.length > 0 ? lockedCandidates : fallbackCandidates;
+
+    return candidates.length > 0 ? this.rng.pick(candidates) : undefined;
+  }
+
+  private createMoveDexFusion(left: Creature, right: Creature, move: MoveDefinition): Creature {
+    const fused = this.createStatFusion(left, right, 1);
+    const moves = replaceCreatureMoveByRole(fused, move);
+
+    return {
+      ...fused,
+      moves,
+      powerScore: scoreCreature({ stats: fused.stats, moves, types: fused.types }),
+    };
+  }
+
   private buyStatBoost(
     stat: ShopStatKey,
     tier: StatBoostTier,
@@ -1634,6 +1875,16 @@ export class HeadlessGameClient {
     if (this.state.encounterBoost?.wave === this.state.currentWave) {
       return this.state.encounterBoost;
     }
+    if (
+      this.state.encounterBoost?.preferredSpeciesId &&
+      (this.state.encounterBoost.preferredSpeciesChance ?? 0) > 0
+    ) {
+      return {
+        wave: this.state.currentWave,
+        preferredSpeciesId: this.state.encounterBoost.preferredSpeciesId,
+        preferredSpeciesChance: this.state.encounterBoost.preferredSpeciesChance,
+      };
+    }
     return undefined;
   }
 
@@ -1720,10 +1971,20 @@ export class HeadlessGameClient {
   }
 
   private advanceWave(): void {
+    const carriedLure =
+      this.state.pendingEncounter?.kind === "trainer" &&
+      this.state.encounterBoost?.preferredSpeciesId &&
+      (this.state.encounterBoost.preferredSpeciesChance ?? 0) > 0
+        ? {
+            wave: this.state.currentWave + 1,
+            preferredSpeciesId: this.state.encounterBoost.preferredSpeciesId,
+            preferredSpeciesChance: this.state.encounterBoost.preferredSpeciesChance,
+          }
+        : undefined;
     this.state.currentWave += 1;
     this.state.phase = "ready";
     this.state.selectedRoute = undefined;
-    this.state.encounterBoost = undefined;
+    this.state.encounterBoost = carriedLure;
     this.state.pendingEncounter = undefined;
     this.state.pendingCapture = undefined;
     this.state.shopDeal = this.generateShopDeal();
@@ -1918,6 +2179,67 @@ function isValidMoveId(moveId: string): boolean {
 
 function countBalls(balls: GameState["balls"]): number {
   return ballTypes.reduce((total, ball) => total + balls[ball], 0);
+}
+
+function normalizePremiumTargetIds(
+  targetEntityId: string | undefined,
+  targetEntityIds: readonly string[] | undefined,
+): string[] {
+  const ids = targetEntityIds && targetEntityIds.length > 0 ? targetEntityIds : [targetEntityId];
+  return ids.filter((id): id is string => Boolean(id));
+}
+
+function calculateCreatureSaleValue(creature: Creature): number {
+  const level = creature.level ?? 1;
+  return Math.max(8, Math.round(creature.powerScore * 0.16 + creature.rarityScore * 0.45 + level));
+}
+
+type SaleBallLoot = { ball: BallType; quantity: number };
+type SaleBallLootEntry = SaleBallLoot & { weight: number };
+
+function rollCreatureSaleBallLoot(creature: Creature, rng: SeededRng): SaleBallLoot {
+  const rarityBonus = Math.max(0, Math.floor(creature.rarityScore / 18));
+  const table: SaleBallLootEntry[] = [
+    { ball: "pokeBall", quantity: rng.int(2, 4 + rarityBonus), weight: 32 },
+    { ball: "greatBall", quantity: rng.int(1, 3 + Math.min(2, rarityBonus)), weight: 26 },
+    { ball: "ultraBall", quantity: rng.int(1, 2 + Math.min(1, rarityBonus)), weight: 18 },
+    { ball: "hyperBall", quantity: rng.int(1, 2), weight: 8 },
+    { ball: "masterBall", quantity: 1, weight: 1 },
+  ];
+
+  return pickWeightedSaleBallLoot(table, rng);
+}
+
+function pickWeightedSaleBallLoot(
+  table: readonly SaleBallLootEntry[],
+  rng: SeededRng,
+): SaleBallLoot {
+  const totalWeight = table.reduce((sum, entry) => sum + entry.weight, 0);
+  let ticket = rng.nextFloat() * totalWeight;
+
+  for (const entry of table) {
+    ticket -= entry.weight;
+    if (ticket <= 0) {
+      return { ball: entry.ball, quantity: entry.quantity };
+    }
+  }
+
+  const fallback = table[table.length - 1];
+  return { ball: fallback.ball, quantity: fallback.quantity };
+}
+
+function mapStats(resolve: (stat: keyof Stats) => number): Stats {
+  return {
+    hp: resolve("hp"),
+    attack: resolve("attack"),
+    defense: resolve("defense"),
+    special: resolve("special"),
+    speed: resolve("speed"),
+  };
+}
+
+function resolveFusionLevel(left: Creature, right: Creature): number {
+  return Math.max(1, Math.round(((left.level ?? 1) + (right.level ?? 1)) / 2));
 }
 
 function rollActivePremiumOffers(seed: string, wave: number): PremiumOfferId[] {

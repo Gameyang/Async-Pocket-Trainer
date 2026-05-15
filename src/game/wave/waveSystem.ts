@@ -24,6 +24,8 @@ export interface EncounterBoostOptions {
   levelMin?: number;
   levelMax?: number;
   lockedType?: ElementType;
+  preferredSpeciesId?: number;
+  preferredSpeciesChance?: number;
 }
 
 const OPENING_WILD_LEVEL_MIN = 4;
@@ -68,7 +70,7 @@ export function createWildEncounter(
   battleFieldOrder?: readonly BattleFieldId[],
 ): EncounterSnapshot {
   const baseLevel = resolveWildBaseLevel(wave, rng);
-  const speciesId = resolveOpeningWildSpeciesId(wave, rng, boost);
+  const speciesId = resolveBoostedWildSpeciesId(wave, rng, boost);
   const level = resolveBoostedLevel(baseLevel, rng, boost);
   const battleField = resolveBattleFieldForWave(wave, battleFieldOrder);
   const creature = applyRouteToCreature(
@@ -98,11 +100,21 @@ export function createWildEncounter(
   };
 }
 
-function resolveOpeningWildSpeciesId(
+function resolveBoostedWildSpeciesId(
   wave: number,
   rng: SeededRng,
   boost?: EncounterBoostOptions,
 ): number | undefined {
+  const preferredSpeciesChance = boost?.preferredSpeciesChance ?? 0;
+
+  if (
+    boost?.preferredSpeciesId &&
+    preferredSpeciesChance > 0 &&
+    rng.nextFloat() < preferredSpeciesChance
+  ) {
+    return boost.preferredSpeciesId;
+  }
+
   if (wave >= OPENING_WILD_LEVEL_MAX) {
     return undefined;
   }
