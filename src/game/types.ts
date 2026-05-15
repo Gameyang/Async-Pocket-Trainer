@@ -451,6 +451,7 @@ export type BattleReplayEvent =
 
 export interface BattleResult {
   kind: EncounterKind;
+  wave?: number;
   encounterSource?: EncounterSource;
   encounterRoute?: RouteId;
   battleField?: BattleFieldState;

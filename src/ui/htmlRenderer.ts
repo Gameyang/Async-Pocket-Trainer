@@ -314,6 +314,229 @@ interface CurrencyBurstOrigin {
   kind: SpendCurrencyKind;
 }
 
+const TUTORIAL_STORAGE_KEY = "apt:tutorial:v1";
+const tutorialGuideIds = [
+  "first-visit",
+  "first-shop",
+  "first-battle-start",
+  "first-capture-success",
+  "first-capture-failure",
+  "first-trainer-win",
+  "first-battle-loss",
+] as const;
+
+type TutorialGuideId = (typeof tutorialGuideIds)[number];
+
+interface TutorialGuidePage {
+  kicker: string;
+  title: string;
+  body: string[];
+  focus: string[];
+}
+
+interface TutorialGuideDefinition {
+  id: TutorialGuideId;
+  finalLabel: string;
+  pages: TutorialGuidePage[];
+}
+
+interface TutorialGuideState {
+  seen: Set<TutorialGuideId>;
+  activeId?: TutorialGuideId;
+  pageIndex: number;
+  pendingAction?: GameAction;
+  pendingActionId?: string;
+}
+
+const TUTORIAL_GUIDES: Record<TutorialGuideId, TutorialGuideDefinition> = {
+  "first-visit": {
+    id: "first-visit",
+    finalLabel: "첫 친구 고르기",
+    pages: [
+      {
+        kicker: "처음 왔어요",
+        title: "포켓몬 도감을 봐요",
+        body: [
+          "여기는 포켓몬 도감이에요.",
+          "밝게 보이는 포켓몬만 고를 수 있어요.",
+          "처음에는 이상해씨, 파이리, 꼬부기를 고를 수 있어요.",
+          "어두운 포켓몬은 나중에 만나면 열려요.",
+        ],
+        focus: ["밝은 카드", "도감 번호", "포켓몬 이름"],
+      },
+      {
+        kicker: "첫 선택",
+        title: "첫 친구를 골라요",
+        body: [
+          "마음에 드는 카드를 먼저 눌러요.",
+          "카드를 누르면 선택 버튼이 나와요.",
+          "선택을 누르면 그 포켓몬과 모험을 시작해요.",
+          "첫 친구는 첫 전투에서 바로 싸워줘요.",
+        ],
+        focus: ["선택 가능 카드", "선택 버튼"],
+      },
+    ],
+  },
+  "first-shop": {
+    id: "first-shop",
+    finalLabel: "상점 둘러보기",
+    pages: [
+      {
+        kicker: "준비 화면",
+        title: "이곳에서 쉬고 준비해요",
+        body: [
+          "여기는 전투 전에 쉬는 준비 화면이에요.",
+          "위쪽에는 지금 가진 코인과 보석이 보여요.",
+          "가운데에는 내 팀 포켓몬들이 보여요.",
+          "아래 카드들은 이번 웨이브의 상점이에요.",
+        ],
+        focus: ["코인", "보석", "팀 슬롯", "상점 카드"],
+      },
+      {
+        kicker: "상점 카드",
+        title: "카드를 쓰고 전투로 가요",
+        body: [
+          "회복 카드는 다친 포켓몬을 치료해요.",
+          "볼 카드는 포켓몬을 잡을 때 써요.",
+          "강화 카드는 다음 만남이나 팀을 도와줘요.",
+          "준비가 끝나면 전투 시작을 눌러요.",
+        ],
+        focus: ["회복 카드", "볼 카드", "전투 시작"],
+      },
+    ],
+  },
+  "first-battle-start": {
+    id: "first-battle-start",
+    finalLabel: "전투 시작",
+    pages: [
+      {
+        kicker: "출발 전",
+        title: "길을 떠나요",
+        body: [
+          "전투 시작을 누르면 길을 떠나요.",
+          "먼저 월드맵처럼 이동 장면이 보여요.",
+          "그다음 야생 포켓몬이나 트레이너를 만나요.",
+          "웨이브 숫자가 올라갈수록 더 어려워져요.",
+        ],
+        focus: ["웨이브", "월드맵", "다음 만남"],
+      },
+      {
+        kicker: "자동 전투",
+        title: "전투는 자동이에요",
+        body: [
+          "전투는 자동으로 진행돼요.",
+          "기술은 포켓몬이 알아서 사용해요.",
+          "유저는 전투 중 버튼을 고르지 않아요.",
+          "이기면 보상과 다음 선택이 나와요.",
+        ],
+        focus: ["전투 로그", "HP", "결과"],
+      },
+    ],
+  },
+  "first-capture-success": {
+    id: "first-capture-success",
+    finalLabel: "팀 정하기",
+    pages: [
+      {
+        kicker: "포획 성공",
+        title: "잡은 포켓몬을 확인해요",
+        body: [
+          "포켓몬을 잡았어요.",
+          "왼쪽에는 새로 잡은 포켓몬이 보여요.",
+          "전투력, HP, 능력치, 기술을 볼 수 있어요.",
+          "지금 팀과 비교해서 데려갈지 고르면 돼요.",
+        ],
+        focus: ["새 포켓몬", "전투력", "기술"],
+      },
+      {
+        kicker: "팀 편성",
+        title: "팀에 넣을지 골라요",
+        body: [
+          "팀에 자리가 있으면 팀에 추가할 수 있어요.",
+          "팀은 최대 6마리까지 데려갈 수 있어요.",
+          "팀이 꽉 차면 한 마리와 바꿔야 해요.",
+          "데려가지 않으려면 놓아주기를 눌러요.",
+        ],
+        focus: ["팀에 추가", "교체", "놓아주기"],
+      },
+    ],
+  },
+  "first-capture-failure": {
+    id: "first-capture-failure",
+    finalLabel: "다시 준비하기",
+    pages: [
+      {
+        kicker: "포획 실패",
+        title: "실패해도 괜찮아요",
+        body: [
+          "포켓몬이 볼에서 나올 때도 있어요.",
+          "사용한 볼은 하나 줄어들어요.",
+          "실패해도 게임은 계속 진행돼요.",
+          "이미 다음 웨이브 준비 화면으로 이동했어요.",
+          "볼이 부족하면 상점에서 새로 사요.",
+        ],
+        focus: ["실패 표시", "볼 구매", "다음 전투"],
+      },
+    ],
+  },
+  "first-trainer-win": {
+    id: "first-trainer-win",
+    finalLabel: "기록 보기",
+    pages: [
+      {
+        kicker: "트레이너 승리",
+        title: "강한 팀을 이겼어요",
+        body: [
+          "트레이너에게 이겼어요.",
+          "트레이너전은 보통 야생 포켓몬보다 더 중요해요.",
+          "몇 웨이브마다 강한 팀이 등장해요.",
+          "이기면 지금 팀을 기록으로 남길 수 있어요.",
+        ],
+        focus: ["트레이너", "체크포인트", "승리 보상"],
+      },
+      {
+        kicker: "팀 기록",
+        title: "내 팀을 남겨요",
+        body: [
+          "팀 이름은 다른 유저가 볼 수 있어요.",
+          "인사말은 짧게 남길 수 있어요.",
+          "정산 저장을 누르면 현재 팀 기록이 저장돼요.",
+          "저장된 팀은 나중에 다른 전투에 등장할 수 있어요.",
+        ],
+        focus: ["팀 이름", "인사말", "정산 저장"],
+      },
+    ],
+  },
+  "first-battle-loss": {
+    id: "first-battle-loss",
+    finalLabel: "다시 도전하기",
+    pages: [
+      {
+        kicker: "도전 종료",
+        title: "이번 도전이 끝났어요",
+        body: [
+          "전투에서 지면 도전이 끝나요.",
+          "가운데에는 몇 웨이브까지 갔는지 보여요.",
+          "아래에는 함께했던 팀이 보여요.",
+          "져도 저장된 도감과 보상은 사라지지 않아요.",
+        ],
+        focus: ["최종 웨이브", "마지막 팀", "도전 결과"],
+      },
+      {
+        kicker: "재도전",
+        title: "다시 시작할 수 있어요",
+        body: [
+          "팀에 있던 포켓몬으로 다시 시작할 수 있어요.",
+          "처음 화면으로 돌아가 새 친구를 골라도 돼요.",
+          "다음 도전에서는 상점과 포획을 더 잘 써봐요.",
+          "다시 시작하면 1웨이브부터 출발해요.",
+        ],
+        focus: ["재출발", "처음 화면", "새 도전"],
+      },
+    ],
+  },
+};
+
 export function mountHtmlRenderer(
   root: HTMLElement,
   client: FrameClient,
@@ -347,6 +570,7 @@ export function mountHtmlRenderer(
     toastBaselineReady: false,
   };
   const shopTarget: ShopTargetState = {};
+  const tutorialGuide = createTutorialGuideState();
 
   const render = () => {
     const frame = client.getFrame();
@@ -357,13 +581,16 @@ export function mountHtmlRenderer(
     }
     updateBattlePlayback(battlePlayback, frame);
     const playbackView = createBattlePlaybackView(battlePlayback, frame);
+    const statusView = options.getStatusView?.() ?? {};
+    syncTutorialGuideState(tutorialGuide, frame, statusView, playbackView);
     root.innerHTML = renderFrame(
       frame,
-      options.getStatusView?.() ?? {},
+      statusView,
       playbackView,
       Boolean(options.onStarterReroll),
       shopTarget.action,
       transientFeedback,
+      tutorialGuide,
     );
     positionActiveMoveVfx(root, playbackView.activeEvent);
     spawnActiveBattleEffect(
@@ -371,12 +598,23 @@ export function mountHtmlRenderer(
       playbackView.activeEvent,
       findActiveVisualCue(frame, playbackView.activeEvent),
     );
-    bindActions(root, client, frame, playbackView, audioMixer, screenWakeLock, shopTarget, render);
+    bindActions(
+      root,
+      client,
+      frame,
+      playbackView,
+      audioMixer,
+      screenWakeLock,
+      shopTarget,
+      tutorialGuide,
+      render,
+    );
     bindShopTargetSelection(root, client, shopTarget, render);
     bindTeamDetailPopup(root);
     bindTeamRecord(root, options, render);
     bindStarterReroll(root, options, render);
     bindStarterDexSelection(root);
+    bindTutorialGuide(root, client, tutorialGuide, audioMixer, screenWakeLock, render);
     audioMixer.apply({
       bgmKey: createBgmPlaybackKey(frame),
       visualCues: frame.visualCues,
@@ -464,6 +702,7 @@ function bindActions(
   audioMixer: AudioMixer,
   screenWakeLock: ScreenWakeLock,
   shopTarget: ShopTargetState,
+  tutorialGuide: TutorialGuideState,
   render: () => void,
 ): void {
   let busy = false;
@@ -477,6 +716,11 @@ function bindActions(
       const action = frame.actions.find((candidate) => candidate.id === button.dataset.actionId);
 
       if (action?.enabled && !playback.isPlaying) {
+        if (shouldInterceptTutorialAction(tutorialGuide, action, frame)) {
+          render();
+          return;
+        }
+
         if (requiresShopTarget(action)) {
           shopTarget.action = action;
           shopTarget.currencyBurstOrigin = captureCurrencyBurstOrigin(action, button);
@@ -773,6 +1017,7 @@ function renderFrame(
   canRerollStarter: boolean,
   shopTargetAction?: FrameAction,
   transientFeedback?: TransientFeedbackState,
+  tutorialGuide?: TutorialGuideState,
 ): string {
   const entityView = createEntityPlaybackView(frame, playback);
   const playerEntities = frame.scene.playerSlots
@@ -822,6 +1067,7 @@ function renderFrame(
     transientFeedback,
   });
   const feedbackToasts = renderFeedbackToastStack(frame, playback, transientFeedback);
+  const tutorialOverlay = renderTutorialGuide(tutorialGuide);
   return `
     <main class="app-shell" data-frame-id="${frame.frameId}" data-protocol="${frame.protocolVersion}" data-phase="${frame.phase}" data-wave="${frame.hud.wave}" data-money="${frame.hud.money}" data-trainer-points="${frame.hud.trainerPoints}" data-battle-field="${escapeHtml(frame.hud.battleField.id)}" data-time-of-day="${frame.hud.battleField.timeOfDay}" ${renderBallDataAttributes(frame)} data-team-size="${playerEntities.length}" data-team-hp-ratio="${frame.hud.teamHpRatio}" data-timeline-count="${frame.timeline.length}" data-battle-playback="${playback.isPlaying ? "playing" : "idle"}" data-battle-sequence="${playback.activeEvent?.sequence ?? 0}" data-battle-event-type="${escapeHtml(playback.activeEvent?.type ?? "")}">
       ${screen}
@@ -832,8 +1078,292 @@ function renderFrame(
           ? ""
           : renderCommandBand(frame, playback.isPlaying, playerEntities, pendingCapture)
       }
+      ${tutorialOverlay}
     </main>
   `;
+}
+
+function createTutorialGuideState(): TutorialGuideState {
+  return {
+    seen: loadTutorialSeenIds(),
+    pageIndex: 0,
+  };
+}
+
+function loadTutorialSeenIds(): Set<TutorialGuideId> {
+  if (typeof localStorage === "undefined") {
+    return new Set();
+  }
+
+  try {
+    const raw = localStorage.getItem(TUTORIAL_STORAGE_KEY);
+    if (!raw) {
+      return new Set();
+    }
+
+    const parsed = JSON.parse(raw) as unknown;
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+      return new Set();
+    }
+
+    const source = parsed as { seen?: unknown };
+    if (typeof source.seen !== "object" || source.seen === null || Array.isArray(source.seen)) {
+      return new Set();
+    }
+
+    return new Set(
+      Object.entries(source.seen as Record<string, unknown>)
+        .filter(([id, value]) => value === true && isTutorialGuideId(id))
+        .map(([id]) => id as TutorialGuideId),
+    );
+  } catch {
+    return new Set();
+  }
+}
+
+function isTutorialGuideId(value: string): value is TutorialGuideId {
+  return tutorialGuideIds.includes(value as TutorialGuideId);
+}
+
+function saveTutorialSeenIds(seen: ReadonlySet<TutorialGuideId>): void {
+  if (typeof localStorage === "undefined") {
+    return;
+  }
+
+  const payload = {
+    seen: Object.fromEntries(tutorialGuideIds.map((id) => [id, seen.has(id)])),
+  };
+
+  try {
+    localStorage.setItem(TUTORIAL_STORAGE_KEY, JSON.stringify(payload));
+  } catch {
+    // Tutorial state is helpful but non-critical; storage failures should not block play.
+  }
+}
+
+function syncTutorialGuideState(
+  state: TutorialGuideState,
+  frame: GameFrame,
+  statusView: HtmlRendererStatusView,
+  playback: BattlePlaybackView,
+): void {
+  if (state.activeId) {
+    const pageCount = TUTORIAL_GUIDES[state.activeId].pages.length;
+    state.pageIndex = Math.max(0, Math.min(state.pageIndex, pageCount - 1));
+    return;
+  }
+
+  const nextId = resolveAutomaticTutorialGuideId(state, frame, statusView, playback);
+  if (nextId) {
+    activateTutorialGuide(state, nextId);
+  }
+}
+
+function resolveAutomaticTutorialGuideId(
+  state: TutorialGuideState,
+  frame: GameFrame,
+  statusView: HtmlRendererStatusView,
+  playback: BattlePlaybackView,
+): TutorialGuideId | undefined {
+  if (!state.seen.has("first-visit") && frame.phase === "starterChoice") {
+    return "first-visit";
+  }
+
+  if (
+    !state.seen.has("first-trainer-win") &&
+    frame.phase === "ready" &&
+    Boolean(statusView.teamRecord) &&
+    !playback.isPlaying
+  ) {
+    return "first-trainer-win";
+  }
+
+  if (
+    !state.seen.has("first-capture-success") &&
+    frame.phase === "teamDecision" &&
+    frame.scene.capture?.result === "success" &&
+    !playback.isPlaying
+  ) {
+    return "first-capture-success";
+  }
+
+  if (
+    !state.seen.has("first-capture-failure") &&
+    frame.phase === "ready" &&
+    frame.scene.capture?.result === "failure" &&
+    !playback.isPlaying
+  ) {
+    return "first-capture-failure";
+  }
+
+  if (
+    !state.seen.has("first-battle-loss") &&
+    frame.phase === "gameOver" &&
+    !playback.isPlaying
+  ) {
+    return "first-battle-loss";
+  }
+
+  if (
+    !state.seen.has("first-shop") &&
+    frame.phase === "ready" &&
+    frame.hud.wave === 1 &&
+    frame.actions.some((action) => action.id.startsWith("shop:")) &&
+    !statusView.teamRecord &&
+    !playback.isPlaying
+  ) {
+    return "first-shop";
+  }
+
+  return undefined;
+}
+
+function shouldInterceptTutorialAction(
+  state: TutorialGuideState,
+  action: FrameAction,
+  frame: GameFrame,
+): boolean {
+  if (
+    action.id !== "encounter:next" ||
+    action.action.type !== "RESOLVE_NEXT_ENCOUNTER" ||
+    frame.phase !== "ready" ||
+    state.activeId ||
+    state.seen.has("first-battle-start")
+  ) {
+    return false;
+  }
+
+  activateTutorialGuide(state, "first-battle-start", {
+    pendingAction: action.action,
+    pendingActionId: action.id,
+  });
+  return true;
+}
+
+function activateTutorialGuide(
+  state: TutorialGuideState,
+  id: TutorialGuideId,
+  options: { pendingAction?: GameAction; pendingActionId?: string } = {},
+): void {
+  state.activeId = id;
+  state.pageIndex = 0;
+  state.pendingAction = options.pendingAction;
+  state.pendingActionId = options.pendingActionId;
+}
+
+function markTutorialGuideSeen(state: TutorialGuideState, id: TutorialGuideId): void {
+  state.seen.add(id);
+  saveTutorialSeenIds(state.seen);
+}
+
+function clearTutorialGuide(state: TutorialGuideState): void {
+  state.activeId = undefined;
+  state.pageIndex = 0;
+  state.pendingAction = undefined;
+  state.pendingActionId = undefined;
+}
+
+function renderTutorialGuide(state: TutorialGuideState | undefined): string {
+  const activeId = state?.activeId;
+  if (!state || !activeId) {
+    return "";
+  }
+
+  const guide = TUTORIAL_GUIDES[activeId];
+  const pageIndex = Math.max(0, Math.min(state.pageIndex, guide.pages.length - 1));
+  const page = guide.pages[pageIndex];
+  const isFirstPage = pageIndex === 0;
+  const isLastPage = pageIndex >= guide.pages.length - 1;
+  const focusItems = page.focus
+    .map((item) => `<span>${escapeHtml(item)}</span>`)
+    .join("");
+
+  return `
+    <section class="tutorial-guide-layer" data-tutorial-id="${activeId}" role="dialog" aria-modal="true" aria-labelledby="tutorial-guide-title">
+      <article class="tutorial-guide-card">
+        <button type="button" class="tutorial-guide-close" data-tutorial-dismiss aria-label="튜토리얼 닫기">×</button>
+        <header>
+          <span class="tutorial-guide-kicker">${escapeHtml(page.kicker)}</span>
+          <span class="tutorial-guide-progress">${pageIndex + 1}/${guide.pages.length}</span>
+          <h2 id="tutorial-guide-title">${escapeHtml(page.title)}</h2>
+        </header>
+        <ul class="tutorial-guide-body">
+          ${page.body.map((line) => `<li>${escapeHtml(line)}</li>`).join("")}
+        </ul>
+        <div class="tutorial-guide-focus" aria-label="곧 볼 화면 요소">
+          <strong>곧 볼 것</strong>
+          <div>${focusItems}</div>
+        </div>
+        <footer>
+          ${
+            isFirstPage
+              ? ""
+              : '<button type="button" class="tutorial-guide-secondary" data-tutorial-prev>이전</button>'
+          }
+          <button type="button" class="tutorial-guide-primary" ${
+            isLastPage ? "data-tutorial-finish" : "data-tutorial-next"
+          }>${escapeHtml(isLastPage ? guide.finalLabel : "다음")}</button>
+        </footer>
+      </article>
+    </section>
+  `;
+}
+
+function bindTutorialGuide(
+  root: HTMLElement,
+  client: FrameClient,
+  state: TutorialGuideState,
+  audioMixer: AudioMixer,
+  screenWakeLock: ScreenWakeLock,
+  render: () => void,
+): void {
+  const activeId = state.activeId;
+  if (!activeId) {
+    return;
+  }
+
+  root.querySelector<HTMLButtonElement>("[data-tutorial-prev]")?.addEventListener("click", () => {
+    state.pageIndex = Math.max(0, state.pageIndex - 1);
+    render();
+  });
+
+  root.querySelector<HTMLButtonElement>("[data-tutorial-next]")?.addEventListener("click", () => {
+    state.pageIndex += 1;
+    render();
+  });
+
+  root
+    .querySelector<HTMLButtonElement>("[data-tutorial-dismiss]")
+    ?.addEventListener("click", () => {
+      markTutorialGuideSeen(state, activeId);
+      clearTutorialGuide(state);
+      render();
+    });
+
+  root
+    .querySelector<HTMLButtonElement>("[data-tutorial-finish]")
+    ?.addEventListener("click", async () => {
+      const pendingAction = state.pendingAction;
+      markTutorialGuideSeen(state, activeId);
+      clearTutorialGuide(state);
+
+      if (!pendingAction) {
+        render();
+        return;
+      }
+
+      const frame = client.getFrame();
+      screenWakeLock.requestFromUserGesture(shouldKeepScreenAwakeAfterAction(frame, pendingAction));
+      audioMixer.unlock();
+      root.dataset.busy = "true";
+
+      try {
+        await client.dispatch(pendingAction);
+      } finally {
+        delete root.dataset.busy;
+        render();
+      }
+    });
 }
 
 function renderBallDataAttributes(frame: GameFrame): string {

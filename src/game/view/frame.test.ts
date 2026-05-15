@@ -355,6 +355,33 @@ describe("game frame contract", () => {
     );
   });
 
+  it("does not remap the finished battle replay after a failed capture advances the wave", () => {
+    for (let index = 0; index < 50; index += 1) {
+      const client = new HeadlessGameClient({ seed: `capture-fail-replay-${index}` });
+      client.dispatch({ type: "START_RUN", starterSpeciesId: 1 });
+      client.dispatch({ type: "RESOLVE_NEXT_ENCOUNTER" });
+
+      if (client.getSnapshot().phase !== "captureDecision") {
+        continue;
+      }
+
+      const beforeAttempt = client.getFrame();
+      const beforeReplay = beforeAttempt.battleReplay.events.map(toReplayIdentity);
+      client.dispatch({ type: "ATTEMPT_CAPTURE", ball: "pokeBall" });
+
+      if (client.getSnapshot().phase !== "ready") {
+        continue;
+      }
+
+      const afterAttempt = client.getFrame();
+      expect(afterAttempt.scene.capture).toMatchObject({ result: "failure" });
+      expect(afterAttempt.battleReplay.events.map(toReplayIdentity)).toEqual(beforeReplay);
+      return;
+    }
+
+    throw new Error("Could not find deterministic failed capture seed.");
+  });
+
   it("marks sheet trainer encounters with deterministic portrait metadata", () => {
     const opponent = new HeadlessGameClient({
       seed: "frame-sheet-opponent",
@@ -435,6 +462,19 @@ function findBattleFrameWithCue(effectKey: string, starterSpeciesId: number) {
   }
 
   throw new Error(`Could not find battle frame with cue ${effectKey}.`);
+}
+
+function toReplayIdentity(
+  event: ReturnType<HeadlessGameClient["getFrame"]>["battleReplay"]["events"][number],
+) {
+  return {
+    sequence: event.sequence,
+    sourceSequence: event.sourceSequence,
+    turn: event.turn,
+    type: event.type,
+    ceremonyStage: event.ceremonyStage,
+    label: event.label,
+  };
 }
 
 function firstFailedCaptureClient(): HeadlessGameClient {

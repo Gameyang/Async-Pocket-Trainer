@@ -969,6 +969,7 @@ export class HeadlessGameClient {
     });
     const battle = {
       ...battleResult,
+      wave: this.state.currentWave,
       encounterSource: encounter.source,
       encounterRoute: encounter.routeId,
       battleField: encounter.battleField,

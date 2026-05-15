@@ -68,6 +68,7 @@ import type {
   BattleStatus,
   BattleFieldState,
   BattleReplayEvent,
+  BattleResult,
   BallType,
   Creature,
   ElementType,
@@ -2187,6 +2188,7 @@ function createBattleCeremonyReplay(
   const playerLeadId = battle.playerTeam[0]?.instanceId;
   const playerLeadName = battle.playerTeam[0]?.speciesName ?? "파트너";
   const opponentLeadId = battle.enemyTeam[0]?.instanceId;
+  const battleWave = resolveBattleReplayWave(state, battle);
   const opponentName =
     state.pendingEncounter?.opponentName ??
     battle.opponentName ??
@@ -2197,7 +2199,7 @@ function createBattleCeremonyReplay(
     state.trainerName,
     opponentName,
     playerLeadName,
-    `${state.seed}:${state.currentWave}:${battle.kind}:${playerLeadId ?? ""}`,
+    `${state.seed}:${battleWave}:${battle.kind}:${playerLeadId ?? ""}`,
     playerLeadId,
     opponentLeadId,
   );
@@ -2205,7 +2207,7 @@ function createBattleCeremonyReplay(
 
   const startEvent = events[0];
 
-  if (shouldPlayBattleFieldMapIntro(state) && startEvent?.type === "battle.start") {
+  if (shouldPlayBattleFieldMapIntroForWave(battleWave) && startEvent?.type === "battle.start") {
     const introEventsAfterMap = introEvents.map((event) => ({
       ...event,
       sequence: event.sequence + 1,
@@ -2285,10 +2287,21 @@ function createBattleCeremonyReplay(
   ];
 }
 
-function shouldPlayBattleFieldMapIntro(state: GameState): boolean {
-  const normalizedWave = Math.max(1, Math.floor(state.currentWave));
+function shouldPlayBattleFieldMapIntroForWave(wave: number): boolean {
+  const normalizedWave = Math.max(1, Math.floor(wave));
 
   return normalizedWave === 1 || (normalizedWave - 1) % BATTLE_FIELD_WAVE_SPAN === 0;
+}
+
+function resolveBattleReplayWave(state: GameState, battle: BattleResult): number {
+  const eventWave = [...state.events]
+    .reverse()
+    .find((event) => event.type === "battle_resolved" || event.type === "capture_attempted")?.wave;
+
+  return Math.max(
+    1,
+    Math.floor(battle.wave ?? eventWave ?? state.pendingEncounter?.wave ?? state.currentWave),
+  );
 }
 
 function createBattleIntroEvents(
