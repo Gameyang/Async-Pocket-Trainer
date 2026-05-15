@@ -80,6 +80,19 @@ const trainerAssetUrls = import.meta.glob<string>("../resources/trainers/*.webp"
   import: "default",
   query: "?url",
 });
+const sceneBgmAssetUrls = import.meta.glob<string>(
+  "../resources/audio/bgm/{starter-ready,battle-capture,team-decision,game-over}/*.m4a",
+  {
+    eager: true,
+    import: "default",
+    query: "?url",
+  },
+);
+const legacyBgmAssetUrls = import.meta.glob<string>("../resources/audio/bgm/*.m4a", {
+  eager: true,
+  import: "default",
+  query: "?url",
+});
 const showdownBgmAssetUrls = import.meta.glob<string>("../resources/audio/bgm/showdown/*.m4a", {
   eager: true,
   import: "default",
@@ -107,6 +120,17 @@ const SHOWDOWN_BGM_BY_KEY: Record<FrameBgmKey, string> = {
   "bgm.teamDecision": "bw-subway-trainer",
   "bgm.gameOver": "spl-elite4",
 };
+
+const SCENE_BGM_FOLDER_BY_KEY: Record<FrameBgmKey, string> = {
+  "bgm.starterReady": "starter-ready",
+  "bgm.battleCapture": "battle-capture",
+  "bgm.teamDecision": "team-decision",
+  "bgm.gameOver": "game-over",
+};
+
+const sceneBgmAssetEntries = Object.entries(sceneBgmAssetUrls).sort(([left], [right]) =>
+  left.localeCompare(right),
+);
 
 const SHOWDOWN_CRY_BY_ELEMENT: Record<ElementType, string> = {
   normal: "snorlax",
@@ -152,9 +176,20 @@ const showdownNotificationAssetUrls = import.meta.glob<string>(
     query: "?url",
   },
 );
+const legacyPhaseChangeAssetUrls = import.meta.glob<string>(
+  "../resources/audio/sfx/phase-change.m4a",
+  {
+    eager: true,
+    import: "default",
+    query: "?url",
+  },
+);
 
 const showdownNotificationUrl =
   showdownNotificationAssetUrls["../resources/audio/bgm/showdown/notification.m4a"];
+const legacyPhaseChangeUrl =
+  legacyPhaseChangeAssetUrls["../resources/audio/sfx/phase-change.m4a"];
+const phaseChangeSfxUrl = showdownNotificationUrl ?? legacyPhaseChangeUrl;
 
 const showdownBgmUrl = (stem: string): string | undefined =>
   showdownBgmAssetUrls[`../resources/audio/bgm/showdown/${stem}.m4a`];
@@ -169,6 +204,8 @@ const showdownElementSfxPattern = /^sfx\.battle\.(?:support\.)?type\.([a-z-]+)(?
 const showdownCryPoolKeyPattern = /^sfx\.cry\.pool\.([a-z0-9-]+)$/;
 
 const showdownCryKeyPattern = /^sfx\.cry\.([a-z0-9-]+)$/;
+
+const sceneBgmKeyPattern = /^bgm\.scene\.([a-z0-9-]+)\.([a-z0-9-]+)$/;
 
 const showdownBgmTrackKeyPattern = /^bgm\.showdown\.([a-z0-9-]+)$/;
 
@@ -340,7 +377,7 @@ export function mountHtmlRenderer(
     bindStarterReroll(root, options, render);
     bindStarterDexSelection(root);
     audioMixer.apply({
-      bgmKey: frame.scene.bgmTrackKey,
+      bgmKey: createBgmPlaybackKey(frame),
       visualCues: frame.visualCues,
       battleReplayKey: playbackView.replayKey,
       activeReplaySequence:
@@ -410,6 +447,12 @@ function shouldKeepScreenAwakeAfterAction(frame: GameFrame, action: GameAction):
   }
 
   return shouldKeepScreenAwake(frame);
+}
+
+function createBgmPlaybackKey(frame: GameFrame): string {
+  const sceneFolder = SCENE_BGM_FOLDER_BY_KEY[frame.scene.bgmKey];
+  const seed = frame.scene.bgmTrackKey.replace(/^bgm\.showdown\./, "");
+  return sceneFolder ? `bgm.scene.${sceneFolder}.${seed}` : frame.scene.bgmTrackKey;
 }
 
 function bindActions(
@@ -1337,8 +1380,11 @@ function renderBattleScreen({
 
   return `
     <section class="screen encounter-panel" data-screen="battle" data-battle-field="${escapeHtml(frame.scene.battleField.id)}" data-time-of-day="${frame.scene.battleField.timeOfDay}"${activeCueAttribute} aria-label="전투 화면">
-      <div class="battlefield" aria-hidden="true"></div>
-      ${showWorldMapIntro && frame.scene.worldMap ? renderWorldMap(frame.scene.worldMap, frame.hud.trainerPortrait) : ""}
+      ${
+        showWorldMapIntro && frame.scene.worldMap
+          ? renderWorldMap(frame.scene.worldMap, frame.hud.trainerPortrait)
+          : '<div class="battlefield" aria-hidden="true"></div>'
+      }
       <div class="platform enemy" aria-hidden="true"></div>
       <div class="platform hero" aria-hidden="true"></div>
       <div class="fx-overlay" aria-hidden="true"></div>
@@ -1364,10 +1410,16 @@ function renderBattleScreen({
 }
 
 function shouldShowBattleWorldMapIntro(frame: GameFrame, playback: BattlePlaybackView): boolean {
+  return playback.isPlaying && isBattleWorldMapIntroEvent(frame, playback.activeEvent);
+}
+
+function isBattleWorldMapIntroEvent(
+  frame: GameFrame,
+  activeEvent: FrameBattleReplayEvent | undefined,
+): boolean {
   return (
-    playback.isPlaying &&
-    playback.activeEvent?.type === "battle.start" &&
-    Boolean(frame.scene.worldMap)
+    activeEvent?.type === "battle.start" &&
+    (frame.scene.worldMap?.mode === "start" || frame.scene.worldMap?.mode === "transition")
   );
 }
 
@@ -3322,14 +3374,17 @@ function scheduleBattlePlayback(
     return;
   }
 
-  playback.timerId = window.setTimeout(() => {
-    playback.timerId = undefined;
-    if (lifecycle.suspended) {
-      return;
-    }
-    playback.cursor = Math.min(playback.cursor + 1, frame.battleReplay.events.length - 1);
-    render();
-  }, resolveBattleReplayStepMs(frame.battleReplay.events[playback.cursor]));
+  playback.timerId = window.setTimeout(
+    () => {
+      playback.timerId = undefined;
+      if (lifecycle.suspended) {
+        return;
+      }
+      playback.cursor = Math.min(playback.cursor + 1, frame.battleReplay.events.length - 1);
+      render();
+    },
+    resolveBattleReplayStepMs(frame, frame.battleReplay.events[playback.cursor]),
+  );
 }
 
 function clearBattlePlaybackTimer(playback: BattlePlaybackState): void {
@@ -3341,8 +3396,11 @@ function clearBattlePlaybackTimer(playback: BattlePlaybackState): void {
   playback.timerId = undefined;
 }
 
-function resolveBattleReplayStepMs(activeEvent: FrameBattleReplayEvent | undefined): number {
-  if (activeEvent?.type === "battle.start") {
+function resolveBattleReplayStepMs(
+  frame: GameFrame,
+  activeEvent: FrameBattleReplayEvent | undefined,
+): number {
+  if (isBattleWorldMapIntroEvent(frame, activeEvent)) {
     return 1480;
   }
 
@@ -3411,7 +3469,7 @@ function resolveTrainerAssetPath(assetPath: string): string {
 
 function resolveSfxUrl(soundKey: string): string | undefined {
   if (soundKey === "sfx.phase.change") {
-    return showdownNotificationUrl;
+    return phaseChangeSfxUrl;
   }
 
   const poolMatch = showdownCryPoolKeyPattern.exec(soundKey);
@@ -3434,6 +3492,15 @@ function resolveSfxUrl(soundKey: string): string | undefined {
 }
 
 function resolveBgmUrl(bgmKey: string): string | undefined {
+  const sceneMatch = sceneBgmKeyPattern.exec(bgmKey);
+  if (sceneMatch) {
+    return (
+      sceneBgmUrl(sceneMatch[1], sceneMatch[2]) ??
+      showdownBgmUrl(sceneMatch[2]) ??
+      legacySceneBgmUrl(sceneMatch[1])
+    );
+  }
+
   const trackMatch = showdownBgmTrackKeyPattern.exec(bgmKey);
   if (trackMatch) {
     return showdownBgmUrl(trackMatch[1]);
@@ -3441,6 +3508,22 @@ function resolveBgmUrl(bgmKey: string): string | undefined {
 
   const fallbackStem = SHOWDOWN_BGM_BY_KEY[bgmKey as FrameBgmKey];
   return fallbackStem ? showdownBgmUrl(fallbackStem) : undefined;
+}
+
+function sceneBgmUrl(sceneFolder: string, seed: string): string | undefined {
+  const candidates = sceneBgmAssetEntries
+    .filter(([assetPath]) => assetPath.includes(`/audio/bgm/${sceneFolder}/`))
+    .map(([, url]) => url);
+
+  if (candidates.length === 0) {
+    return undefined;
+  }
+
+  return candidates[positiveHash(seed) % candidates.length];
+}
+
+function legacySceneBgmUrl(sceneFolder: string): string | undefined {
+  return legacyBgmAssetUrls[`../resources/audio/bgm/${sceneFolder}.m4a`];
 }
 
 function showdownCryPoolUrl(seed: string): string | undefined {

@@ -40,12 +40,12 @@ describe("game frame contract", () => {
     expect(frame.battleReplay.sequenceIndex).toBe(replay.at(-1)?.sequence);
     expect(frame.scene.trainer).toBeUndefined();
     expect(replay.slice(0, 4).map((event) => event.type)).toEqual([
+      "battle.start",
       "trainer.intro",
       "trainer.throw",
       "creature.summon",
-      "battle.start",
     ]);
-    expect(replay[3]).toMatchObject({ sequence: 4, sourceSequence: 1, type: "battle.start" });
+    expect(replay[0]).toMatchObject({ sequence: 1, sourceSequence: 1, type: "battle.start" });
     expect(replay[1].playerLine).toMatch(/이상해씨/);
     expect(replay[2].playerLine).toMatch(/이상해씨/);
     expect(replay.at(-1)?.type).toBe("battle.end");
@@ -150,6 +150,17 @@ describe("game frame contract", () => {
       status: "active",
       timeOfDay: "night",
     });
+
+    client.dispatch({ type: "RESOLVE_NEXT_ENCOUNTER" });
+    frame = client.getFrame();
+
+    expect(frame.scene.worldMap?.mode).toBe("transition");
+    expect(frame.battleReplay.events.slice(0, 4).map((event) => event.type)).toEqual([
+      "battle.start",
+      "trainer.intro",
+      "trainer.throw",
+      "creature.summon",
+    ]);
   });
 
   it("rotates every downloaded Showdown BGM track through scene metadata", () => {

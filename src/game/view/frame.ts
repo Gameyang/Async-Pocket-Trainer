@@ -2109,6 +2109,54 @@ function createBattleCeremonyReplay(
     opponentLeadId,
   );
   const hasTrainerOutro = battle.kind === "trainer";
+
+  const startEvent = events[0];
+
+  if (shouldPlayBattleFieldMapIntro(state) && startEvent?.type === "battle.start") {
+    const introEventsAfterMap = introEvents.map((event) => ({
+      ...event,
+      sequence: event.sequence + 1,
+    }));
+    const remappedEvents = events.slice(1).map((event, index, restEvents) => {
+      const isFinalEvent = index === restEvents.length - 1;
+
+      return {
+        ...event,
+        sequence: event.sequence + (isFinalEvent && hasTrainerOutro ? 4 : 3),
+        sourceSequence: event.sequence,
+      };
+    });
+    const finalEndEvent = remappedEvents.at(-1);
+
+    if (finalEndEvent) {
+      const firstEvent = {
+        ...startEvent,
+        sequence: 1,
+        sourceSequence: startEvent.sequence,
+      };
+
+      if (!hasTrainerOutro) {
+        return [firstEvent, ...introEventsAfterMap, ...remappedEvents];
+      }
+
+      return [
+        firstEvent,
+        ...introEventsAfterMap,
+        ...remappedEvents.slice(0, -1),
+        createTrainerBattleOutroEvent({
+          sequence: finalEndEvent.sequence - 1,
+          turn: finalEndEvent.turn,
+          winner: battle.winner,
+          playerName: state.trainerName,
+          opponentName,
+          playerLeadId,
+          opponentLeadId,
+        }),
+        finalEndEvent,
+      ];
+    }
+  }
+
   const remappedEvents = events.map((event, index) => {
     const isFinalEvent = index === events.length - 1;
 
@@ -2142,6 +2190,12 @@ function createBattleCeremonyReplay(
     }),
     finalEndEvent,
   ];
+}
+
+function shouldPlayBattleFieldMapIntro(state: GameState): boolean {
+  const normalizedWave = Math.max(1, Math.floor(state.currentWave));
+
+  return normalizedWave === 1 || (normalizedWave - 1) % BATTLE_FIELD_WAVE_SPAN === 0;
 }
 
 function createBattleIntroEvents(

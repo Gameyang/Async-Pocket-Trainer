@@ -980,33 +980,44 @@ p {
   position: absolute;
   display: grid;
   align-items: end;
-  gap: 7px;
-  max-width: 78%;
+  gap: 8px;
+  max-width: 88%;
   filter: drop-shadow(0 8px 0 rgba(25, 38, 36, 0.2));
 }
 
 .ceremony-trainer img {
-  width: min(25vw, 94px);
-  max-height: 154px;
+  width: min(28vw, 112px);
+  max-height: 180px;
   object-fit: contain;
   image-rendering: pixelated;
   transform-origin: center bottom;
 }
 
 .ceremony-trainer.hero {
-  bottom: 32%;
-  left: 5%;
-  grid-template-columns: minmax(58px, 82px) minmax(0, 168px);
+  bottom: 24%;
+  left: 3%;
+  z-index: 2;
+  grid-template-columns: minmax(86px, 136px) minmax(0, 190px);
+}
+
+.ceremony-trainer.hero img {
+  width: min(36vw, 142px);
+  max-height: 218px;
 }
 
 .ceremony-trainer.enemy {
-  top: 13%;
+  top: 11%;
   right: 5%;
-  grid-template-columns: minmax(0, 168px) minmax(56px, 82px);
+  z-index: 1;
+  gap: 6px;
+  grid-template-columns: minmax(0, 160px) minmax(62px, 104px);
 }
 
 .ceremony-trainer.enemy img {
   order: 2;
+  width: min(23vw, 104px);
+  max-height: 164px;
+  filter: saturate(0.92) brightness(0.96);
 }
 
 .ceremony-trainer.enemy .ceremony-speech {
@@ -5750,6 +5761,28 @@ button.move-detail-content:hover {
     width: min(48%, 150px);
   }
 
+  .ceremony-trainer.hero {
+    bottom: 25%;
+    left: 2%;
+    grid-template-columns: minmax(74px, 112px) minmax(0, 152px);
+  }
+
+  .ceremony-trainer.hero img {
+    width: min(38vw, 118px);
+    max-height: 180px;
+  }
+
+  .ceremony-trainer.enemy {
+    top: 12%;
+    right: 2%;
+    grid-template-columns: minmax(0, 136px) minmax(54px, 84px);
+  }
+
+  .ceremony-trainer.enemy img {
+    width: min(25vw, 86px);
+    max-height: 136px;
+  }
+
   .team-list,
   .sync-form,
   .trainer-form,
@@ -6200,6 +6233,26 @@ button.move-detail-content:hover {
 
   .encounter-panel .enemy-mon {
     width: min(26%, 150px);
+  }
+
+  .encounter-panel .ceremony-trainer.hero {
+    bottom: 22%;
+    grid-template-columns: minmax(78px, 120px) minmax(0, 168px);
+  }
+
+  .encounter-panel .ceremony-trainer.hero img {
+    width: min(30vw, 124px);
+    max-height: 186px;
+  }
+
+  .encounter-panel .ceremony-trainer.enemy {
+    top: 9%;
+    grid-template-columns: minmax(0, 144px) minmax(58px, 92px);
+  }
+
+  .encounter-panel .ceremony-trainer.enemy img {
+    width: min(20vw, 92px);
+    max-height: 146px;
   }
 
   /* ── Game Over: final team (left) / result board + matchup (right) ── */

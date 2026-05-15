@@ -56,9 +56,14 @@ public distribution.
   - Root audio and `notification.wav`: `src/resources/audio/bgm/showdown/*.m4a`
   - Pokemon cries: `src/resources/audio/cries/showdown/*.m4a`
   - Manifest: `src/resources/audio/showdownAudioManifest.json`
-- Used in: all runtime BGM and SFX resolution. The 19 Showdown music tracks rotate by phase/wave,
-  `notification.m4a` is used for phase changes, and battle/capture/faint cues mix typed SFX,
-  event-specific cry-pool variants, and involved Pokemon cries where available.
+- Used in: all runtime BGM and SFX resolution. Scene BGM folders in
+  `src/resources/audio/bgm/{starter-ready,battle-capture,team-decision,game-over}/` are checked
+  first, then the 19 Showdown music tracks fall back by phase/wave rotation. `notification.m4a` is
+  used for phase changes, and battle/capture/faint cues mix typed SFX, event-specific cry-pool
+  variants, and involved Pokemon cries where available.
+- Local scene BGM import: place legally owned source files under
+  `tmp/scene-bgm/{starter-ready,battle-capture,team-decision,game-over}/`, then run
+  `npm run assets:audio:scene-bgm` to re-encode them to scene-folder `.m4a` files.
 
 ## Audio - Legacy OpenGameArt SFX
 

@@ -18,6 +18,7 @@
     "render:check": "npm run build && playwright test",
     "assets:generate": "node scripts/generate-local-assets.mjs",
     "assets:audio:showdown": "node scripts/build-showdown-audio-assets.mjs",
+    "assets:audio:scene-bgm": "node scripts/import-scene-bgm-assets.mjs",
     "assets:audio": "npm run assets:audio:showdown",
     "assets:trainers:hf": "node scripts/build-hf-trainer-assets.mjs",
     "assets:trainers:showdown": "node scripts/build-showdown-trainer-assets.mjs",
