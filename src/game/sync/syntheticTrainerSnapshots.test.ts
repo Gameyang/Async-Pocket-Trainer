@@ -41,4 +41,20 @@ describe("synthetic trainer snapshots", () => {
       }),
     ).rejects.toThrow(/checkpoint waves/);
   });
+
+  it("uses explicitly provided trainer names", async () => {
+    const snapshots = await createSyntheticTrainerSnapshots({
+      seed: "named-seed",
+      waves: [5],
+      countPerWave: 2,
+      trainerNames: ["Spark Tester", "Sleep Boss"],
+      createdAt: "2026-05-15T00:00:00.000Z",
+      maxAttempts: 120,
+    });
+
+    expect(snapshots.map((snapshot) => snapshot.trainerName)).toEqual([
+      "Spark Tester",
+      "Sleep Boss",
+    ]);
+  });
 });

@@ -10,6 +10,7 @@ interface CliArgs {
   seed: string;
   waves: number[];
   countPerWave: number;
+  trainerNames?: string[];
   createdAt?: string;
   maxAttempts: number;
   strategy: AutoPlayStrategy;
@@ -26,6 +27,7 @@ async function main(): Promise<void> {
     seed: args.seed,
     waves: args.waves,
     countPerWave: args.countPerWave,
+    trainerNames: args.trainerNames,
     createdAt: args.createdAt,
     maxAttempts: args.maxAttempts,
     strategy: args.strategy,
@@ -104,6 +106,7 @@ function parseArgs(rawArgs: string[]): CliArgs {
     seed: values.get("seed") ?? "manual-synthetic",
     waves: parseWaveList(values.get("waves") ?? "5,10,15"),
     countPerWave: parsePositiveInteger(values.get("count"), 2, "count"),
+    trainerNames: parseTrainerNames(values),
     createdAt: values.get("created-at"),
     maxAttempts: parsePositiveInteger(values.get("max-attempts"), 120, "max-attempts"),
     strategy: values.get("strategy") === "conserveBalls" ? "conserveBalls" : "greedy",
@@ -159,6 +162,44 @@ function parsePositiveInteger(value: string | undefined, fallback: number, field
   }
 
   return parsed;
+}
+
+function parseTrainerNames(values: ReadonlyMap<string, string>): string[] | undefined {
+  const rawJson = values.get("names-json");
+
+  if (rawJson) {
+    const parsed = JSON.parse(rawJson) as unknown;
+
+    if (!Array.isArray(parsed)) {
+      throw new Error("names-json must be a JSON array of strings.");
+    }
+
+    return normalizeNames(parsed);
+  }
+
+  const rawNames = values.get("names");
+
+  if (!rawNames) {
+    return undefined;
+  }
+
+  return normalizeNames(rawNames.split(","));
+}
+
+function normalizeNames(values: readonly unknown[]): string[] {
+  const names = values.map((value) => {
+    if (typeof value !== "string") {
+      throw new Error("trainer names must be strings.");
+    }
+
+    return value.trim();
+  });
+
+  if (names.length === 0 || names.some((name) => name.length === 0)) {
+    throw new Error("trainer names must be non-empty strings.");
+  }
+
+  return names;
 }
 
 async function submitFromNode(

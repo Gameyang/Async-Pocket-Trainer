@@ -13,6 +13,7 @@ export interface SyntheticTrainerSnapshotOptions {
   seed: string;
   wave: number;
   index: number;
+  trainerName?: string;
   createdAt?: string;
   maxAttempts?: number;
   strategy?: AutoPlayStrategy;
@@ -23,6 +24,7 @@ export interface SyntheticTrainerSnapshotBatchOptions {
   seed: string;
   waves: readonly number[];
   countPerWave: number;
+  trainerNames?: readonly string[];
   createdAt?: string;
   maxAttempts?: number;
   strategy?: AutoPlayStrategy;
@@ -49,6 +51,7 @@ export async function createSyntheticTrainerSnapshots(
           ...options,
           wave,
           index,
+          trainerName: options.trainerNames?.[index % options.trainerNames.length],
         }),
       );
     }
@@ -147,6 +150,10 @@ function isTargetCheckpointWin(state: GameState, targetWave: number): boolean {
 }
 
 function createSyntheticTrainerName(options: SyntheticTrainerSnapshotOptions): string {
+  if (options.trainerName) {
+    return requireNonEmptyString(options.trainerName, "trainerName");
+  }
+
   const rng = new SeededRng(`${options.seed}:name:${options.wave}:${options.index}`);
   const prefix = options.trainerNamePrefix ?? DEFAULT_TRAINER_NAME_PREFIX;
   const surname = rng.pick(SURNAMES);
@@ -174,4 +181,14 @@ function assertNonNegativeInteger(value: number, field: string): void {
   if (!Number.isInteger(value) || value < 0) {
     throw new Error(`${field} must be a non-negative integer.`);
   }
+}
+
+function requireNonEmptyString(value: string, field: string): string {
+  const trimmed = value.trim();
+
+  if (trimmed.length === 0) {
+    throw new Error(`${field} must be a non-empty string.`);
+  }
+
+  return trimmed;
 }
