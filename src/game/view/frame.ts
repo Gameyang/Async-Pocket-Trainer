@@ -218,6 +218,8 @@ export interface FrameMoveSummary {
 export interface FrameMoveDexEntry {
   moveId: string;
   level: number;
+  learned: boolean;
+  source: "level-up" | "loadout";
   unlocked: boolean;
   rewardClaimable: boolean;
   rewardClaimed: boolean;
@@ -1167,23 +1169,57 @@ function createMoveDexEntries(
   dexContext: FrameDexContext,
 ): FrameMoveDexEntry[] {
   const species = getSpecies(creature.speciesId);
+  const learnedMoveIds = new Set(creature.moves.map((move) => move.id));
+  const speciesMoveIds = new Set(species.levelUpMoves.map((entry) => entry.moveId));
+  const loadoutEntries = creature.moves
+    .filter((move) => !speciesMoveIds.has(move.id))
+    .map((move) =>
+      createMoveDexEntry({
+        moveId: move.id,
+        level: creature.level ?? 1,
+        source: "loadout",
+        learned: true,
+        dexContext,
+      }),
+    );
 
-  return species.levelUpMoves.map((entry) => {
-    const unlocked = dexContext.unlockedMoveIds.has(entry.moveId);
-    const rewardId = getSkillRewardAchievementId(entry.moveId);
-    const rewardTrainerPoints = calculateSkillUnlockReward(entry.moveId) ?? 0;
-    const rewardClaimed = dexContext.claimedAchievementIds.has(rewardId);
+  return [
+    ...loadoutEntries,
+    ...species.levelUpMoves.map((entry) =>
+      createMoveDexEntry({
+        moveId: entry.moveId,
+        level: entry.level,
+        source: "level-up",
+        learned: learnedMoveIds.has(entry.moveId),
+        dexContext,
+      }),
+    ),
+  ];
+}
 
-    return {
-      moveId: entry.moveId,
-      level: entry.level,
-      unlocked,
-      rewardClaimable: unlocked && rewardTrainerPoints > 0 && !rewardClaimed,
-      rewardClaimed,
-      rewardTrainerPoints,
-      move: unlocked ? toFrameMoveSummary(getMove(entry.moveId)) : undefined,
-    };
-  });
+function createMoveDexEntry(options: {
+  moveId: string;
+  level: number;
+  learned: boolean;
+  source: FrameMoveDexEntry["source"];
+  dexContext: FrameDexContext;
+}): FrameMoveDexEntry {
+  const unlocked = options.learned || options.dexContext.unlockedMoveIds.has(options.moveId);
+  const rewardId = getSkillRewardAchievementId(options.moveId);
+  const rewardTrainerPoints = calculateSkillUnlockReward(options.moveId) ?? 0;
+  const rewardClaimed = options.dexContext.claimedAchievementIds.has(rewardId);
+
+  return {
+    moveId: options.moveId,
+    level: options.level,
+    learned: options.learned,
+    source: options.source,
+    unlocked,
+    rewardClaimable: unlocked && rewardTrainerPoints > 0 && !rewardClaimed,
+    rewardClaimed,
+    rewardTrainerPoints,
+    move: unlocked ? toFrameMoveSummary(getMove(options.moveId)) : undefined,
+  };
 }
 
 function createMoveEffectText(move: MoveDefinition): string {

@@ -1838,6 +1838,8 @@ function renderTeamDetailPopups(
 
 function renderTeamDetailPopup(entity: FrameEntity, actions: readonly FrameAction[]): string {
   const moves = entity.moveDex.map((entry) => renderTeamDetailMove(entry, actions)).join("");
+  const currentMoves = entity.moves.map((move) => renderTeamDetailCurrentMove(move)).join("");
+  const learnedMoveCount = entity.moveDex.filter((entry) => entry.learned).length;
   const primaryType: ElementType = entity.types[0] ?? "normal";
   const palette = getElementPalette(primaryType);
   const paletteVars =
@@ -1886,12 +1888,27 @@ function renderTeamDetailPopup(entity: FrameEntity, actions: readonly FrameActio
           ${renderStatRow("스피드", entity.stats.speed, "speed")}
           ${renderStatRow("전투력", entity.scores.power, "power", STAT_BAR_POWER_CAP)}
         </dl>
-        <section class="team-detail-moves" aria-label="스킬">
-          <h3>스킬</h3>
+        <section class="team-detail-current-moves" aria-label="장착 스킬">
+          <h3>장착 스킬</h3>
+          <ul>${currentMoves}</ul>
+        </section>
+        <section class="team-detail-moves" aria-label="스킬도감">
+          <h3>스킬도감 <span>${learnedMoveCount}/${entity.moveDex.length}</span></h3>
           <ul>${moves}</ul>
         </section>
       </article>
     </div>
+  `;
+}
+
+function renderTeamDetailCurrentMove(move: FrameEntity["moves"][number]): string {
+  return `
+    <li class="team-detail-current-move" data-type="${escapeHtml(move.typeKey)}" data-category="${move.category}">
+      <span class="move-type-dot" data-type="${escapeHtml(move.typeKey)}" aria-hidden="true"></span>
+      <strong>${escapeHtml(move.name)}</strong>
+      <em>${escapeHtml(localizeMoveCategory(move.category))}</em>
+      <small>${escapeHtml(move.type)}</small>
+    </li>
   `;
 }
 
@@ -1908,22 +1925,23 @@ function renderTeamDetailMove(
     ? ` type="button" data-action-id="${escapeHtml(claimAction.id)}"`
     : "";
   const moveTypeKey: ElementType = move?.typeKey ?? "normal";
-  const moveState = entry.unlocked ? "unlocked" : "locked";
+  const moveState = entry.learned ? "learned" : entry.unlocked ? "unlocked" : "locked";
   const rewardState = claimAction ? "claimable" : entry.rewardClaimed ? "claimed" : "none";
+  const stateBadge = entry.learned
+    ? '<span class="move-detail-state-badge" data-state="learned">사용중</span>'
+    : entry.unlocked
+      ? '<span class="move-detail-state-badge" data-state="unlocked">언락</span>'
+      : `<span class="move-detail-state-badge" data-state="locked">Lv. ${entry.level}</span>`;
 
   return `
-    <li class="team-detail-move-card" data-move-state="${moveState}" data-reward-state="${rewardState}" data-type="${escapeHtml(moveTypeKey)}">
+    <li class="team-detail-move-card" data-move-state="${moveState}" data-reward-state="${rewardState}" data-type="${escapeHtml(moveTypeKey)}" data-move-source="${entry.source}">
       <${contentTag}${actionAttribute} class="move-detail-content">
         ${claimAction ? renderRewardAlertBadge(claimAction) : ""}
         <div class="move-detail-head">
           <span class="move-type-dot" data-type="${escapeHtml(moveTypeKey)}" aria-hidden="true"></span>
           <strong class="move-detail-name">${escapeHtml(move?.name ?? "???")}</strong>
           <span class="move-detail-type" data-type="${escapeHtml(moveTypeKey)}">${escapeHtml(move?.type ?? "LOCKED")}</span>
-          ${
-            entry.unlocked
-              ? '<span class="move-detail-state-badge" data-state="unlocked">언락</span>'
-              : `<span class="move-detail-state-badge" data-state="locked">Lv. ${entry.level}</span>`
-          }
+          ${stateBadge}
         </div>
         <dl class="move-detail-grid">
           ${

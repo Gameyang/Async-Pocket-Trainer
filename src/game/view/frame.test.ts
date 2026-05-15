@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
+import { createCreature } from "../creatureFactory";
+import { defaultBalance } from "../data/catalog";
 import { HeadlessGameClient } from "../headlessClient";
+import { SeededRng } from "../rng";
 import { createTeamRecordSummary, createTrainerTeamId } from "../sync/teamBattleRecord";
 import { createTrainerSnapshot } from "../sync/trainerSnapshot";
 import { validateFrameContract } from "./frame";
@@ -222,6 +225,41 @@ describe("game frame contract", () => {
       effect: "10% 확률로 상대를 마비 상태로 만듭니다.",
     });
     expect(thunderShock?.effect).not.toMatch(/Has a|target|Inflicts/i);
+  });
+
+  it("marks currently equipped and fallback moves as learned in the move dex", () => {
+    const client = new HeadlessGameClient({ seed: "move-dex-loadout" });
+    client.dispatch({ type: "START_RUN", starterSpeciesId: 1 });
+
+    const saved = client.saveSnapshot();
+    saved.state.team = [
+      createCreature({
+        rng: new SeededRng("move-dex-loadout-creature"),
+        wave: 1,
+        balance: defaultBalance,
+        speciesId: 4,
+        role: "wild",
+      }),
+    ];
+    client.loadSnapshot(saved);
+
+    const entity = client.getFrame().entities[0];
+    expect(entity.moves.map((move) => move.id)).toEqual(["scratch", "harden"]);
+
+    for (const move of entity.moves) {
+      expect(entity.moveDex.find((entry) => entry.moveId === move.id)).toMatchObject({
+        learned: true,
+        unlocked: true,
+        move: expect.objectContaining({ id: move.id }),
+      });
+    }
+    expect(entity.moveDex.find((entry) => entry.moveId === "scratch")).toMatchObject({
+      source: "level-up",
+    });
+    expect(entity.moveDex.find((entry) => entry.moveId === "harden")).toMatchObject({
+      source: "loadout",
+      level: 1,
+    });
   });
 
   it("classifies replay cues with readable names and effect tiers", () => {
