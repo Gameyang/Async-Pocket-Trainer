@@ -690,8 +690,9 @@ export function mountHtmlRenderer(
       bgmKey: createBgmPlaybackKey(frame),
       visualCues: frame.visualCues,
       battleReplayKey: playbackView.replayKey,
-      activeReplaySequence:
-        playbackView.activeEvent?.sourceSequence ?? playbackView.activeEvent?.sequence,
+      activeReplaySequence: resolveBattleSfxReplaySequence(playbackView.activeEvent),
+      activeEventSoundId: createActiveReplayEventSoundId(frame, playbackView.activeEvent),
+      activeEventSoundKeys: resolveActiveReplayEventSoundKeys(frame, playbackView.activeEvent),
       isReplayPlaying: playbackView.isPlaying,
       hasOngoingReplay: Boolean(playbackView.replayKey),
     });
@@ -764,6 +765,56 @@ function createBgmPlaybackKey(frame: GameFrame): string {
   const sceneFolder = SCENE_BGM_FOLDER_BY_KEY[frame.scene.bgmKey];
   const seed = frame.scene.bgmTrackKey.replace(/^bgm\.showdown\./, "");
   return sceneFolder ? `bgm.scene.${sceneFolder}.${seed}` : frame.scene.bgmTrackKey;
+}
+
+function resolveBattleSfxReplaySequence(
+  activeEvent: FrameBattleReplayEvent | undefined,
+): number | undefined {
+  if (!activeEvent) {
+    return undefined;
+  }
+
+  switch (activeEvent.type) {
+    case "damage.apply":
+    case "move.miss":
+    case "move.effect":
+    case "status.apply":
+    case "status.immune":
+    case "creature.faint":
+      return activeEvent.sourceSequence ?? activeEvent.sequence;
+    default:
+      return undefined;
+  }
+}
+
+function createActiveReplayEventSoundId(
+  frame: GameFrame,
+  activeEvent: FrameBattleReplayEvent | undefined,
+): string | undefined {
+  const soundKeys = resolveActiveReplayEventSoundKeys(frame, activeEvent);
+
+  return soundKeys.length > 0 && activeEvent
+    ? `replay:${activeEvent.sequence}:${activeEvent.type}:${soundKeys.join(",")}`
+    : undefined;
+}
+
+function resolveActiveReplayEventSoundKeys(
+  frame: GameFrame,
+  activeEvent: FrameBattleReplayEvent | undefined,
+): string[] {
+  if (activeEvent?.type !== "creature.summon") {
+    return [];
+  }
+
+  const entityIds = [activeEvent.activePlayerId, activeEvent.activeEnemyId].filter(
+    (entityId): entityId is string => Boolean(entityId),
+  );
+  const soundKeys = entityIds
+    .map((entityId) => frame.entities.find((entity) => entity.id === entityId)?.speciesIdentifier)
+    .filter((identifier): identifier is string => Boolean(identifier))
+    .map((identifier) => `sfx.cry.${identifier}`);
+
+  return [...new Set(soundKeys)];
 }
 
 function bindActions(

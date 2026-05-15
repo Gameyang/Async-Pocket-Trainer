@@ -31,6 +31,7 @@ describe("wave encounter routing", () => {
 
   it("starts wild encounters near the starter level", () => {
     const levels = new Set<number>();
+    const speciesIds = new Set<number>();
 
     for (let index = 0; index < 24; index += 1) {
       const encounter = createWildEncounter(
@@ -39,10 +40,14 @@ describe("wave encounter routing", () => {
         defaultBalance,
       );
       levels.add(encounter.enemyTeam[0].level ?? 0);
+      speciesIds.add(encounter.enemyTeam[0].speciesId);
       expect([4, 5]).toContain(encounter.enemyTeam[0].level);
+      expect([16, 19]).toContain(encounter.enemyTeam[0].speciesId);
+      expect(encounter.enemyTeam[0].moves[0].id).toBe("tackle");
     }
 
     expect(levels).toEqual(new Set([4, 5]));
+    expect(speciesIds).toEqual(new Set([16, 19]));
   });
 
   it("continues wild levels from the wave value after the opening range", () => {

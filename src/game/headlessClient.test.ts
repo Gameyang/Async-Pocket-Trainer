@@ -45,10 +45,11 @@ describe("HeadlessGameClient", () => {
   });
 
   it("starts the first wild encounter near the level-five starter", () => {
-    const client = new HeadlessGameClient({ seed: "opening-wild-level" });
+    const client = new HeadlessGameClient({ seed: "opening-route-one-0" });
 
     client.dispatch({ type: "START_RUN", starterSpeciesId: 1 });
     expect(client.getSnapshot().team[0].level).toBe(5);
+    expect(client.getSnapshot().team[0].moves.map((move) => move.id)).toEqual(["tackle", "growl"]);
 
     client.dispatch({ type: "RESOLVE_NEXT_ENCOUNTER" });
     const snapshot = client.getSnapshot();
@@ -57,6 +58,7 @@ describe("HeadlessGameClient", () => {
 
     expect(snapshot.lastBattle?.kind).toBe("wild");
     expect([4, 5]).toContain(encounterEnemy?.level);
+    expect([16, 19]).toContain(encounterEnemy?.speciesId);
     expect(battleEnemy?.level).toBe(encounterEnemy?.level);
     expect(snapshot.lastBattle?.log.some((entry) => entry.damage > 1)).toBe(true);
   });
@@ -219,6 +221,45 @@ describe("HeadlessGameClient", () => {
     expect(client.getSnapshot().money).toBe(14);
   });
 
+  it("charges the discounted frame price for sale shop purchases", () => {
+    const saleActionIds = [
+      "shop:rest",
+      "shop:pokeball",
+      "shop:heal:team:3",
+      "shop:rarity-boost:2",
+      "shop:level-boost:2",
+    ];
+
+    for (const actionId of saleActionIds) {
+      const client = startFromFrameAction(`sale-price-${actionId}`);
+      const saved = client.saveSnapshot();
+      saved.state.money = 100;
+      saved.state.shopDeal = {
+        wave: saved.state.currentWave,
+        discountedActionIds: [actionId],
+        discountRate: 0.25,
+      };
+      saved.state.shopInventory = {
+        wave: saved.state.currentWave,
+        rerollCount: 0,
+        entries: [{ actionId, stock: 1, initialStock: 1 }],
+      };
+      client.loadSnapshot(saved);
+
+      const action = client.getFrame().actions.find((candidate) => candidate.id === actionId);
+      expect(action).toMatchObject({
+        cost: expect.any(Number),
+        originalCost: expect.any(Number),
+        enabled: true,
+      });
+
+      const beforeMoney = client.getSnapshot().money;
+      dispatchFrameAction(client, actionId);
+
+      expect(beforeMoney - client.getSnapshot().money).toBe(action?.cost);
+    }
+  });
+
   it("rolls nine shop product items across every inventory group", () => {
     const client = new HeadlessGameClient({ seed: "shop-nine-grid" });
     client.dispatch({ type: "START_RUN", starterSpeciesId: 1 });
@@ -282,7 +323,7 @@ describe("HeadlessGameClient", () => {
   });
 
   it("preserves battle field state across battle replay and snapshot restore", () => {
-    const client = startFromFrameAction("opening-wild-level");
+    const client = startFromFrameAction("opening-route-one-0");
     const battleFieldOrder = client.getSnapshot().battleFieldOrder ?? [];
 
     expect(battleFieldOrder).toHaveLength(18);
@@ -442,7 +483,7 @@ describe("HeadlessGameClient", () => {
       "stat_boost_applied",
     );
 
-    const skipClient = startFromFrameAction("opening-wild-level");
+    const skipClient = startFromFrameAction("opening-route-one-0");
     dispatchFrameAction(skipClient, "encounter:next");
     expect(skipClient.getSnapshot().phase).toBe("captureDecision");
     dispatchFrameAction(skipClient, "capture:skip");
@@ -451,7 +492,7 @@ describe("HeadlessGameClient", () => {
       currentWave: 2,
     });
 
-    const captureClient = startFromFrameAction("capture-1");
+    const captureClient = startFromFrameAction("capture-opening-1");
     dispatchFrameAction(captureClient, "encounter:next");
     dispatchFrameAction(captureClient, "capture:greatball");
     expect(captureClient.getSnapshot().phase).toBe("teamDecision");

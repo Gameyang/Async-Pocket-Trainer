@@ -5,6 +5,7 @@ export interface HeadlessQaJsonSummary {
   invariantErrorCount: number;
   aggregate: HeadlessQaReport["aggregate"];
   targetResult?: HeadlessQaReport["targetResult"];
+  shopEconomy: HeadlessQaReport["shopEconomy"];
   waves: WaveJsonSummary[];
   topGameOverReasons: Array<{
     reason: string;
@@ -53,6 +54,7 @@ export function summarizeHeadlessQaReport(report: HeadlessQaReport): HeadlessQaJ
     invariantErrorCount: report.invariantErrors.length,
     aggregate: report.aggregate,
     targetResult: report.targetResult,
+    shopEconomy: report.shopEconomy,
     waves: report.waveBalance.map(toWaveSummary),
     topGameOverReasons: summarizeGameOverReasons(report.waveBalance),
   };

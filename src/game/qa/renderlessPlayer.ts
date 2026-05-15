@@ -1,7 +1,7 @@
 import type { BrowserGameRuntime } from "../../browser/gameRuntime";
 import type { SeededRng } from "../rng";
 import type { AutoPlayStrategy, GameState } from "../types";
-import type { GameFrame } from "../view/frame";
+import type { FrameAction, GameFrame } from "../view/frame";
 import { chooseFrameAction, resolveFrameActionPayload } from "./frameController";
 
 export type RenderlessTerminalReason =
@@ -26,6 +26,13 @@ export interface RenderlessPlayOptions {
   strategy: AutoPlayStrategy;
   rng: SeededRng;
   onFrame?: (step: number, frame: GameFrame, state: GameState) => void;
+  onAction?: (
+    step: number,
+    frame: GameFrame,
+    action: FrameAction,
+    before: GameState,
+    after: GameState,
+  ) => void;
   onState?: (step: number, state: GameState) => void;
 }
 
@@ -80,7 +87,9 @@ export async function playRenderlessGame(
       actionType: payload.type,
     });
     recordLimitedReadyAction(frame, action, limitedReadyActionsByWave);
+    const before = state;
     state = await runtime.dispatch(payload);
+    options.onAction?.(step, frame, action, before, state);
     options.onState?.(step, state);
   }
 

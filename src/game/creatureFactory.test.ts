@@ -54,6 +54,29 @@ describe("creature cloning", () => {
 });
 
 describe("creature move assignment", () => {
+  it("uses original opening move loadouts for level-five starters", () => {
+    const expectedMovesByStarter = new Map([
+      [1, ["tackle", "growl"]],
+      [4, ["scratch", "growl"]],
+      [7, ["tackle", "tail-whip"]],
+    ]);
+
+    for (const [speciesId, expectedMoves] of expectedMovesByStarter) {
+      for (let index = 0; index < 8; index += 1) {
+        const created = createCreature({
+          rng: new SeededRng(`opening-starter-${speciesId}-${index}`),
+          wave: 1,
+          balance: defaultBalance,
+          speciesId,
+          level: 5,
+          role: "starter",
+        });
+
+        expect(created.moves.map((move) => move.id)).toEqual(expectedMoves);
+      }
+    }
+  });
+
   it("assigns exactly one attack and one support move", () => {
     const created = createCreature({
       rng: new SeededRng("expanded-move-pool"),

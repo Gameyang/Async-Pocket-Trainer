@@ -1141,7 +1141,10 @@ export class HeadlessGameClient {
       return;
     }
 
-    const cost = calculateRestCost(this.state.currentWave, this.balance);
+    const cost = this.resolveDiscountedCost(
+      "shop:rest",
+      calculateRestCost(this.state.currentWave, this.balance),
+    );
 
     if (this.state.money < cost) {
       this.addEvent("rest_denied", "팀 휴식에 필요한 코인이 부족합니다.");
@@ -1161,7 +1164,10 @@ export class HeadlessGameClient {
       return;
     }
 
-    const cost = getBallCost(ball, this.balance);
+    const cost = this.resolveDiscountedCost(
+      `shop:${ballActionSlugFor(ball)}`,
+      getBallCost(ball, this.balance),
+    );
     const affordableQuantity = Math.max(0, Math.min(quantity, Math.floor(this.state.money / cost)));
 
     if (affordableQuantity === 0) {
@@ -1185,8 +1191,9 @@ export class HeadlessGameClient {
     }
 
     const product = getHealProduct(scope, tier);
+    const cost = this.resolveDiscountedCost(`shop:heal:${scope}:${tier}`, product.cost);
 
-    if (this.state.money < product.cost) {
+    if (this.state.money < cost) {
       this.addEvent("heal_denied", "회복에 필요한 코인이 부족합니다.");
       return;
     }
@@ -1196,7 +1203,7 @@ export class HeadlessGameClient {
         ? (targetEntityId ?? this.findMostDamagedCreatureId())
         : this.state.team[0]?.instanceId;
     const beforeHp = totalCurrentHp(this.state.team);
-    this.state.money -= product.cost;
+    this.state.money -= cost;
     this.state.team =
       scope === "team"
         ? healTeamByRatio(this.state.team, product.healRatio)
@@ -1212,7 +1219,7 @@ export class HeadlessGameClient {
       {
         scope,
         tier,
-        cost: product.cost,
+        cost,
         healedHp,
       },
     );
@@ -1247,13 +1254,14 @@ export class HeadlessGameClient {
     }
 
     const product = getRarityBoostProduct(tier);
+    const cost = this.resolveDiscountedCost(`shop:rarity-boost:${tier}`, product.cost);
 
-    if (this.state.money < product.cost) {
+    if (this.state.money < cost) {
       this.addEvent("boost_denied", "보정 아이템에 필요한 코인이 부족합니다.");
       return;
     }
 
-    this.state.money -= product.cost;
+    this.state.money -= cost;
     const existing =
       this.state.encounterBoost?.wave === this.state.currentWave
         ? this.state.encounterBoost
@@ -1276,13 +1284,14 @@ export class HeadlessGameClient {
     }
 
     const product = getLevelBoostProduct(tier);
+    const cost = this.resolveDiscountedCost(`shop:level-boost:${tier}`, product.cost);
 
-    if (this.state.money < product.cost) {
+    if (this.state.money < cost) {
       this.addEvent("boost_denied", "보정 아이템에 필요한 코인이 부족합니다.");
       return;
     }
 
-    this.state.money -= product.cost;
+    this.state.money -= cost;
     const existing =
       this.state.encounterBoost?.wave === this.state.currentWave
         ? this.state.encounterBoost

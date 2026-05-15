@@ -43,6 +43,32 @@ describe("headless QA simulation", () => {
     expect(report.aggregate.averageFinalWave).toBeGreaterThanOrEqual(6);
   }, 15_000);
 
+  it("reports shop price economy pressure for balance checks", async () => {
+    const report = await runHeadlessQa({
+      seed: "shop-price-balance",
+      runs: 12,
+      waves: 18,
+      strategy: "greedy",
+    });
+    const economy = report.shopEconomy.aggregate;
+    const categories = new Map(
+      report.shopEconomy.categories.map((category) => [category.category, category]),
+    );
+
+    expect(report.invariantErrors).toEqual([]);
+    expect(economy.readyFrames).toBeGreaterThan(0);
+    expect(economy.coinOfferSamples).toBeGreaterThan(0);
+    expect(economy.totalCoinEarned).toBeGreaterThan(0);
+    expect(economy.coinPurchases).toBeGreaterThan(0);
+    expect(economy.averageCheapestCoinOffer).toBeLessThanOrEqual(economy.averageMoneyAtShop);
+    expect(economy.coinOfferMoneyAffordableRate).toBeGreaterThanOrEqual(0.2);
+    expect(economy.spendToIncomeRatio).toBeGreaterThanOrEqual(0.05);
+    expect(economy.spendToAvailableCoinRatio).toBeLessThanOrEqual(0.95);
+    expect(categories.get("capture")?.purchases ?? 0).toBeGreaterThan(0);
+    expect(categories.get("recovery")?.offerSamples ?? 0).toBeGreaterThan(0);
+    expect(categories.get("teamUpgrade")?.moneyBlockedRate ?? 0).toBeLessThan(0.9);
+  });
+
   it("produces deterministic seed replay summaries and balance comparison deltas", async () => {
     const options = {
       seed: "replay-summary",

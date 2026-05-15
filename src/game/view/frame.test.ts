@@ -10,7 +10,7 @@ import { validateFrameContract } from "./frame";
 
 describe("game frame contract", () => {
   it("exposes renderer-facing entities, actions, and visual cues without requiring DOM", () => {
-    const client = new HeadlessGameClient({ seed: "opening-wild-level" });
+    const client = new HeadlessGameClient({ seed: "opening-route-one-0" });
     let frame = client.getFrame();
 
     expect(validateFrameContract(frame)).toEqual([]);
@@ -69,7 +69,7 @@ describe("game frame contract", () => {
   });
 
   it("exposes phase-specific scene metadata for starters, capture, and team decisions", () => {
-    const client = new HeadlessGameClient({ seed: "capture-1" });
+    const client = new HeadlessGameClient({ seed: "capture-opening-1" });
     let frame = client.getFrame();
 
     expect(validateFrameContract(frame)).toEqual([]);
@@ -436,19 +436,29 @@ describe("game frame contract", () => {
   });
 });
 
-function createBattleFrame(seed: string, starterSpeciesId: number) {
+function createBattleFrame(seed: string, starterSpeciesId: number, wave = 1) {
   const client = new HeadlessGameClient({ seed });
   client.dispatch({ type: "START_RUN", starterSpeciesId });
+  if (wave > 1) {
+    const saved = client.saveSnapshot();
+    saved.state.phase = "ready";
+    saved.state.currentWave = wave;
+    client.loadSnapshot(saved);
+  }
   client.dispatch({ type: "RESOLVE_NEXT_ENCOUNTER" });
   return client.getFrame();
 }
 
 function findBattleFrameWithCue(effectKey: string, starterSpeciesId: number) {
-  for (let index = 0; index < 200; index += 1) {
-    const frame = createBattleFrame(`vis-${effectKey}-${index}`, starterSpeciesId);
+  const waves = effectKey === "battle.superEffective" ? [6, 7, 8, 9, 11] : [1, 6];
 
-    if (frame.visualCues.some((cue) => cue.effectKey === effectKey)) {
-      return frame;
+  for (const wave of waves) {
+    for (let index = 0; index < 200; index += 1) {
+      const frame = createBattleFrame(`vis-${effectKey}-${index}`, starterSpeciesId, wave);
+
+      if (frame.visualCues.some((cue) => cue.effectKey === effectKey)) {
+        return frame;
+      }
     }
   }
 

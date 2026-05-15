@@ -60,6 +60,10 @@ function findClientWithCue(effectKey: string, starterSpeciesId: number): Headles
   for (let index = 0; index < 200; index += 1) {
     const client = new HeadlessGameClient({ seed: `canvas-${effectKey}-${index}` });
     client.dispatch({ type: "START_RUN", starterSpeciesId });
+    const saved = client.saveSnapshot();
+    saved.state.phase = "ready";
+    saved.state.currentWave = 6;
+    client.loadSnapshot(saved);
     client.dispatch({ type: "RESOLVE_NEXT_ENCOUNTER" });
 
     if (client.getFrame().visualCues.some((cue) => cue.effectKey === effectKey)) {

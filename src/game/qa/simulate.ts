@@ -12,6 +12,7 @@ import {
 import { ballTypes } from "../types";
 import type { AutoPlayStrategy, GameEvent, GamePhase, GameState, RunSummary } from "../types";
 import { validateFrameContract } from "../view/frame";
+import type { FrameAction, GameFrame } from "../view/frame";
 import type { RenderlessActionTraceEntry, RenderlessTerminalReason } from "./renderlessPlayer";
 import { playRenderlessGame } from "./renderlessPlayer";
 
@@ -70,7 +71,68 @@ export interface HeadlessQaReport {
   targetResult?: HeadlessQaTargetResult;
   invariantErrors: string[];
   waveBalance: WaveBalanceReport[];
+  shopEconomy: ShopEconomyReport;
   runs: HeadlessRunReport[];
+}
+
+export type ShopEconomyCategory =
+  | "recovery"
+  | "capture"
+  | "encounter"
+  | "teamUpgrade"
+  | "reroll"
+  | "premium"
+  | "portrait"
+  | "other";
+
+export interface ShopEconomyReport {
+  aggregate: {
+    readyFrames: number;
+    averageMoneyAtShop: number;
+    coinOfferSamples: number;
+    coinOfferMoneyAffordableRate: number;
+    coinOfferEnabledRate: number;
+    averageCheapestCoinOffer: number;
+    totalCoinEarned: number;
+    totalStartingCoin: number;
+    totalCoinAvailable: number;
+    totalCoinSpent: number;
+    netCoin: number;
+    spendToIncomeRatio: number;
+    spendToAvailableCoinRatio: number;
+    coinPurchases: number;
+    premiumPurchases: number;
+    totalTrainerPointsSpent: number;
+    averageCoinEarnedPerRun: number;
+    averageCoinSpentPerRun: number;
+  };
+  categories: ShopEconomyCategoryReport[];
+  waves: ShopEconomyWaveReport[];
+}
+
+export interface ShopEconomyCategoryReport {
+  category: ShopEconomyCategory;
+  offerSamples: number;
+  purchases: number;
+  spend: number;
+  trainerPointsSpend: number;
+  averageCost: number;
+  averageMoneyAtOffer: number;
+  moneyAffordableRate: number;
+  enabledRate: number;
+  moneyBlockedRate: number;
+}
+
+export interface ShopEconomyWaveReport {
+  wave: number;
+  readyFrames: number;
+  averageMoneyAtShop: number;
+  coinOfferSamples: number;
+  moneyAffordableRate: number;
+  coinEarned: number;
+  coinSpent: number;
+  netCoin: number;
+  purchases: number;
 }
 
 export interface WaveBalanceReport {
@@ -125,6 +187,48 @@ interface MutableWaveBalance {
   gameOverReasons: Map<string, number>;
 }
 
+interface MutableShopEconomy {
+  readyFrames: number;
+  moneyAtShopTotal: number;
+  coinOfferSamples: number;
+  coinOfferMoneyAffordableSamples: number;
+  coinOfferEnabledSamples: number;
+  cheapestCoinOfferSamples: number;
+  cheapestCoinOfferTotal: number;
+  totalCoinEarned: number;
+  totalStartingCoin: number;
+  totalCoinSpent: number;
+  totalTrainerPointsSpent: number;
+  coinPurchases: number;
+  premiumPurchases: number;
+  categories: Map<ShopEconomyCategory, MutableShopEconomyCategory>;
+  waves: Map<number, MutableShopEconomyWave>;
+}
+
+interface MutableShopEconomyCategory {
+  category: ShopEconomyCategory;
+  offerSamples: number;
+  purchases: number;
+  spend: number;
+  trainerPointsSpend: number;
+  costTotal: number;
+  moneyAtOfferTotal: number;
+  moneyAffordableSamples: number;
+  enabledSamples: number;
+  moneyBlockedSamples: number;
+}
+
+interface MutableShopEconomyWave {
+  wave: number;
+  readyFrames: number;
+  moneyAtShopTotal: number;
+  coinOfferSamples: number;
+  coinOfferMoneyAffordableSamples: number;
+  coinEarned: number;
+  coinSpent: number;
+  purchases: number;
+}
+
 const validPhases: GamePhase[] = [
   "starterChoice",
   "ready",
@@ -136,6 +240,7 @@ const validPhases: GamePhase[] = [
 export async function runHeadlessQa(options: HeadlessQaOptions): Promise<HeadlessQaReport> {
   const runs: HeadlessRunReport[] = [];
   const waveBalance = new Map<number, MutableWaveBalance>();
+  const shopEconomy = createMutableShopEconomy();
 
   for (let index = 0; index < options.runs; index += 1) {
     const controllerRng = new SeededRng(`${options.seed}:${index}:controller`);
@@ -153,11 +258,12 @@ export async function runHeadlessQa(options: HeadlessQaOptions): Promise<Headles
       prefetchNextCheckpoint: false,
     });
     const client = runtime.client;
+    shopEconomy.totalStartingCoin += client.getBalance().startingMoney;
     const errors: string[] = [];
     const seenEventIds = new Set<number>();
     const seenCheckpointWaves = new Set<number>();
     let snapshot = runtime.getSnapshot();
-    recordWaveSnapshot(snapshot, seenEventIds, waveBalance);
+    recordWaveSnapshot(snapshot, seenEventIds, waveBalance, shopEconomy);
     errors.push(
       ...validateCheckpointSnapshot(client, snapshot, seenCheckpointWaves).map(
         (error) => `initial checkpoint: ${error}`,
@@ -169,12 +275,16 @@ export async function runHeadlessQa(options: HeadlessQaOptions): Promise<Headles
       strategy: options.strategy,
       rng: controllerRng,
       onFrame(step, frame, state) {
+        recordShopFrame(frame, state, shopEconomy);
         errors.push(...validateState(state).map((error) => `step ${step}: ${error}`));
         errors.push(...validateFrameContract(frame).map((error) => `step ${step} frame: ${error}`));
       },
+      onAction(_step, frame, action, before, after) {
+        recordShopAction(frame, action, before, after, shopEconomy);
+      },
       onState(step, state) {
         snapshot = state;
-        recordWaveSnapshot(snapshot, seenEventIds, waveBalance);
+        recordWaveSnapshot(snapshot, seenEventIds, waveBalance, shopEconomy);
         errors.push(
           ...validateCheckpointSnapshot(client, snapshot, seenCheckpointWaves).map(
             (error) => `step ${step} checkpoint: ${error}`,
@@ -227,6 +337,7 @@ export async function runHeadlessQa(options: HeadlessQaOptions): Promise<Headles
     targetResult: evaluateTargets(options.targets, aggregate),
     invariantErrors,
     waveBalance: toWaveBalanceReport(waveBalance),
+    shopEconomy: toShopEconomyReport(shopEconomy, options.runs),
     runs,
   };
 }
@@ -412,10 +523,19 @@ function average(values: readonly number[]): number {
   return Number((values.reduce((total, value) => total + value, 0) / values.length).toFixed(2));
 }
 
+function ratio(numerator: number, denominator: number, precision = 4): number {
+  if (denominator === 0) {
+    return 0;
+  }
+
+  return Number((numerator / denominator).toFixed(precision));
+}
+
 function recordWaveSnapshot(
   state: GameState,
   seenEventIds: Set<number>,
   waveBalance: Map<number, MutableWaveBalance>,
+  shopEconomy: MutableShopEconomy,
 ): void {
   if (state.phase !== "starterChoice") {
     const bucket = getWaveBucket(waveBalance, state.currentWave);
@@ -434,6 +554,7 @@ function recordWaveSnapshot(
 
     seenEventIds.add(event.id);
     recordWaveEvent(event, getWaveBucket(waveBalance, event.wave));
+    recordShopEconomyEvent(event, shopEconomy);
   }
 }
 
@@ -476,6 +597,322 @@ function recordWaveEvent(event: GameEvent, bucket: MutableWaveBalance): void {
   if (event.type === "ball_bought") {
     bucket.ballPurchases += 1;
   }
+}
+
+function createMutableShopEconomy(): MutableShopEconomy {
+  return {
+    readyFrames: 0,
+    moneyAtShopTotal: 0,
+    coinOfferSamples: 0,
+    coinOfferMoneyAffordableSamples: 0,
+    coinOfferEnabledSamples: 0,
+    cheapestCoinOfferSamples: 0,
+    cheapestCoinOfferTotal: 0,
+    totalCoinEarned: 0,
+    totalStartingCoin: 0,
+    totalCoinSpent: 0,
+    totalTrainerPointsSpent: 0,
+    coinPurchases: 0,
+    premiumPurchases: 0,
+    categories: new Map(),
+    waves: new Map(),
+  };
+}
+
+function recordShopFrame(
+  frame: GameFrame,
+  state: GameState,
+  economy: MutableShopEconomy,
+): void {
+  if (frame.phase !== "ready") {
+    return;
+  }
+
+  const money = state.money;
+  const wave = getShopEconomyWave(economy, frame.hud.wave);
+  economy.readyFrames += 1;
+  economy.moneyAtShopTotal += money;
+  wave.readyFrames += 1;
+  wave.moneyAtShopTotal += money;
+
+  const coinActions = frame.actions.filter(
+    (action) => action.id.startsWith("shop:") && action.cost !== undefined,
+  );
+
+  if (coinActions.length > 0) {
+    const cheapest = Math.min(...coinActions.map((action) => action.cost ?? 0));
+    economy.cheapestCoinOfferSamples += 1;
+    economy.cheapestCoinOfferTotal += cheapest;
+  }
+
+  for (const action of coinActions) {
+    const cost = action.cost ?? 0;
+    const category = getShopEconomyCategory(action.id);
+    const bucket = getShopEconomyCategoryBucket(economy, category);
+    const affordableByMoney = money >= cost;
+
+    economy.coinOfferSamples += 1;
+    wave.coinOfferSamples += 1;
+    bucket.offerSamples += 1;
+    bucket.costTotal += cost;
+    bucket.moneyAtOfferTotal += money;
+
+    if (affordableByMoney) {
+      economy.coinOfferMoneyAffordableSamples += 1;
+      wave.coinOfferMoneyAffordableSamples += 1;
+      bucket.moneyAffordableSamples += 1;
+    } else {
+      bucket.moneyBlockedSamples += 1;
+    }
+
+    if (action.enabled) {
+      economy.coinOfferEnabledSamples += 1;
+      bucket.enabledSamples += 1;
+    }
+  }
+}
+
+function recordShopAction(
+  frame: GameFrame,
+  action: FrameAction,
+  before: GameState,
+  after: GameState,
+  economy: MutableShopEconomy,
+): void {
+  if (frame.phase !== "ready" || !action.id.startsWith("shop:")) {
+    return;
+  }
+
+  const coinSpent = Math.max(0, before.money - after.money);
+  const trainerPointsSpent = Math.max(
+    0,
+    (before.metaCurrency?.trainerPoints ?? 0) - (after.metaCurrency?.trainerPoints ?? 0),
+  );
+
+  if (coinSpent <= 0 && trainerPointsSpent <= 0) {
+    return;
+  }
+
+  const category = getShopEconomyCategory(action.id);
+  const categoryBucket = getShopEconomyCategoryBucket(economy, category);
+  const wave = getShopEconomyWave(economy, frame.hud.wave);
+
+  categoryBucket.purchases += 1;
+  wave.purchases += 1;
+
+  if (coinSpent > 0) {
+    economy.totalCoinSpent += coinSpent;
+    economy.coinPurchases += 1;
+    categoryBucket.spend += coinSpent;
+    wave.coinSpent += coinSpent;
+  }
+
+  if (trainerPointsSpent > 0) {
+    economy.totalTrainerPointsSpent += trainerPointsSpent;
+    economy.premiumPurchases += 1;
+    categoryBucket.trainerPointsSpend += trainerPointsSpent;
+  }
+}
+
+function recordShopEconomyEvent(event: GameEvent, economy: MutableShopEconomy): void {
+  if (event.type !== "battle_resolved") {
+    return;
+  }
+
+  const reward = readEventNumber(event, "reward");
+  if (reward <= 0) {
+    return;
+  }
+
+  economy.totalCoinEarned += reward;
+  getShopEconomyWave(economy, event.wave).coinEarned += reward;
+}
+
+function readEventNumber(event: GameEvent, key: string): number {
+  const value = event.data?.[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function toShopEconomyReport(
+  economy: MutableShopEconomy,
+  runs: number,
+): ShopEconomyReport {
+  const totalCoinAvailable = economy.totalStartingCoin + economy.totalCoinEarned;
+
+  return {
+    aggregate: {
+      readyFrames: economy.readyFrames,
+      averageMoneyAtShop: averageFromTotal(economy.moneyAtShopTotal, economy.readyFrames),
+      coinOfferSamples: economy.coinOfferSamples,
+      coinOfferMoneyAffordableRate: ratio(
+        economy.coinOfferMoneyAffordableSamples,
+        economy.coinOfferSamples,
+      ),
+      coinOfferEnabledRate: ratio(economy.coinOfferEnabledSamples, economy.coinOfferSamples),
+      averageCheapestCoinOffer: averageFromTotal(
+        economy.cheapestCoinOfferTotal,
+        economy.cheapestCoinOfferSamples,
+      ),
+      totalCoinEarned: economy.totalCoinEarned,
+      totalStartingCoin: economy.totalStartingCoin,
+      totalCoinAvailable,
+      totalCoinSpent: economy.totalCoinSpent,
+      netCoin: economy.totalCoinEarned - economy.totalCoinSpent,
+      spendToIncomeRatio: ratio(economy.totalCoinSpent, economy.totalCoinEarned),
+      spendToAvailableCoinRatio: ratio(economy.totalCoinSpent, totalCoinAvailable),
+      coinPurchases: economy.coinPurchases,
+      premiumPurchases: economy.premiumPurchases,
+      totalTrainerPointsSpent: economy.totalTrainerPointsSpent,
+      averageCoinEarnedPerRun: averageFromTotal(economy.totalCoinEarned, runs),
+      averageCoinSpentPerRun: averageFromTotal(economy.totalCoinSpent, runs),
+    },
+    categories: [...economy.categories.values()]
+      .sort((left, right) => categorySortIndex(left.category) - categorySortIndex(right.category))
+      .map(toShopEconomyCategoryReport),
+    waves: [...economy.waves.values()]
+      .sort((left, right) => left.wave - right.wave)
+      .map(toShopEconomyWaveReport),
+  };
+}
+
+function toShopEconomyCategoryReport(
+  bucket: MutableShopEconomyCategory,
+): ShopEconomyCategoryReport {
+  return {
+    category: bucket.category,
+    offerSamples: bucket.offerSamples,
+    purchases: bucket.purchases,
+    spend: bucket.spend,
+    trainerPointsSpend: bucket.trainerPointsSpend,
+    averageCost: averageFromTotal(bucket.costTotal, bucket.offerSamples),
+    averageMoneyAtOffer: averageFromTotal(bucket.moneyAtOfferTotal, bucket.offerSamples),
+    moneyAffordableRate: ratio(bucket.moneyAffordableSamples, bucket.offerSamples),
+    enabledRate: ratio(bucket.enabledSamples, bucket.offerSamples),
+    moneyBlockedRate: ratio(bucket.moneyBlockedSamples, bucket.offerSamples),
+  };
+}
+
+function toShopEconomyWaveReport(bucket: MutableShopEconomyWave): ShopEconomyWaveReport {
+  return {
+    wave: bucket.wave,
+    readyFrames: bucket.readyFrames,
+    averageMoneyAtShop: averageFromTotal(bucket.moneyAtShopTotal, bucket.readyFrames),
+    coinOfferSamples: bucket.coinOfferSamples,
+    moneyAffordableRate: ratio(bucket.coinOfferMoneyAffordableSamples, bucket.coinOfferSamples),
+    coinEarned: bucket.coinEarned,
+    coinSpent: bucket.coinSpent,
+    netCoin: bucket.coinEarned - bucket.coinSpent,
+    purchases: bucket.purchases,
+  };
+}
+
+function getShopEconomyCategoryBucket(
+  economy: MutableShopEconomy,
+  category: ShopEconomyCategory,
+): MutableShopEconomyCategory {
+  const existing = economy.categories.get(category);
+  if (existing) {
+    return existing;
+  }
+
+  const created: MutableShopEconomyCategory = {
+    category,
+    offerSamples: 0,
+    purchases: 0,
+    spend: 0,
+    trainerPointsSpend: 0,
+    costTotal: 0,
+    moneyAtOfferTotal: 0,
+    moneyAffordableSamples: 0,
+    enabledSamples: 0,
+    moneyBlockedSamples: 0,
+  };
+  economy.categories.set(category, created);
+  return created;
+}
+
+function getShopEconomyWave(
+  economy: MutableShopEconomy,
+  wave: number,
+): MutableShopEconomyWave {
+  const existing = economy.waves.get(wave);
+  if (existing) {
+    return existing;
+  }
+
+  const created: MutableShopEconomyWave = {
+    wave,
+    readyFrames: 0,
+    moneyAtShopTotal: 0,
+    coinOfferSamples: 0,
+    coinOfferMoneyAffordableSamples: 0,
+    coinEarned: 0,
+    coinSpent: 0,
+    purchases: 0,
+  };
+  economy.waves.set(wave, created);
+  return created;
+}
+
+function getShopEconomyCategory(actionId: string): ShopEconomyCategory {
+  if (actionId === "shop:rest" || actionId.startsWith("shop:heal:")) {
+    return "recovery";
+  }
+
+  if (
+    actionId === "shop:pokeball" ||
+    actionId === "shop:greatball" ||
+    actionId === "shop:ultraball" ||
+    actionId === "shop:hyperball" ||
+    actionId === "shop:masterball"
+  ) {
+    return "capture";
+  }
+
+  if (
+    actionId.startsWith("shop:rarity-boost:") ||
+    actionId.startsWith("shop:level-boost:") ||
+    actionId.startsWith("shop:type-lock:")
+  ) {
+    return "encounter";
+  }
+
+  if (
+    actionId.startsWith("shop:stat-boost:") ||
+    actionId.startsWith("shop:stat-reroll") ||
+    actionId.startsWith("shop:teach-move:") ||
+    actionId.startsWith("shop:team-sort:")
+  ) {
+    return "teamUpgrade";
+  }
+
+  if (actionId === "shop:reroll") {
+    return "reroll";
+  }
+
+  if (actionId.startsWith("shop:premium:")) {
+    return "premium";
+  }
+
+  if (actionId.startsWith("shop:portrait:")) {
+    return "portrait";
+  }
+
+  return "other";
+}
+
+function categorySortIndex(category: ShopEconomyCategory): number {
+  const order: ShopEconomyCategory[] = [
+    "recovery",
+    "capture",
+    "encounter",
+    "teamUpgrade",
+    "reroll",
+    "premium",
+    "portrait",
+    "other",
+  ];
+  return order.indexOf(category);
 }
 
 function getWaveBucket(

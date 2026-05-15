@@ -94,7 +94,7 @@ describe("frame presentation command selection", () => {
 });
 
 function firstFailedCaptureClient(): HeadlessGameClient {
-  for (let index = 0; index < 50; index += 1) {
+  for (let index = 0; index < 120; index += 1) {
     const client = new HeadlessGameClient({ seed: `ui-capture-fail-${index}` });
     client.dispatch({ type: "START_RUN", starterSpeciesId: 1 });
     client.dispatch({ type: "RESOLVE_NEXT_ENCOUNTER" });

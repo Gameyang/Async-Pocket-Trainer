@@ -39,6 +39,8 @@ export interface AudioMixerFrame {
   visualCues: readonly FrameVisualCue[];
   battleReplayKey: string;
   activeReplaySequence: number | undefined;
+  activeEventSoundId?: string;
+  activeEventSoundKeys?: readonly string[];
   isReplayPlaying: boolean;
   hasOngoingReplay: boolean;
 }
@@ -78,6 +80,7 @@ export class AudioMixer {
   private activeSfxVoices: SfxVoice[] = [];
   private bufferCache = new Map<string, Promise<AudioBuffer | undefined>>();
   private playedCueIds = new Set<string>();
+  private playedEventSoundIds = new Set<string>();
   private lastReplayKey = "";
   private didPreloadSfx = false;
   private sfxPreloadQueue: string[] = [];
@@ -123,6 +126,7 @@ export class AudioMixer {
 
     if (frame.battleReplayKey !== this.lastReplayKey) {
       this.playedCueIds.clear();
+      this.playedEventSoundIds.clear();
       this.lastReplayKey = frame.battleReplayKey;
       audioDebugLog("mixer.replay.changed", {
         replayKeyLength: frame.battleReplayKey.length,
@@ -139,6 +143,8 @@ export class AudioMixer {
       activeReplaySequence: frame.activeReplaySequence,
       isReplayPlaying: frame.isReplayPlaying,
       hasOngoingReplay: frame.hasOngoingReplay,
+      activeEventSoundId: frame.activeEventSoundId,
+      activeEventSoundKeys: frame.activeEventSoundKeys,
       cueCount: frame.visualCues.length,
       playableCues: cues.map((cue) => ({
         id: cue.id,
@@ -169,6 +175,8 @@ export class AudioMixer {
         this.playSfx(soundKey, cueStartTime);
       }
     }
+
+    this.playActiveEventSounds(frame, ctx.currentTime);
   }
 
   pause(): void {
@@ -200,6 +208,7 @@ export class AudioMixer {
     this.sfxPreloadQueue.length = 0;
     this.sfxPreloadInFlight = false;
     this.playedCueIds.clear();
+    this.playedEventSoundIds.clear();
 
     if (this.ctx) {
       void this.ctx.close().catch(() => undefined);
@@ -304,18 +313,48 @@ export class AudioMixer {
       sequence: cue.sequence,
       soundKeys: resolveCueSoundKeys(cue),
     }));
-    const urls = cueSoundKeys.flatMap((cue) =>
-      cue.soundKeys
+    const urls = [
+      ...cueSoundKeys.flatMap((cue) =>
+        cue.soundKeys
+          .map((soundKey) => this.options.resolveSfxUrl(soundKey))
+          .filter((url): url is string => Boolean(url)),
+      ),
+      ...(frame.activeEventSoundKeys ?? [])
         .map((soundKey) => this.options.resolveSfxUrl(soundKey))
         .filter((url): url is string => Boolean(url)),
-    );
+    ];
 
     audioDebugLog("mixer.preload-frame", {
       activeReplaySequence: frame.activeReplaySequence,
+      activeEventSoundId: frame.activeEventSoundId,
+      activeEventSoundKeys: frame.activeEventSoundKeys,
       cues: cueSoundKeys,
       urls: urls.map(toAudioDebugUrl),
     });
     this.enqueueSfxPreloadUrls(urls, true);
+  }
+
+  private playActiveEventSounds(frame: AudioMixerFrame, requestedAt: number): void {
+    const soundKeys = [...new Set(frame.activeEventSoundKeys ?? [])];
+    if (!frame.activeEventSoundId || soundKeys.length === 0) {
+      return;
+    }
+
+    if (this.playedEventSoundIds.has(frame.activeEventSoundId)) {
+      audioDebugLog("mixer.event-sound.skip-played", { id: frame.activeEventSoundId });
+      return;
+    }
+
+    this.playedEventSoundIds.add(frame.activeEventSoundId);
+    audioDebugLog("mixer.event-sound.play", {
+      id: frame.activeEventSoundId,
+      requestedAt,
+      soundKeys,
+    });
+
+    for (const soundKey of soundKeys) {
+      this.playSfx(soundKey, requestedAt);
+    }
   }
 
   private enqueueSfxPreloadUrls(urls: readonly string[], prioritize = false): void {

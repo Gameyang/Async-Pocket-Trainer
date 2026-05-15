@@ -302,7 +302,7 @@ function pickMovesForRole(
   rng: SeededRng,
 ): MoveDefinition[] {
   const originalOpeningLoadout =
-    role === "starter"
+    role === "starter" && level <= 5
       ? ORIGINAL_OPENING_STARTER_LOADOUTS[species.id]
       : role === "wild" && level <= 5
         ? ORIGINAL_OPENING_WILD_LOADOUTS[species.id]
@@ -341,10 +341,7 @@ function getMoveCandidates(
   return [getMove(fallbackMoveId)];
 }
 
-function isAttackMove(
-  move: MoveDefinition,
-  speciesTypes: readonly ElementType[] = [],
-): boolean {
+function isAttackMove(move: MoveDefinition, speciesTypes: readonly ElementType[] = []): boolean {
   if (move.category === "status") {
     return false;
   }
