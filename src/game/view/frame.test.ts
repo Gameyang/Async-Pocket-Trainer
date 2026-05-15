@@ -263,7 +263,7 @@ describe("game frame contract", () => {
   });
 
   it("classifies replay cues with readable names and effect tiers", () => {
-    const superEffective = findBattleFrameWithCue("battle.superEffective", 7);
+    const superEffective = findBattleFrameWithCue("battle.superEffective", 1);
     const resisted = findBattleFrameWithCue("battle.resisted", 1);
     const critical = findBattleFrameWithCue("battle.criticalHit", 4);
     const missed = findBattleFrameWithCue("battle.miss", 1);

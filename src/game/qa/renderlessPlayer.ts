@@ -129,6 +129,9 @@ function recordLimitedReadyAction(
 
 function isLimitedReadyShopAction(actionId: string): boolean {
   return (
+    actionId === "shop:rest" ||
+    actionId.startsWith("shop:heal:") ||
+    actionId.startsWith("shop:premium:heal:") ||
     actionId.startsWith("shop:stat-boost:") ||
     actionId.startsWith("shop:teach-move:") ||
     actionId.startsWith("shop:premium:stat-boost:") ||

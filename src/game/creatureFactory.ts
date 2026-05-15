@@ -25,6 +25,10 @@ import type {
   Stats,
 } from "./types";
 
+const BATTLE_READY_ATTACK_POWER = 35;
+const STAB_LOW_POWER_ATTACK_FLOOR = 15;
+const FIXED_DAMAGE_EFFECT_IDS = new Set([39, 41, 42, 88, 89, 90, 131, 145]);
+
 export interface CreatureFactoryOptions {
   rng: SeededRng;
   wave: number;
@@ -197,10 +201,12 @@ export function normalizeCreatureMoves(
   level: number,
   moves: readonly MoveDefinition[],
 ): MoveDefinition[] {
+  const species = getSpecies(speciesId);
+  const isPreferredAttackMove = (move: MoveDefinition) => isAttackMove(move, species.types);
   const normalizedMoves = moves.map(cloneMoveDefinition);
-  const attackCandidates = getMoveCandidates(speciesId, level, isAttackMove, "tackle");
+  const attackCandidates = getMoveCandidates(speciesId, level, isPreferredAttackMove, "tackle");
   const supportCandidates = getMoveCandidates(speciesId, level, isSupportMove, "harden");
-  const attack = normalizedMoves.find(isAttackMove) ?? attackCandidates[0];
+  const attack = normalizedMoves.find(isPreferredAttackMove) ?? attackCandidates[0];
   const support = normalizedMoves.find(isSupportMove) ?? supportCandidates[0];
 
   return [attack, support].map(cloneMoveDefinition);
@@ -211,12 +217,14 @@ export function replaceCreatureMoveByRole(
   learnedMove: MoveDefinition,
 ): MoveDefinition[] {
   const level = resolveExistingCreatureLevel(creature);
+  const species = getSpecies(creature.speciesId);
+  const isPreferredAttackMove = (move: MoveDefinition) => isAttackMove(move, species.types);
   const normalizedMoves = normalizeCreatureMoves(creature.speciesId, level, creature.moves);
   const learned = cloneMoveDefinition(learnedMove);
-  const attack = isAttackMove(learned)
+  const attack = isPreferredAttackMove(learned)
     ? learned
-    : (normalizedMoves.find(isAttackMove) ??
-      getMoveCandidates(creature.speciesId, level, isAttackMove, "tackle")[0]);
+    : (normalizedMoves.find((move) => isAttackMove(move)) ??
+      getMoveCandidates(creature.speciesId, level, isPreferredAttackMove, "tackle")[0]);
   const support = isSupportMove(learned)
     ? learned
     : (normalizedMoves.find(isSupportMove) ??
@@ -279,7 +287,8 @@ function pickSpeciesForWave(
 }
 
 function pickMoves(species: SpeciesDefinition, level: number, rng: SeededRng): MoveDefinition[] {
-  const attacks = getMoveCandidates(species.id, level, isAttackMove, "tackle");
+  const isPreferredAttackMove = (move: MoveDefinition) => isAttackMove(move, species.types);
+  const attacks = getMoveCandidates(species.id, level, isPreferredAttackMove, "tackle");
   const support = getMoveCandidates(species.id, level, isSupportMove, "harden");
   const attack = rng.pick(attacks);
   const utility = rng.pick(support);
@@ -303,8 +312,23 @@ function getMoveCandidates(
   return [getMove(fallbackMoveId)];
 }
 
-function isAttackMove(move: MoveDefinition): boolean {
-  return move.category !== "status";
+function isAttackMove(
+  move: MoveDefinition,
+  speciesTypes: readonly ElementType[] = [],
+): boolean {
+  if (move.category === "status") {
+    return false;
+  }
+
+  if (FIXED_DAMAGE_EFFECT_IDS.has(move.effectId ?? -1)) {
+    return true;
+  }
+
+  if (move.power >= BATTLE_READY_ATTACK_POWER) {
+    return true;
+  }
+
+  return speciesTypes.includes(move.type) && move.power >= STAB_LOW_POWER_ATTACK_FLOOR;
 }
 
 function isSupportMove(move: MoveDefinition): boolean {

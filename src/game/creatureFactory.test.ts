@@ -109,6 +109,19 @@ describe("creature move assignment", () => {
     }
   });
 
+  it("uses the attack fallback for weak off-type level-one attacks", () => {
+    const created = createCreature({
+      rng: new SeededRng("weak-off-type-attack"),
+      wave: 1,
+      balance: defaultBalance,
+      speciesId: 41,
+      role: "wild",
+    });
+
+    expect(created.moves.map((move) => move.category)).toEqual(["physical", "status"]);
+    expect(created.moves[0].id).toBe("tackle");
+  });
+
   it("uses harden as the strict support fallback for attack-only low-level species", () => {
     const created = createCreature({
       rng: new SeededRng("attack-only-low-level"),

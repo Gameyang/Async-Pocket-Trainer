@@ -56,6 +56,30 @@ describe("battle damage rules", () => {
     );
   });
 
+  it("keeps level-one non-STAB attacks above one-point chip damage", () => {
+    const attacker = {
+      ...creature(
+        "low-attacker",
+        [tackle],
+        { hp: 12, attack: 6, defense: 6, special: 6, speed: 6 },
+        1,
+      ),
+      types: ["fire" as const],
+    };
+    const defender = {
+      ...creature(
+        "low-defender",
+        [tackle],
+        { hp: 12, attack: 6, defense: 6, special: 6, speed: 6 },
+        1,
+      ),
+      types: ["water" as const],
+    };
+    const result = calculateDamage(attacker, defender, tackle, new FixedChanceRng(false), 0.85);
+
+    expect(result.damage).toBeGreaterThan(1);
+  });
+
   it("applies status ailments and residual poison damage through replay events", () => {
     const poisonSting = move({
       id: "poison-sting",
@@ -171,7 +195,7 @@ describe("battle damage rules", () => {
     expect(result.log[0]).toMatchObject({ actorId: "player", move: "Quick Attack" });
   });
 
-  it("chooses attack and support moves with a fixed 70/30 auto-battle split", () => {
+  it("does not spend auto-battle turns on low-impact support moves", () => {
     const growl = move({
       id: "growl",
       name: "Growl",
@@ -199,7 +223,36 @@ describe("battle damage rules", () => {
     });
 
     expect(lowRoll.log[0]).toMatchObject({ actorId: "player", move: "Tackle" });
-    expect(supportBoundary.log[0]).toMatchObject({ actorId: "player", move: "Growl" });
+    expect(supportBoundary.log[0]).toMatchObject({ actorId: "player", move: "Tackle" });
+  });
+
+  it("still chooses high-impact support moves when their score clears the attack", () => {
+    const weakTap = move({
+      id: "weak-tap",
+      name: "Weak Tap",
+      type: "normal",
+      power: 5,
+      accuracy: 1,
+    });
+    const sleepPowder = move({
+      id: "sleep-powder",
+      name: "Sleep Powder",
+      type: "grass",
+      power: 0,
+      accuracy: 1,
+      category: "status",
+      statusEffect: { status: "sleep", chance: 1 },
+    });
+    const result = runAutoBattle({
+      kind: "wild",
+      normalizeLoadouts: false,
+      playerTeam: [creature("player", [weakTap, sleepPowder], { speed: 100 })],
+      enemyTeam: [creature("enemy", [tackle], { speed: 1 })],
+      rng: new SequenceRng([0.85]),
+      maxTurns: 1,
+    });
+
+    expect(result.log[0]).toMatchObject({ actorId: "player", move: "Sleep Powder" });
   });
 
   it("falls back to the usable attack when support moves are blocked", () => {

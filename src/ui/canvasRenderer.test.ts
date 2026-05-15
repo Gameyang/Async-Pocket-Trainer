@@ -40,7 +40,7 @@ describe("canvas frame renderer", () => {
     });
     vi.stubGlobal("Image", imageCtor);
 
-    const client = findClientWithCue("battle.superEffective", 7);
+    const client = findClientWithCue("battle.superEffective", 1);
     const renderer = createCanvasFrameRenderer(canvas, {
       resolveAssetPath: (assetPath) => assetPath,
     });

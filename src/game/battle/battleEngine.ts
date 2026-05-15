@@ -14,7 +14,9 @@ import type {
   MoveStatChange,
 } from "../types";
 
-const AUTO_BATTLE_ATTACK_CHANCE = 0.7;
+const AUTO_BATTLE_ATTACK_CHANCE = 0.85;
+const MIN_SUPPORT_MOVE_SCORE = 9;
+const SUPPORT_SCORE_ATTACK_RATIO = 0.5;
 
 export interface AutoBattleOptions {
   kind: EncounterKind;
@@ -263,7 +265,18 @@ function chooseMove(
   );
 
   if (attack && support) {
-    return rng.chance(AUTO_BATTLE_ATTACK_CHANCE) ? attack : support;
+    const attackScore = scoreMove(attacker, defender, attack, defenderSide, damageScale);
+    const supportScore = scoreMove(attacker, defender, support, defenderSide, damageScale);
+    const supportThreshold = Math.max(
+      MIN_SUPPORT_MOVE_SCORE,
+      attackScore * SUPPORT_SCORE_ATTACK_RATIO,
+    );
+
+    if (supportScore >= supportThreshold) {
+      return rng.chance(AUTO_BATTLE_ATTACK_CHANCE) ? attack : support;
+    }
+
+    return attack;
   }
 
   return pickWeightedMove(moves, attacker, defender, defenderSide, rng, damageScale);
@@ -1605,9 +1618,14 @@ function scoreStatChanges(attacker: Creature, defender: Creature, move: MoveDefi
     const sign = target === attacker ? 1 : -1;
     const current = target.statStages?.[change.stat] ?? 0;
     const room = change.change > 0 ? 6 - current : current + 6;
+    const stageValue = clamp(room / 6, 0, 1);
     return (
       total +
-      Math.min(Math.abs(change.change), Math.max(0, room)) * 8 * sign * Math.sign(change.change)
+      Math.min(Math.abs(change.change), Math.max(0, room)) *
+        8 *
+        stageValue *
+        sign *
+        Math.sign(change.change)
     );
   }, 0);
 }

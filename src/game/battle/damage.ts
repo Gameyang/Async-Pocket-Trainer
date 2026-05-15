@@ -2,6 +2,8 @@ import { typeChart } from "../data/catalog";
 import { clamp, type SeededRng } from "../rng";
 import type { BattleStat, Creature, ElementType, MoveDefinition } from "../types";
 
+const MIN_EFFECTIVE_DAMAGE_LEVEL = 5;
+
 export interface DamageResult {
   damage: number;
   effectiveness: number;
@@ -45,6 +47,10 @@ export function estimateDamage(
   const power = context.powerOverride ?? getMovePower(attacker, defender, move);
 
   if (power <= 0) {
+    return 0;
+  }
+
+  if (move.accuracy <= 0 || damageScale <= 0) {
     return 0;
   }
 
@@ -96,6 +102,10 @@ export function calculateDamage(
   const power = context.powerOverride ?? getMovePower(attacker, defender, move);
 
   if (move.category === "status" || power <= 0) {
+    return { damage: 0, effectiveness, critical: false };
+  }
+
+  if (damageScale <= 0) {
     return { damage: 0, effectiveness, critical: false };
   }
 
@@ -173,7 +183,7 @@ function calculateBaseDamage(
 
 function resolveBattleLevel(creature: Creature): number {
   if (typeof creature.level === "number") {
-    return clamp(Math.round(creature.level), 1, 100);
+    return clamp(Math.max(MIN_EFFECTIVE_DAMAGE_LEVEL, Math.round(creature.level)), 1, 100);
   }
 
   const statTotal =
@@ -182,7 +192,7 @@ function resolveBattleLevel(creature: Creature): number {
     creature.stats.defense +
     creature.stats.special +
     creature.stats.speed;
-  return clamp(Math.round(statTotal / 18), 1, 100);
+  return clamp(Math.max(MIN_EFFECTIVE_DAMAGE_LEVEL, Math.round(statTotal / 18)), 1, 100);
 }
 
 function getSideDefenseMultiplier(move: MoveDefinition, context: DamageContext): number {
