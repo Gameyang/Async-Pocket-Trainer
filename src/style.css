@@ -4918,6 +4918,10 @@ button.move-detail-content:hover {
     5px 6px 0 rgba(0, 0, 0, 0.28);
 }
 
+.shop-card[data-shop-featured="true"][data-has-scope-badge="true"] {
+  padding-bottom: 22px;
+}
+
 .shop-card[data-shop-featured="true"] .button-icon {
   width: 46px;
   height: 46px;
