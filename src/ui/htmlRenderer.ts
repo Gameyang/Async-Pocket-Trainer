@@ -2336,17 +2336,18 @@ function renderTrainerBattleCeremony(
   const playerPortrait = frame.hud.trainerPortrait;
   const opponentTrainer = frame.scene.trainer;
 
-  if (!stage || !playerPortrait || !opponentTrainer) {
+  if (!stage || !playerPortrait) {
     return "";
   }
 
   const winner =
     activeEvent.winner === "player" ? "player" : activeEvent.winner === "enemy" ? "enemy" : "";
   const playerLine = activeEvent.playerLine ?? "가자!";
-  const opponentLine = opponentTrainer.greeting ?? activeEvent.opponentLine ?? "승부다!";
+  const opponentLine = opponentTrainer?.greeting ?? activeEvent.opponentLine ?? "승부다!";
+  const isTrainerBattle = Boolean(opponentTrainer);
 
   return `
-    <div class="trainer-ceremony" data-stage="${stage}" data-winner="${winner}" aria-hidden="true">
+    <div class="trainer-ceremony" data-stage="${stage}" data-winner="${winner}" data-ceremony-kind="${isTrainerBattle ? "trainer" : "wild"}" aria-hidden="true">
       ${renderCeremonyTrainer({
         lane: "hero",
         name: frame.hud.trainerName,
@@ -2354,15 +2355,19 @@ function renderTrainerBattleCeremony(
         portraitPath: playerPortrait.assetPath,
         line: playerLine,
       })}
-      ${renderCeremonyTrainer({
-        lane: "enemy",
-        name: opponentTrainer.teamName,
-        label: opponentTrainer.label,
-        portraitPath: opponentTrainer.portraitPath,
-        line: opponentLine,
-      })}
+      ${
+        opponentTrainer
+          ? renderCeremonyTrainer({
+              lane: "enemy",
+              name: opponentTrainer.teamName,
+              label: opponentTrainer.label,
+              portraitPath: opponentTrainer.portraitPath,
+              line: opponentLine,
+            })
+          : ""
+      }
       <span class="ceremony-ball hero" data-ball-lane="hero"><span></span></span>
-      <span class="ceremony-ball enemy" data-ball-lane="enemy"><span></span></span>
+      ${opponentTrainer ? `<span class="ceremony-ball enemy" data-ball-lane="enemy"><span></span></span>` : ""}
       <span class="summon-burst hero" data-summon-lane="hero">${escapeHtml(activePlayer?.name ?? "")}</span>
       <span class="summon-burst enemy" data-summon-lane="enemy">${escapeHtml(activeOpponent?.name ?? "")}</span>
     </div>

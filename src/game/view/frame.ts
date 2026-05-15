@@ -2068,7 +2068,7 @@ function createBattleReplay(state: GameState): FrameBattleReplay {
   const baseEvents = (state.lastBattle?.replay ?? []).map((event) =>
     toFrameBattleReplayEvent(event, lookup),
   );
-  const events = createTrainerBattleCeremonyReplay(state, baseEvents);
+  const events = createBattleCeremonyReplay(state, baseEvents);
 
   return {
     sequenceIndex: events.at(-1)?.sequence ?? 0,
@@ -2076,13 +2076,13 @@ function createBattleReplay(state: GameState): FrameBattleReplay {
   };
 }
 
-function createTrainerBattleCeremonyReplay(
+function createBattleCeremonyReplay(
   state: GameState,
   events: FrameBattleReplayEvent[],
 ): FrameBattleReplayEvent[] {
   const battle = state.lastBattle;
 
-  if (!battle || battle.kind !== "trainer" || events.length < 2) {
+  if (!battle || events.length < 2) {
     return events;
   }
 
@@ -2094,19 +2094,24 @@ function createTrainerBattleCeremonyReplay(
   const playerLeadId = battle.playerTeam[0]?.instanceId;
   const opponentLeadId = battle.enemyTeam[0]?.instanceId;
   const opponentName =
-    state.pendingEncounter?.opponentName ?? battle.opponentName ?? "상대 트레이너";
-  const introEvents = createTrainerBattleIntroEvents(
+    state.pendingEncounter?.opponentName ??
+    battle.opponentName ??
+    (battle.kind === "trainer" ? "상대 트레이너" : battle.enemyTeam[0]?.speciesName) ??
+    "야생 포켓몬";
+  const introEvents = createBattleIntroEvents(
+    battle.kind,
     state.trainerName,
     opponentName,
     playerLeadId,
     opponentLeadId,
   );
+  const hasTrainerOutro = battle.kind === "trainer";
   const remappedEvents = events.map((event, index) => {
     const isFinalEvent = index === events.length - 1;
 
     return {
       ...event,
-      sequence: event.sequence + (isFinalEvent ? 4 : 3),
+      sequence: event.sequence + (isFinalEvent && hasTrainerOutro ? 4 : 3),
       sourceSequence: event.sequence,
     };
   });
@@ -2114,6 +2119,10 @@ function createTrainerBattleCeremonyReplay(
 
   if (!finalEndEvent) {
     return events;
+  }
+
+  if (!hasTrainerOutro) {
+    return [...introEvents, ...remappedEvents];
   }
 
   return [
@@ -2132,21 +2141,26 @@ function createTrainerBattleCeremonyReplay(
   ];
 }
 
-function createTrainerBattleIntroEvents(
+function createBattleIntroEvents(
+  kind: "wild" | "trainer",
   playerName: string,
   opponentName: string,
   playerLeadId: string | undefined,
   opponentLeadId: string | undefined,
 ): FrameBattleReplayEvent[] {
+  const isTrainer = kind === "trainer";
+
   return [
     {
       sequence: 1,
       turn: 0,
       type: "trainer.intro",
       ceremonyStage: "intro",
-      label: `${playerName}와 ${opponentName}이 전투 필드에 등장했습니다.`,
-      playerLine: "가자! 준비는 끝났어.",
-      opponentLine: "좋아, 승부를 시작하지.",
+      label: isTrainer
+        ? `${playerName}와 ${opponentName}이 전투 필드에 등장했습니다.`
+        : `${playerName}이 야생 ${opponentName}과의 전투를 준비합니다.`,
+      playerLine: isTrainer ? "가자! 준비는 끝났어." : "가자, 앞으로!",
+      opponentLine: isTrainer ? "좋아, 승부를 시작하지." : undefined,
       activePlayerId: playerLeadId,
       activeEnemyId: opponentLeadId,
     },
@@ -2155,9 +2169,11 @@ function createTrainerBattleIntroEvents(
       turn: 0,
       type: "trainer.throw",
       ceremonyStage: "throw",
-      label: "두 트레이너가 몬스터볼을 던졌습니다.",
+      label: isTrainer
+        ? "두 트레이너가 몬스터볼을 던졌습니다."
+        : `${playerName}이 몬스터볼을 던졌습니다.`,
       playerLine: "나와줘!",
-      opponentLine: "앞으로!",
+      opponentLine: isTrainer ? "앞으로!" : undefined,
       activePlayerId: playerLeadId,
       activeEnemyId: opponentLeadId,
     },
@@ -2166,9 +2182,11 @@ function createTrainerBattleIntroEvents(
       turn: 0,
       type: "creature.summon",
       ceremonyStage: "summon",
-      label: "첫 포켓몬이 전투 필드에 소환되었습니다.",
+      label: isTrainer
+        ? "첫 포켓몬이 전투 필드에 소환되었습니다."
+        : `첫 포켓몬이 나오고 야생 ${opponentName}이 모습을 드러냅니다.`,
       playerLine: "첫 수는 맡긴다!",
-      opponentLine: "전력을 보여줘.",
+      opponentLine: isTrainer ? "전력을 보여줘." : undefined,
       activePlayerId: playerLeadId,
       activeEnemyId: opponentLeadId,
     },

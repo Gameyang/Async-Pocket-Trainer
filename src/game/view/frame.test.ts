@@ -38,7 +38,14 @@ describe("game frame contract", () => {
 
     expect(validateFrameContract(frame)).toEqual([]);
     expect(frame.battleReplay.sequenceIndex).toBe(replay.at(-1)?.sequence);
-    expect(replay[0]).toMatchObject({ sequence: 1, turn: 0, type: "battle.start" });
+    expect(frame.scene.trainer).toBeUndefined();
+    expect(replay.slice(0, 4).map((event) => event.type)).toEqual([
+      "trainer.intro",
+      "trainer.throw",
+      "creature.summon",
+      "battle.start",
+    ]);
+    expect(replay[3]).toMatchObject({ sequence: 4, sourceSequence: 1, type: "battle.start" });
     expect(replay.at(-1)?.type).toBe("battle.end");
     expect(
       replay.some((event) => event.type === "damage.apply" || event.type === "move.miss"),
@@ -204,16 +211,18 @@ describe("game frame contract", () => {
       (event) => event.type === "damage.apply" && (event.effectiveness ?? 1) > 1,
     );
     const typedHitCue = superEffective.visualCues.find(
-      (cue) => cue.type === "battle.hit" && cue.sequence === superEffectiveEvent?.sequence,
+      (cue) =>
+        cue.type === "battle.hit" &&
+        cue.sequence === (superEffectiveEvent?.sourceSequence ?? superEffectiveEvent?.sequence),
     );
     const criticalCue = critical.visualCues.find((cue) => cue.effectKey === "battle.criticalHit");
     const supportCue = support.visualCues.find((cue) => cue.type === "battle.support");
     const supportEvent = support.battleReplay.events.find(
-      (event) => event.sequence === supportCue?.sequence,
+      (event) => (event.sourceSequence ?? event.sequence) === supportCue?.sequence,
     );
     const missCue = missed.visualCues.find((cue) => cue.type === "battle.miss");
     const missEvent = missed.battleReplay.events.find(
-      (event) => event.sequence === missCue?.sequence,
+      (event) => (event.sourceSequence ?? event.sequence) === missCue?.sequence,
     );
 
     expect(superEffective.visualCues).toContainEqual(
