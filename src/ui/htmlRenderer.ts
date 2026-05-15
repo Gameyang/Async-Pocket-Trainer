@@ -656,6 +656,7 @@ export function mountHtmlRenderer(
       tutorialGuide,
       tutorialViewport.layout,
     );
+    fitShopCardDescriptions(root);
     positionActiveMoveVfx(root, playbackView.activeEvent);
     spawnActiveBattleEffect(
       root,
@@ -691,10 +692,12 @@ export function mountHtmlRenderer(
     });
     scheduleBattlePlayback(battlePlayback, frame, render, lifecycle);
     scheduleFeedbackToast(transientFeedback, render, lifecycle);
+    window.requestAnimationFrame(() => fitShopCardDescriptions(root));
   };
 
   render();
   bindTutorialViewportLayout(tutorialViewport, render);
+  bindShopCardDescriptionResize(root);
   bindAppLifecycle(lifecycle, battlePlayback, render);
 }
 
@@ -732,6 +735,56 @@ function bindAppLifecycle(
   document.addEventListener("resume", resumeIfVisible);
   window.addEventListener("pagehide", suspend);
   window.addEventListener("pageshow", resumeIfVisible);
+}
+
+function bindShopCardDescriptionResize(root: HTMLElement): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  let animationFrame = 0;
+  const update = () => {
+    window.cancelAnimationFrame(animationFrame);
+    animationFrame = window.requestAnimationFrame(() => fitShopCardDescriptions(root));
+  };
+
+  window.addEventListener("resize", update);
+  window.addEventListener("orientationchange", update);
+}
+
+function fitShopCardDescriptions(root: HTMLElement): void {
+  root.querySelectorAll<HTMLElement>(".shop-card .shop-card-body").forEach((body) => {
+    const detail = body.querySelector<HTMLElement>(".shop-card-detail");
+    if (!detail) {
+      return;
+    }
+
+    body.dataset.copyFit = "base";
+    detail.style.removeProperty("font-size");
+
+    const baseSize = parseFloat(getComputedStyle(detail).fontSize);
+    if (!Number.isFinite(baseSize) || baseSize <= 0) {
+      return;
+    }
+
+    const minSize = Math.max(8, baseSize * 0.68);
+    let size = baseSize;
+
+    while (size > minSize && !doesShopCardBodyFit(body)) {
+      size -= 0.5;
+      detail.style.fontSize = `${size}px`;
+    }
+
+    if (doesShopCardBodyFit(body)) {
+      body.dataset.copyFit = size < baseSize ? "compressed" : "base";
+    } else {
+      body.dataset.copyFit = "clamped";
+    }
+  });
+}
+
+function doesShopCardBodyFit(body: HTMLElement): boolean {
+  return body.scrollHeight <= body.clientHeight + 1 && body.scrollWidth <= body.clientWidth + 1;
 }
 
 function isPageSuspended(): boolean {
@@ -795,6 +848,10 @@ function resolveActiveReplayEventSoundKeys(
   frame: GameFrame,
   activeEvent: FrameBattleReplayEvent | undefined,
 ): string[] {
+  if (activeEvent?.type === "battle.start") {
+    return ["sfx.phase.change"];
+  }
+
   if (activeEvent?.type !== "creature.summon") {
     return [];
   }
@@ -2945,7 +3002,9 @@ function renderShopActionCard(action: FrameAction, frame: GameFrame): string {
   const reason = action.reason ? ` title="${escapeHtml(action.reason)}"` : "";
   const profile = createShopActionProfile(action, frame);
   const compactMeta = createCompactShopMeta(action, profile);
-  const detailText = profile.detail ? `: ${profile.detail}` : "";
+  const detailText = profile.detail
+    ? `<span class="shop-card-detail">: ${escapeHtml(profile.detail)}</span>`
+    : "";
   const ariaLabel = [profile.kicker, profile.title, profile.detail, profile.meta]
     .filter(Boolean)
     .join(" ");
@@ -2993,7 +3052,7 @@ function renderShopActionCard(action: FrameAction, frame: GameFrame): string {
     <button type="button" class="shop-card" data-action-id="${escapeHtml(action.id)}" data-shop-kind="${profile.kind}" data-role="${action.role}"${gradeAttribute}${featuredAttribute}${saleAttribute}${premiumAttribute}${portraitAttribute}${ownedAttribute}${selectedAttribute}${soldOutAttribute}${healAttribute} aria-label="${escapeHtml(ariaLabel)}"${disabled}${reason}>
       ${visual}
       <small>${escapeHtml(compactMeta)}</small>
-      <p class="shop-card-body"><strong>${escapeHtml(profile.title)}</strong>${escapeHtml(detailText)}</p>
+      <p class="shop-card-body"><strong>${escapeHtml(profile.title)}</strong>${detailText}</p>
       ${scopeBadge}
       ${saleBadge}
       ${premiumBadge}

@@ -1731,7 +1731,7 @@ function createRerollAction(state: GameState, rerollCount: number): FrameAction 
 }
 
 export function computeRerollCost(rerollCount: number): number {
-  return 8 + rerollCount * 6;
+  return 12 + rerollCount * 10;
 }
 
 function createPremiumActions(state: GameState): FrameAction[] {

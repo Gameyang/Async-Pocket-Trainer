@@ -4446,6 +4446,7 @@ button.move-detail-content:hover {
     inset 0 0 0 2px #fffef4,
     inset 0 0 0 4px var(--shop-kind-deep),
     4px 5px 0 rgba(0, 0, 0, 0.24);
+  overflow: hidden;
   text-align: left;
 }
 
@@ -4491,6 +4492,8 @@ button.move-detail-content:hover {
   margin: 0;
   width: 100%;
   min-width: 0;
+  min-height: 0;
+  overflow: hidden;
   color: #2d3a32;
   font-size: 0.72rem;
   font-weight: 600;
@@ -4504,6 +4507,22 @@ button.move-detail-content:hover {
   color: #14202a;
   font-size: 0.82rem;
   font-weight: 900;
+}
+
+.shop-card .shop-card-detail {
+  font-size: inherit;
+}
+
+.shop-card .shop-card-body[data-copy-fit="compressed"] {
+  line-height: 1.08;
+}
+
+.shop-card .shop-card-body[data-copy-fit="clamped"] {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  line-height: 1.06;
 }
 
 .shop-scope-badge {

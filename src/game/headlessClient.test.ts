@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { HeadlessGameClient, type HeadlessClientSnapshot } from "./headlessClient";
 import { getMove, getSpecies } from "./data/catalog";
+import { getTeamSortProduct } from "./shopCatalog";
 import { createTrainerSnapshot } from "./sync/trainerSnapshot";
 
 describe("HeadlessGameClient", () => {
@@ -57,7 +58,7 @@ describe("HeadlessGameClient", () => {
     const battleEnemy = snapshot.lastBattle?.enemyTeam[0];
 
     expect(snapshot.lastBattle?.kind).toBe("wild");
-    expect([4, 5]).toContain(encounterEnemy?.level);
+    expect([3, 4]).toContain(encounterEnemy?.level);
     expect([16, 19]).toContain(encounterEnemy?.speciesId);
     expect(battleEnemy?.level).toBe(encounterEnemy?.level);
     expect(snapshot.lastBattle?.log.some((entry) => entry.damage > 1)).toBe(true);
@@ -200,7 +201,9 @@ describe("HeadlessGameClient", () => {
     expect(client.getSnapshot().team.map((creature) => creature.instanceId)).toEqual(
       expectedPowerDescendingOrder,
     );
-    expect(client.getSnapshot().money).toBe(17);
+    expect(client.getSnapshot().money).toBe(
+      20 - getTeamSortProduct("power", "desc").cost,
+    );
     expect(client.getSnapshot().events.at(-1)?.type).toBe("team_sorted");
     expect(
       client
@@ -218,7 +221,11 @@ describe("HeadlessGameClient", () => {
     expect(client.getSnapshot().team.map((creature) => creature.instanceId)).toEqual(
       expectedHealthAscendingOrder,
     );
-    expect(client.getSnapshot().money).toBe(14);
+    expect(client.getSnapshot().money).toBe(
+      20 -
+        getTeamSortProduct("power", "desc").cost -
+        getTeamSortProduct("health", "asc").cost,
+    );
   });
 
   it("charges the discounted frame price for sale shop purchases", () => {
@@ -429,7 +436,7 @@ describe("HeadlessGameClient", () => {
   it("covers core user input paths through FrameAction dispatch", () => {
     const shopClient = startFromFrameAction("input-shop");
     const snapshot = shopClient.saveSnapshot();
-    snapshot.state.money = 200;
+    snapshot.state.money = 350;
     // Seed deterministic inventory for the assertions below
     snapshot.state.shopInventory = {
       wave: snapshot.state.currentWave,

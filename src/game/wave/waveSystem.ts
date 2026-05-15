@@ -28,8 +28,8 @@ export interface EncounterBoostOptions {
   preferredSpeciesChance?: number;
 }
 
-const OPENING_WILD_LEVEL_MIN = 4;
-const OPENING_WILD_LEVEL_MAX = 5;
+const OPENING_WILD_LEVEL_MIN = 3;
+const OPENING_WILD_LEVEL_MAX = 4;
 const OPENING_WILD_SPECIES_IDS = [16, 19] as const;
 
 function resolveBoostWave(baseWave: number, rng: SeededRng, boost?: EncounterBoostOptions): number {
@@ -134,9 +134,9 @@ export function createTrainerEncounter(
   boost?: EncounterBoostOptions,
   battleFieldOrder?: readonly BattleFieldId[],
 ): EncounterSnapshot {
-  const effectiveWave = resolveBoostWave(wave, rng, boost);
+  const effectiveWave = resolveTrainerCreatureWave(wave, rng, balance, boost);
   const battleField = resolveBattleFieldForWave(wave, battleFieldOrder);
-  const checkpointCount = Math.max(1, Math.floor(effectiveWave / balance.checkpointInterval));
+  const checkpointCount = Math.max(1, Math.floor(wave / balance.checkpointInterval));
   const teamSize = Math.min(
     balance.maxTeamSize,
     1 + Math.floor(checkpointCount * balance.checkpointTeamSizeGrowthPerCheckpoint),
@@ -164,6 +164,22 @@ export function createTrainerEncounter(
     opponentName: `${routeLabel(routeId)}${formatWave(wave)} 트레이너 (${scoreTeam(team)})`,
     enemyTeam: team,
   };
+}
+
+function resolveTrainerCreatureWave(
+  wave: number,
+  rng: SeededRng,
+  balance: GameBalance,
+  boost?: EncounterBoostOptions,
+): number {
+  const boostedWave = resolveBoostWave(wave, rng, boost);
+  const checkpointCount = Math.max(1, Math.floor(wave / balance.checkpointInterval));
+
+  if (checkpointCount === 1) {
+    return Math.max(1, boostedWave - 3);
+  }
+
+  return boostedWave;
 }
 
 export function createTrainerEncounterFromSnapshot(

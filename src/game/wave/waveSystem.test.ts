@@ -41,12 +41,12 @@ describe("wave encounter routing", () => {
       );
       levels.add(encounter.enemyTeam[0].level ?? 0);
       speciesIds.add(encounter.enemyTeam[0].speciesId);
-      expect([4, 5]).toContain(encounter.enemyTeam[0].level);
+      expect([3, 4]).toContain(encounter.enemyTeam[0].level);
       expect([16, 19]).toContain(encounter.enemyTeam[0].speciesId);
       expect(encounter.enemyTeam[0].moves[0].id).toBe("tackle");
     }
 
-    expect(levels).toEqual(new Set([4, 5]));
+    expect(levels).toEqual(new Set([3, 4]));
     expect(speciesIds).toEqual(new Set([16, 19]));
   });
 
@@ -65,7 +65,7 @@ describe("wave encounter routing", () => {
       { levelMin: 2, levelMax: 2 },
     );
 
-    expect([6, 7]).toContain(encounter.enemyTeam[0].level);
+    expect([5, 6]).toContain(encounter.enemyTeam[0].level);
   });
 
   it("raises the field element's wild encounter weight without locking the type", () => {
@@ -103,6 +103,12 @@ describe("wave encounter routing", () => {
     expect(
       createTrainerEncounter(20, new SeededRng("trainer-20"), defaultBalance).enemyTeam,
     ).toHaveLength(2);
+  });
+
+  it("softens the first checkpoint trainer below the checkpoint wave", () => {
+    const encounter = createTrainerEncounter(5, new SeededRng("trainer-5-softened"), defaultBalance);
+
+    expect(encounter.enemyTeam[0].level).toBe(2);
   });
 
   it("makes elite route encounters stronger and more rewarding", () => {

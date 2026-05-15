@@ -107,11 +107,25 @@ export class AudioMixer {
 
   apply(frame: AudioMixerFrame): void {
     if (!this.unlocked || this.lifecycleHidden) {
+      audioDebugLog("mixer.apply.skip", {
+        reason: !this.unlocked ? "locked" : "lifecycle-hidden",
+        unlocked: this.unlocked,
+        lifecycleHidden: this.lifecycleHidden,
+        bgmKey: frame.bgmKey,
+        activeReplaySequence: frame.activeReplaySequence,
+        activeEventSoundId: frame.activeEventSoundId,
+      });
       this.pause();
       return;
     }
 
     if (!this.ensureGraph()) {
+      audioDebugLog("mixer.apply.skip", {
+        reason: "no-audio-graph",
+        bgmKey: frame.bgmKey,
+        activeReplaySequence: frame.activeReplaySequence,
+        activeEventSoundId: frame.activeEventSoundId,
+      });
       return;
     }
 
@@ -497,18 +511,34 @@ export class AudioMixer {
     this.bgm = { key, loadSeq: seq };
 
     const url = this.options.resolveBgmUrl(key);
+    audioDebugLog("bgm.request", { key, seq, url: toAudioDebugUrl(url) });
     if (!url) {
       this.options.warn?.(`bgm url missing for key ${key}`);
+      audioDebugLog("bgm.missing-url", { key, seq });
       return;
     }
 
     void this.loadBuffer(url).then((buffer) => {
       if (!buffer || !this.ctx || !this.bgmGain) {
+        audioDebugLog("bgm.skip.no-buffer", {
+          key,
+          seq,
+          hasBuffer: Boolean(buffer),
+          hasContext: Boolean(this.ctx),
+          hasGain: Boolean(this.bgmGain),
+        });
         return;
       }
       // Discard the result if the user moved on to another key while we were loading,
       // or if another invocation already attached a source for this seq.
       if (!this.bgm || this.bgm.loadSeq !== seq || this.bgm.source) {
+        audioDebugLog("bgm.skip.stale", {
+          key,
+          seq,
+          activeKey: this.bgm?.key,
+          activeSeq: this.bgm?.loadSeq,
+          hasSource: Boolean(this.bgm?.source),
+        });
         return;
       }
 
@@ -534,8 +564,10 @@ export class AudioMixer {
       try {
         source.start();
         this.bgm.source = source;
+        audioDebugLog("bgm.start", { key, seq, currentTime: this.ctx.currentTime });
       } catch (error) {
         this.options.warn?.(`bgm start failed for ${key}`, error);
+        audioDebugLog("bgm.start-failed", { key, seq });
         this.bgm.source = undefined;
       }
     });

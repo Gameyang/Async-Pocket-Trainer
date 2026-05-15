@@ -127,10 +127,10 @@ export const statBoostTiers: readonly StatBoostTier[] = [1, 2, 3];
 export const teachMoveElements = shopElementTypes;
 export const typeLockElements = shopElementTypes;
 export const teamSortOptions: readonly TeamSortProduct[] = [
-  { sortBy: "power", direction: "asc", cost: 3 },
-  { sortBy: "power", direction: "desc", cost: 3 },
-  { sortBy: "health", direction: "asc", cost: 3 },
-  { sortBy: "health", direction: "desc", cost: 3 },
+  { sortBy: "power", direction: "asc", cost: 4 },
+  { sortBy: "power", direction: "desc", cost: 4 },
+  { sortBy: "health", direction: "asc", cost: 4 },
+  { sortBy: "health", direction: "desc", cost: 4 },
 ];
 
 const healRatios: Record<HealTier, number> = {
@@ -150,31 +150,31 @@ const healItemNames: Record<HealTier, string> = {
 };
 
 const singleHealCosts: Record<HealTier, number> = {
-  1: 4,
-  2: 7,
-  3: 10,
-  4: 14,
-  5: 20,
+  1: 8,
+  2: 16,
+  3: 30,
+  4: 50,
+  5: 78,
 };
 
 const teamHealCosts: Record<HealTier, number> = {
-  1: 6,
-  2: 10,
-  3: 14,
-  4: 18,
-  5: 20,
+  1: 18,
+  2: 36,
+  3: 64,
+  4: 96,
+  5: 120,
 };
 
 const scoutCosts: Record<ScoutKind, Record<ScoutTier, number>> = {
   rarity: {
-    1: 8,
-    2: 15,
-    3: 28,
+    1: 18,
+    2: 46,
+    3: 100,
   },
   power: {
-    1: 6,
-    2: 12,
-    3: 22,
+    1: 14,
+    2: 34,
+    3: 76,
   },
 };
 
@@ -185,9 +185,9 @@ const rarityBoostBonuses: Record<RarityBoostTier, number> = {
 };
 
 const rarityBoostCosts: Record<RarityBoostTier, number> = {
-  1: 12,
-  2: 22,
-  3: 40,
+  1: 40,
+  2: 90,
+  3: 180,
 };
 
 const levelBoostRanges: Record<LevelBoostTier, { min: number; max: number }> = {
@@ -198,10 +198,10 @@ const levelBoostRanges: Record<LevelBoostTier, { min: number; max: number }> = {
 };
 
 const levelBoostCosts: Record<LevelBoostTier, number> = {
-  1: 6,
-  2: 11,
-  3: 18,
-  4: 30,
+  1: 22,
+  2: 52,
+  3: 100,
+  4: 170,
 };
 
 const statBoostBonuses: Record<StatBoostTier, number> = {
@@ -211,51 +211,51 @@ const statBoostBonuses: Record<StatBoostTier, number> = {
 };
 
 const statBoostCosts: Record<StatBoostTier, number> = {
-  1: 8,
-  2: 14,
-  3: 22,
+  1: 28,
+  2: 68,
+  3: 125,
 };
 
 const teachMoveCosts: Record<ElementType, number> = {
-  normal: 24,
-  fire: 32,
-  water: 30,
-  grass: 28,
-  electric: 34,
-  poison: 26,
-  ground: 30,
-  flying: 28,
-  bug: 24,
-  fighting: 30,
-  psychic: 34,
-  rock: 30,
-  ghost: 34,
-  ice: 36,
-  dragon: 42,
-  dark: 34,
-  steel: 36,
-  fairy: 36,
+  normal: 95,
+  fire: 125,
+  water: 115,
+  grass: 110,
+  electric: 135,
+  poison: 105,
+  ground: 120,
+  flying: 110,
+  bug: 95,
+  fighting: 125,
+  psychic: 145,
+  rock: 120,
+  ghost: 145,
+  ice: 150,
+  dragon: 210,
+  dark: 145,
+  steel: 155,
+  fairy: 155,
 };
 
 const typeLockCosts: Record<ElementType, number> = {
-  normal: 16,
-  fire: 20,
-  water: 18,
-  grass: 18,
-  electric: 22,
-  poison: 18,
-  ground: 22,
-  flying: 20,
-  bug: 16,
-  fighting: 24,
-  psychic: 28,
-  rock: 22,
-  ghost: 28,
-  ice: 30,
-  dragon: 42,
-  dark: 30,
-  steel: 32,
-  fairy: 32,
+  normal: 45,
+  fire: 62,
+  water: 56,
+  grass: 54,
+  electric: 68,
+  poison: 52,
+  ground: 66,
+  flying: 58,
+  bug: 45,
+  fighting: 72,
+  psychic: 88,
+  rock: 66,
+  ghost: 88,
+  ice: 96,
+  dragon: 140,
+  dark: 92,
+  steel: 100,
+  fairy: 100,
 };
 
 const statLabels: Record<ShopStatKey, string> = {
@@ -314,7 +314,7 @@ export function getStatBoostProduct(stat: ShopStatKey, tier: StatBoostTier): Sta
 }
 
 export function getStatRerollProduct(): StatRerollProduct {
-  return { cost: 24 };
+  return { cost: 110 };
 }
 
 export function getTeachMoveProduct(element: ElementType): TeachMoveProduct {

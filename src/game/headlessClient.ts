@@ -1814,7 +1814,7 @@ export class HeadlessGameClient {
 
     if (
       strategy === "greedy" &&
-      this.state.currentWave >= 6 &&
+      this.state.currentWave >= 4 &&
       this.state.balls.greatBall === 0 &&
       this.state.money >= this.balance.greatBallCost
     ) {
@@ -1842,7 +1842,8 @@ export class HeadlessGameClient {
       !hasFaintedMember &&
       totalBalls >= 4 &&
       this.state.money >= restCost &&
-      !isCheckpoint
+      !isCheckpoint &&
+      this.state.currentWave > this.balance.checkpointInterval
     ) {
       return "elite";
     }
