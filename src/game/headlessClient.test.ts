@@ -44,6 +44,23 @@ describe("HeadlessGameClient", () => {
     expect(new Set(statKeys).size).toBeGreaterThan(1);
   });
 
+  it("starts the first wild encounter near the level-five starter", () => {
+    const client = new HeadlessGameClient({ seed: "opening-wild-level" });
+
+    client.dispatch({ type: "START_RUN", starterSpeciesId: 1 });
+    expect(client.getSnapshot().team[0].level).toBe(5);
+
+    client.dispatch({ type: "RESOLVE_NEXT_ENCOUNTER" });
+    const snapshot = client.getSnapshot();
+    const encounterEnemy = snapshot.pendingEncounter?.enemyTeam[0];
+    const battleEnemy = snapshot.lastBattle?.enemyTeam[0];
+
+    expect(snapshot.lastBattle?.kind).toBe("wild");
+    expect([4, 5]).toContain(encounterEnemy?.level);
+    expect(battleEnemy?.level).toBe(encounterEnemy?.level);
+    expect(snapshot.lastBattle?.log.some((entry) => entry.damage > 1)).toBe(true);
+  });
+
   it("keeps dex and skill TP rewards pending until the player claims them", () => {
     const client = new HeadlessGameClient({ seed: "manual-dex-rewards" });
 

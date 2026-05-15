@@ -26,16 +26,36 @@ export interface EncounterBoostOptions {
   lockedType?: ElementType;
 }
 
+const OPENING_WILD_LEVEL_MIN = 4;
+const OPENING_WILD_LEVEL_MAX = 5;
+
 function resolveBoostWave(baseWave: number, rng: SeededRng, boost?: EncounterBoostOptions): number {
+  return resolveBoostedLevel(baseWave, rng, boost);
+}
+
+function resolveBoostedLevel(
+  baseLevel: number,
+  rng: SeededRng,
+  boost?: EncounterBoostOptions,
+): number {
   const min = Math.max(0, boost?.levelMin ?? 0);
   const max = Math.max(min, boost?.levelMax ?? 0);
 
   if (max <= 0) {
-    return baseWave;
+    return baseLevel;
   }
 
   const offset = min + Math.floor(rng.nextFloat() * (max - min + 1));
-  return Math.max(1, baseWave + offset);
+  return Math.max(1, baseLevel + offset);
+}
+
+function resolveWildBaseLevel(wave: number, rng: SeededRng): number {
+  if (wave >= OPENING_WILD_LEVEL_MAX) {
+    return wave;
+  }
+
+  const openingLevel = rng.int(OPENING_WILD_LEVEL_MIN, OPENING_WILD_LEVEL_MAX);
+  return Math.max(wave, openingLevel);
 }
 
 export function createWildEncounter(
@@ -46,12 +66,13 @@ export function createWildEncounter(
   boost?: EncounterBoostOptions,
   battleFieldOrder?: readonly BattleFieldId[],
 ): EncounterSnapshot {
-  const effectiveWave = resolveBoostWave(wave, rng, boost);
+  const level = resolveBoostedLevel(resolveWildBaseLevel(wave, rng), rng, boost);
   const battleField = resolveBattleFieldForWave(wave, battleFieldOrder);
   const creature = applyRouteToCreature(
     createCreature({
       rng,
-      wave: effectiveWave,
+      wave,
+      level,
       balance,
       role: "wild",
       rarityBoost: boost?.rarityBonus ?? 0,

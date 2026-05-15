@@ -2,8 +2,6 @@ import { typeChart } from "../data/catalog";
 import { clamp, type SeededRng } from "../rng";
 import type { BattleStat, Creature, ElementType, MoveDefinition } from "../types";
 
-const MIN_EFFECTIVE_DAMAGE_LEVEL = 5;
-
 export interface DamageResult {
   damage: number;
   effectiveness: number;
@@ -147,7 +145,10 @@ export function getModifiedStat(creature: Creature, stat: BattleStat): number {
     return Math.max(1, Math.floor(base * 0.5 * getStageMultiplier(stage)));
   }
 
-  return Math.max(stat === "accuracy" || stat === "evasion" ? 0.25 : 1, base * getStageMultiplier(stage));
+  return Math.max(
+    stat === "accuracy" || stat === "evasion" ? 0.25 : 1,
+    base * getStageMultiplier(stage),
+  );
 }
 
 export function getStageMultiplier(stage: number): number {
@@ -178,12 +179,12 @@ function calculateBaseDamage(
   defense: number,
 ): number {
   const levelFactor = Math.floor((2 * level) / 5) + 2;
-  return Math.floor((Math.floor((levelFactor * power * attack) / Math.max(1, defense)) / 50)) + 2;
+  return Math.floor(Math.floor((levelFactor * power * attack) / Math.max(1, defense)) / 50) + 2;
 }
 
 function resolveBattleLevel(creature: Creature): number {
   if (typeof creature.level === "number") {
-    return clamp(Math.max(MIN_EFFECTIVE_DAMAGE_LEVEL, Math.round(creature.level)), 1, 100);
+    return clamp(Math.round(creature.level), 1, 100);
   }
 
   const statTotal =
@@ -192,7 +193,7 @@ function resolveBattleLevel(creature: Creature): number {
     creature.stats.defense +
     creature.stats.special +
     creature.stats.speed;
-  return clamp(Math.max(MIN_EFFECTIVE_DAMAGE_LEVEL, Math.round(statTotal / 18)), 1, 100);
+  return clamp(Math.max(1, Math.round(statTotal / 18)), 1, 100);
 }
 
 function getSideDefenseMultiplier(move: MoveDefinition, context: DamageContext): number {

@@ -27,7 +27,7 @@ export const defaultBalance: GameBalance = {
   wildStatGrowthPerWave: 0.03,
   trainerStatGrowthPerWave: 0.016,
   battleFieldTypeWeightMultiplier: 2,
-  battleDamageScale: 0.85,
+  battleDamageScale: 1,
   rewardBase: 15,
   rewardPerWave: 3,
   trainerRewardBonus: 16,

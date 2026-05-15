@@ -1,16 +1,13 @@
 import type { StorageLike } from "./clientStorage";
+import {
+  DEFAULT_TRAINER_PORTRAIT_ID,
+  isValidTrainerPortraitId,
+} from "../game/trainerPortraits";
+import type { MetaCurrencyState as GameMetaCurrencyState } from "../game/types";
 
 export const TRAINER_POINTS_STORAGE_KEY = "apt:trainer-points:v1";
 
-export interface MetaCurrencyState {
-  trainerPoints: number;
-  claimedAchievements: string[];
-  lastSheetClaim?: {
-    date: string;
-    totalWins: number;
-    teamId?: string;
-  };
-}
+export type MetaCurrencyState = GameMetaCurrencyState;
 
 const EMPTY: MetaCurrencyState = {
   trainerPoints: 0,
@@ -64,6 +61,24 @@ function normalize(value: unknown): MetaCurrencyState {
     trainerPoints,
     claimedAchievements,
   };
+  const ownedTrainerPortraitIds = readTrainerPortraitIds(raw.ownedTrainerPortraitIds);
+  const selectedTrainerPortraitId = readTrainerPortraitId(raw.selectedTrainerPortraitId);
+
+  if (
+    selectedTrainerPortraitId &&
+    selectedTrainerPortraitId !== DEFAULT_TRAINER_PORTRAIT_ID &&
+    !ownedTrainerPortraitIds.includes(selectedTrainerPortraitId)
+  ) {
+    ownedTrainerPortraitIds.push(selectedTrainerPortraitId);
+  }
+
+  if (ownedTrainerPortraitIds.length > 0) {
+    normalized.ownedTrainerPortraitIds = ownedTrainerPortraitIds;
+  }
+
+  if (selectedTrainerPortraitId) {
+    normalized.selectedTrainerPortraitId = selectedTrainerPortraitId;
+  }
 
   if (lastSheetSource) {
     const date = typeof lastSheetSource.date === "string" ? lastSheetSource.date : undefined;
@@ -75,4 +90,28 @@ function normalize(value: unknown): MetaCurrencyState {
   }
 
   return normalized;
+}
+
+function readTrainerPortraitIds(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return Array.from(
+    new Set(
+      value
+        .filter((entry): entry is string => typeof entry === "string")
+        .map((entry) => entry.trim())
+        .filter(isValidTrainerPortraitId),
+    ),
+  );
+}
+
+function readTrainerPortraitId(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const id = value.trim();
+  return isValidTrainerPortraitId(id) ? id : undefined;
 }

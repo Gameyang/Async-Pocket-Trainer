@@ -29,6 +29,40 @@ describe("wave encounter routing", () => {
     });
   });
 
+  it("starts wild encounters near the starter level", () => {
+    const levels = new Set<number>();
+
+    for (let index = 0; index < 24; index += 1) {
+      const encounter = createWildEncounter(
+        1,
+        new SeededRng(`opening-wild-${index}`),
+        defaultBalance,
+      );
+      levels.add(encounter.enemyTeam[0].level ?? 0);
+      expect([4, 5]).toContain(encounter.enemyTeam[0].level);
+    }
+
+    expect(levels).toEqual(new Set([4, 5]));
+  });
+
+  it("continues wild levels from the wave value after the opening range", () => {
+    expect(
+      createWildEncounter(6, new SeededRng("wild-level-6"), defaultBalance).enemyTeam[0].level,
+    ).toBe(6);
+  });
+
+  it("applies level boost offers on top of the opening wild level", () => {
+    const encounter = createWildEncounter(
+      1,
+      new SeededRng("opening-wild-boost"),
+      defaultBalance,
+      "normal",
+      { levelMin: 2, levelMax: 2 },
+    );
+
+    expect([6, 7]).toContain(encounter.enemyTeam[0].level);
+  });
+
   it("raises the field element's wild encounter weight without locking the type", () => {
     const boosted = countFieldTypeMatches(defaultBalance.battleFieldTypeWeightMultiplier);
     const neutral = countFieldTypeMatches(1);

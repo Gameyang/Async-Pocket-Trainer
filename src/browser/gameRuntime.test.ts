@@ -16,7 +16,7 @@ import {
   serializeTrainerSnapshot,
   type TrainerSnapshot,
 } from "../game/sync/trainerSnapshot";
-import { loadTrainerPoints } from "./trainerPointsStore";
+import { loadTrainerPoints, TRAINER_POINTS_STORAGE_KEY } from "./trainerPointsStore";
 
 const disabledSyncSettings = {
   ...CODE_SYNC_SETTINGS,
@@ -68,6 +68,58 @@ describe("browser game runtime", () => {
 
     expect(frame.phase).toBe("starterChoice");
     expect(frame.actions.some((action) => action.id === "start:25")).toBe(true);
+  });
+
+  it("persists purchased trainer portraits across browser runtime reloads", async () => {
+    const storage = createMemoryStorage();
+    const runtime = createBrowserGameRuntime({
+      storage,
+      seed: "runtime-portrait-save",
+      playerId: "runtime-player",
+      syncSettings: disabledSyncSettings,
+      now: () => "2026-05-15T00:00:00.000Z",
+      random: () => 0,
+      prefetchNextCheckpoint: false,
+    });
+
+    await runtime.dispatch({ type: "START_RUN", starterSpeciesId: 1 });
+    runtime.client.setMetaCurrency({ trainerPoints: 100, claimedAchievements: [] });
+
+    const portraitAction = runtime
+      .getFrame()
+      .actions.find((action) => action.id.startsWith("shop:portrait:"));
+
+    expect(portraitAction?.action.type).toBe("BUY_TRAINER_PORTRAIT");
+    await runtime.dispatch(portraitAction!.action);
+
+    const portraitId =
+      portraitAction!.action.type === "BUY_TRAINER_PORTRAIT"
+        ? portraitAction!.action.portraitId
+        : "";
+    expect(loadTrainerPoints(storage).selectedTrainerPortraitId).toBe(portraitId);
+    expect(loadTrainerPoints(storage).ownedTrainerPortraitIds).toContain(portraitId);
+    const persistedMeta = loadTrainerPoints(storage);
+    storage.setItem(
+      TRAINER_POINTS_STORAGE_KEY,
+      JSON.stringify({
+        trainerPoints: persistedMeta.trainerPoints,
+        claimedAchievements: persistedMeta.claimedAchievements,
+      }),
+    );
+
+    const restored = createBrowserGameRuntime({
+      storage,
+      seed: "runtime-portrait-save",
+      playerId: "runtime-player",
+      syncSettings: disabledSyncSettings,
+      now: () => "2026-05-15T00:00:00.000Z",
+      random: () => 0,
+      prefetchNextCheckpoint: false,
+    });
+
+    expect(restored.getSnapshot().metaCurrency?.selectedTrainerPortraitId).toBe(portraitId);
+    expect(restored.getSnapshot().metaCurrency?.ownedTrainerPortraitIds).toContain(portraitId);
+    expect(restored.getFrame().hud.trainerPortrait?.id).toBe(portraitId);
   });
 
   it("submits the checkpoint victory team profile from the player prompt", async () => {

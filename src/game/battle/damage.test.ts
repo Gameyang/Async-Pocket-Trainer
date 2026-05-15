@@ -56,13 +56,22 @@ describe("battle damage rules", () => {
     );
   });
 
-  it("keeps level-one non-STAB attacks above one-point chip damage", () => {
-    const attacker = {
+  it("uses actual level-one damage instead of raising it to level five", () => {
+    const levelOne = {
       ...creature(
-        "low-attacker",
+        "level-one",
         [tackle],
         { hp: 12, attack: 6, defense: 6, special: 6, speed: 6 },
         1,
+      ),
+      types: ["fire" as const],
+    };
+    const levelFive = {
+      ...creature(
+        "level-five",
+        [tackle],
+        { hp: 12, attack: 6, defense: 6, special: 6, speed: 6 },
+        5,
       ),
       types: ["fire" as const],
     };
@@ -75,9 +84,13 @@ describe("battle damage rules", () => {
       ),
       types: ["water" as const],
     };
-    const result = calculateDamage(attacker, defender, tackle, new FixedChanceRng(false), 0.85);
+    const levelOneDamage = calculateDamage(levelOne, defender, tackle, new FixedChanceRng(false));
+    const levelFiveDamage = calculateDamage(levelFive, defender, tackle, new FixedChanceRng(false));
 
-    expect(result.damage).toBeGreaterThan(1);
+    expect(levelOneDamage.damage).toBe(2);
+    expect(levelFiveDamage.damage).toBe(4);
+    expect(estimateDamage(levelOne, defender, tackle)).toBe(2);
+    expect(estimateDamage(levelFive, defender, tackle)).toBe(4);
   });
 
   it("applies status ailments and residual poison damage through replay events", () => {

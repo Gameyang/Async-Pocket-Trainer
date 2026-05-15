@@ -2890,7 +2890,8 @@ function renderShopActionCard(action: FrameAction, frame: GameFrame): string {
     <button type="button" class="shop-card" data-action-id="${escapeHtml(action.id)}" data-shop-kind="${profile.kind}" data-role="${action.role}"${gradeAttribute}${featuredAttribute}${saleAttribute}${premiumAttribute}${portraitAttribute}${ownedAttribute}${selectedAttribute}${soldOutAttribute}${healAttribute} aria-label="${escapeHtml(ariaLabel)}"${disabled}${reason}>
       ${visual}
       <small>${escapeHtml(compactMeta)}</small>
-      <p class="shop-card-body">${scopeBadge}<strong>${escapeHtml(profile.title)}</strong>${escapeHtml(detailText)}</p>
+      <p class="shop-card-body"><strong>${escapeHtml(profile.title)}</strong>${escapeHtml(detailText)}</p>
+      ${scopeBadge}
       ${saleBadge}
       ${premiumBadge}
       ${inventoryBadge}

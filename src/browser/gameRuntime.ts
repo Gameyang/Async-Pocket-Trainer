@@ -313,6 +313,14 @@ function hydrateMetaCurrency(
     claimedAchievements: Array.from(
       new Set([...persistedMeta.claimedAchievements, ...snapshotMeta.claimedAchievements]),
     ),
+    ownedTrainerPortraitIds: Array.from(
+      new Set([
+        ...(persistedMeta.ownedTrainerPortraitIds ?? []),
+        ...(snapshotMeta.ownedTrainerPortraitIds ?? []),
+      ]),
+    ),
+    selectedTrainerPortraitId:
+      snapshotMeta.selectedTrainerPortraitId ?? persistedMeta.selectedTrainerPortraitId,
     lastSheetClaim: persistedMeta.lastSheetClaim ?? snapshotMeta.lastSheetClaim,
   };
   const today = now().slice(0, 10);
