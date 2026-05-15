@@ -1,4 +1,6 @@
-import { HeadlessGameClient } from "../headlessClient";
+import { createBrowserGameRuntime, createMemoryStorage } from "../../browser/gameRuntime";
+import { CODE_SYNC_SETTINGS } from "../../browser/syncSettings";
+import type { HeadlessGameClient } from "../headlessClient";
 import { SeededRng } from "../rng";
 import { getTeamHealthRatio, scoreTeam } from "../scoring";
 import {
@@ -8,15 +10,10 @@ import {
   serializeTrainerSnapshot,
 } from "../sync/trainerSnapshot";
 import { ballTypes } from "../types";
-import type {
-  AutoPlayStrategy,
-  GameEvent,
-  GamePhase,
-  GameState,
-  RunSummary,
-} from "../types";
+import type { AutoPlayStrategy, GameEvent, GamePhase, GameState, RunSummary } from "../types";
 import { validateFrameContract } from "../view/frame";
-import { chooseFrameAction } from "./frameController";
+import type { RenderlessActionTraceEntry, RenderlessTerminalReason } from "./renderlessPlayer";
+import { playRenderlessGame } from "./renderlessPlayer";
 
 export interface HeadlessQaOptions {
   seed: string;
@@ -55,6 +52,9 @@ export interface HeadlessQaTargetResult {
 export interface HeadlessRunReport extends RunSummary {
   invariantErrors: string[];
   healthRatio: number;
+  terminalReason: RenderlessTerminalReason;
+  steps: number;
+  actionTrace: RenderlessActionTraceEntry[];
 }
 
 export interface HeadlessQaReport {
@@ -133,20 +133,30 @@ const validPhases: GamePhase[] = [
   "gameOver",
 ];
 
-export function runHeadlessQa(options: HeadlessQaOptions): HeadlessQaReport {
+export async function runHeadlessQa(options: HeadlessQaOptions): Promise<HeadlessQaReport> {
   const runs: HeadlessRunReport[] = [];
   const waveBalance = new Map<number, MutableWaveBalance>();
 
   for (let index = 0; index < options.runs; index += 1) {
-    const client = new HeadlessGameClient({
+    const controllerRng = new SeededRng(`${options.seed}:${index}:controller`);
+    const runtime = createBrowserGameRuntime({
+      storage: createMemoryStorage(),
       seed: `${options.seed}:${index}`,
       trainerName: `QA-${index + 1}`,
+      playerId: `qa-${index + 1}`,
+      syncSettings: {
+        ...CODE_SYNC_SETTINGS,
+        enabled: false,
+      },
+      now: () => "2026-05-12T00:00:00.000Z",
+      random: () => controllerRng.nextFloat(),
+      prefetchNextCheckpoint: false,
     });
+    const client = runtime.client;
     const errors: string[] = [];
     const seenEventIds = new Set<number>();
     const seenCheckpointWaves = new Set<number>();
-    const controllerRng = new SeededRng(`${options.seed}:${index}:controller`);
-    let snapshot = client.getSnapshot();
+    let snapshot = runtime.getSnapshot();
     recordWaveSnapshot(snapshot, seenEventIds, waveBalance);
     errors.push(
       ...validateCheckpointSnapshot(client, snapshot, seenCheckpointWaves).map(
@@ -154,40 +164,46 @@ export function runHeadlessQa(options: HeadlessQaOptions): HeadlessQaReport {
       ),
     );
 
-    for (let step = 0; step < options.waves * 12 + 48; step += 1) {
-      errors.push(...validateState(snapshot).map((error) => `step ${step}: ${error}`));
-      const frame = client.getFrame();
-      errors.push(...validateFrameContract(frame).map((error) => `step ${step} frame: ${error}`));
+    const playResult = await playRenderlessGame(runtime, {
+      maxWaves: options.waves,
+      strategy: options.strategy,
+      rng: controllerRng,
+      onFrame(step, frame, state) {
+        errors.push(...validateState(state).map((error) => `step ${step}: ${error}`));
+        errors.push(...validateFrameContract(frame).map((error) => `step ${step} frame: ${error}`));
+      },
+      onState(step, state) {
+        snapshot = state;
+        recordWaveSnapshot(snapshot, seenEventIds, waveBalance);
+        errors.push(
+          ...validateCheckpointSnapshot(client, snapshot, seenCheckpointWaves).map(
+            (error) => `step ${step} checkpoint: ${error}`,
+          ),
+        );
+      },
+    });
+    snapshot = playResult.state;
 
-      if (snapshot.phase === "gameOver" || snapshot.currentWave > options.waves) {
-        break;
-      }
-
-      const action = chooseFrameAction(frame, options.strategy, controllerRng);
-
-      if (!action) {
-        errors.push(`step ${step}: no enabled frame action for phase ${frame.phase}`);
-        break;
-      }
-
-      snapshot = client.dispatch(action.action);
-      recordWaveSnapshot(snapshot, seenEventIds, waveBalance);
-      errors.push(
-        ...validateCheckpointSnapshot(client, snapshot, seenCheckpointWaves).map(
-          (error) => `step ${step} checkpoint: ${error}`,
-        ),
-      );
+    if (
+      playResult.terminalReason === "noEnabledAction" ||
+      playResult.terminalReason === "noDispatchablePayload" ||
+      playResult.terminalReason === "maxSteps"
+    ) {
+      errors.push(`terminal: ${playResult.terminalReason}`);
     }
 
     errors.push(...validateState(snapshot).map((error) => `final: ${error}`));
     errors.push(
-      ...validateFrameContract(client.getFrame()).map((error) => `final frame: ${error}`),
+      ...validateFrameContract(runtime.getFrame()).map((error) => `final frame: ${error}`),
     );
 
     runs.push({
       ...client.getRunSummary(),
       invariantErrors: errors,
       healthRatio: Number(getTeamHealthRatio(snapshot.team).toFixed(4)),
+      terminalReason: playResult.terminalReason,
+      steps: playResult.steps,
+      actionTrace: playResult.actionTrace.slice(-12),
     });
   }
 

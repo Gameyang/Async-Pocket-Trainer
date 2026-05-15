@@ -19,7 +19,7 @@ interface CliArgs {
 }
 
 const args = parseArgs(process.argv.slice(2));
-const report = runHeadlessQa({
+const report = await runHeadlessQa({
   seed: args.seed,
   runs: args.runs,
   waves: args.waves,

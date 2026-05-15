@@ -1,4 +1,10 @@
-import { HeadlessGameClient } from "../headlessClient";
+import {
+  createBrowserGameRuntime,
+  createMemoryStorage,
+  type BrowserGameRuntime,
+} from "../../browser/gameRuntime";
+import { CODE_SYNC_SETTINGS } from "../../browser/syncSettings";
+import { playRenderlessGame } from "../qa/renderlessPlayer";
 import { SeededRng } from "../rng";
 import type { AutoPlayStrategy, GameState } from "../types";
 import { createTrainerSnapshot, isCheckpointWave, type TrainerSnapshot } from "./trainerSnapshot";
@@ -24,59 +30,36 @@ export interface SyntheticTrainerSnapshotBatchOptions {
 }
 
 const DEFAULT_MAX_ATTEMPTS = 80;
-const DEFAULT_TRAINER_NAME_PREFIX = "테스트";
+const DEFAULT_TRAINER_NAME_PREFIX = "Synthetic";
 
-const KOREAN_SURNAMES = [
-  "김",
-  "이",
-  "박",
-  "최",
-  "정",
-  "강",
-  "조",
-  "윤",
-  "장",
-  "임",
-] as const;
+const SURNAMES = ["Kim", "Lee", "Park", "Choi", "Jung", "Kang", "Cho", "Yoon"] as const;
+const GIVEN_NAMES = ["Min", "Seo", "Jin", "Ha", "Yu", "Won", "Rin", "Sol", "Jun", "Ian"] as const;
 
-const KOREAN_GIVEN_NAMES = [
-  "민준",
-  "서준",
-  "도윤",
-  "예준",
-  "시우",
-  "하준",
-  "주원",
-  "지호",
-  "서연",
-  "서윤",
-  "지우",
-  "하윤",
-  "민서",
-  "채원",
-  "지민",
-  "은우",
-] as const;
-
-export function createSyntheticTrainerSnapshots(
+export async function createSyntheticTrainerSnapshots(
   options: SyntheticTrainerSnapshotBatchOptions,
-): TrainerSnapshot[] {
+): Promise<TrainerSnapshot[]> {
   assertPositiveInteger(options.countPerWave, "countPerWave");
 
-  return options.waves.flatMap((wave) =>
-    Array.from({ length: options.countPerWave }, (_unused, index) =>
-      createSyntheticTrainerSnapshot({
-        ...options,
-        wave,
-        index,
-      }),
-    ),
-  );
+  const snapshots: TrainerSnapshot[] = [];
+
+  for (const wave of options.waves) {
+    for (let index = 0; index < options.countPerWave; index += 1) {
+      snapshots.push(
+        await createSyntheticTrainerSnapshot({
+          ...options,
+          wave,
+          index,
+        }),
+      );
+    }
+  }
+
+  return snapshots;
 }
 
-export function createSyntheticTrainerSnapshot(
+export async function createSyntheticTrainerSnapshot(
   options: SyntheticTrainerSnapshotOptions,
-): TrainerSnapshot {
+): Promise<TrainerSnapshot> {
   assertPositiveInteger(options.wave, "wave");
   assertNonNegativeInteger(options.index, "index");
 
@@ -88,14 +71,25 @@ export function createSyntheticTrainerSnapshot(
 
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     const runSeed = `${options.seed}:wave-${options.wave}:slot-${options.index}:attempt-${attempt}`;
-    const client = new HeadlessGameClient({
+    const controllerRng = new SeededRng(`${runSeed}:controller`);
+    const runtime = createBrowserGameRuntime({
+      storage: createMemoryStorage(),
       seed: runSeed,
       trainerName: name,
+      playerId,
+      syncSettings: {
+        ...CODE_SYNC_SETTINGS,
+        enabled: false,
+      },
+      now: () => options.createdAt ?? "2026-05-15T00:00:00.000Z",
+      random: () => controllerRng.nextFloat(),
+      prefetchNextCheckpoint: false,
     });
-    const wonState = playUntilCheckpointWin(
-      client,
+    const wonState = await playUntilCheckpointWin(
+      runtime,
       options.wave,
       options.strategy ?? "greedy",
+      controllerRng,
     );
 
     if (!wonState) {
@@ -107,7 +101,7 @@ export function createSyntheticTrainerSnapshot(
       trainerName: name,
       createdAt: options.createdAt,
       runSummary: {
-        ...client.getRunSummary(),
+        ...runtime.getRunSummary(),
         trainerName: name,
       },
       wave: options.wave,
@@ -119,12 +113,13 @@ export function createSyntheticTrainerSnapshot(
   );
 }
 
-function playUntilCheckpointWin(
-  client: HeadlessGameClient,
+async function playUntilCheckpointWin(
+  runtime: BrowserGameRuntime,
   targetWave: number,
   strategy: AutoPlayStrategy,
-): GameState | undefined {
-  const checkpointInterval = client.getBalance().checkpointInterval;
+  rng: SeededRng,
+): Promise<GameState | undefined> {
+  const checkpointInterval = runtime.client.getBalance().checkpointInterval;
 
   if (!isCheckpointWave(targetWave, checkpointInterval)) {
     throw new Error(
@@ -132,42 +127,32 @@ function playUntilCheckpointWin(
     );
   }
 
-  const maxSteps = targetWave * 16 + 96;
+  const result = await playRenderlessGame(runtime, {
+    maxWaves: targetWave,
+    maxSteps: targetWave * 20 + 120,
+    strategy,
+    rng,
+  });
 
-  for (let step = 0; step < maxSteps; step += 1) {
-    const before = client.getSnapshot();
-
-    if (before.phase === "gameOver" || before.currentWave > targetWave + 1) {
-      return undefined;
-    }
-
-    const after = client.autoStep(strategy);
-
-    if (isTargetCheckpointWin(before, after, targetWave)) {
-      return after;
-    }
-  }
-
-  return undefined;
+  return isTargetCheckpointWin(result.state, targetWave) ? result.state : undefined;
 }
 
-function isTargetCheckpointWin(before: GameState, after: GameState, targetWave: number): boolean {
+function isTargetCheckpointWin(state: GameState, targetWave: number): boolean {
   return (
-    before.phase === "ready" &&
-    before.currentWave === targetWave &&
-    after.phase === "ready" &&
-    after.lastBattle?.kind === "trainer" &&
-    after.lastBattle.winner === "player"
+    state.phase === "ready" &&
+    state.currentWave > targetWave &&
+    state.lastBattle?.kind === "trainer" &&
+    state.lastBattle.winner === "player"
   );
 }
 
 function createSyntheticTrainerName(options: SyntheticTrainerSnapshotOptions): string {
   const rng = new SeededRng(`${options.seed}:name:${options.wave}:${options.index}`);
   const prefix = options.trainerNamePrefix ?? DEFAULT_TRAINER_NAME_PREFIX;
-  const surname = rng.pick(KOREAN_SURNAMES);
-  const givenName = rng.pick(KOREAN_GIVEN_NAMES);
+  const surname = rng.pick(SURNAMES);
+  const givenName = rng.pick(GIVEN_NAMES);
 
-  return `${prefix} ${surname}${givenName}`;
+  return `${prefix} ${surname} ${givenName}`;
 }
 
 function sanitizeId(value: string): string {

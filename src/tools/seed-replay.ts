@@ -16,8 +16,8 @@ interface ReplayArgs {
 }
 
 const args = parseArgs(process.argv.slice(2));
-const first = runHeadlessQa(args);
-const second = runHeadlessQa(args);
+const first = await runHeadlessQa(args);
+const second = await runHeadlessQa(args);
 const deterministic = JSON.stringify(first) === JSON.stringify(second);
 
 console.log(

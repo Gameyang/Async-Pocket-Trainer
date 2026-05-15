@@ -22,7 +22,7 @@ interface CliArgs {
 
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
-  const snapshots = createSyntheticTrainerSnapshots({
+  const snapshots = await createSyntheticTrainerSnapshots({
     seed: args.seed,
     waves: args.waves,
     countPerWave: args.countPerWave,
@@ -147,11 +147,7 @@ function parseWaveList(value: string): number[] {
   return waves;
 }
 
-function parsePositiveInteger(
-  value: string | undefined,
-  fallback: number,
-  field: string,
-): number {
+function parsePositiveInteger(value: string | undefined, fallback: number, field: string): number {
   if (!value) {
     return fallback;
   }

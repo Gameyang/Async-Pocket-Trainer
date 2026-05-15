@@ -4,8 +4,8 @@ import { compareHeadlessQaReports, summarizeHeadlessQaReport } from "./reportSum
 import { runHeadlessQa } from "./simulate";
 
 describe("headless QA simulation", () => {
-  it("reports invariant failures separately from rendering", () => {
-    const report = runHeadlessQa({
+  it("reports invariant failures separately from rendering", async () => {
+    const report = await runHeadlessQa({
       seed: "qa-test",
       runs: 8,
       waves: 8,
@@ -29,8 +29,8 @@ describe("headless QA simulation", () => {
     });
   });
 
-  it("keeps 30-wave autoplay progression viable for long-run QA", () => {
-    const report = runHeadlessQa({
+  it("keeps 30-wave autoplay progression viable for long-run QA", async () => {
+    const report = await runHeadlessQa({
       seed: "long-run-regression",
       runs: 20,
       waves: 30,
@@ -41,17 +41,17 @@ describe("headless QA simulation", () => {
     // 게임 밸런스(레벨 시스템, 보급 제거, 인벤토리 제약) 조정에 맞춰 임계값 완화
     // Captured teammates now join at half HP, lowering this deterministic autoplay floor.
     expect(report.aggregate.averageFinalWave).toBeGreaterThanOrEqual(6);
-  });
+  }, 15_000);
 
-  it("produces deterministic seed replay summaries and balance comparison deltas", () => {
+  it("produces deterministic seed replay summaries and balance comparison deltas", async () => {
     const options = {
       seed: "replay-summary",
       runs: 4,
       waves: 6,
       strategy: "greedy" as const,
     };
-    const first = runHeadlessQa(options);
-    const second = runHeadlessQa(options);
+    const first = await runHeadlessQa(options);
+    const second = await runHeadlessQa(options);
     const summary = summarizeHeadlessQaReport(first);
     const comparison = compareHeadlessQaReports(first, second);
 
