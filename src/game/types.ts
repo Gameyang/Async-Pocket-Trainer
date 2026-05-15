@@ -165,6 +165,18 @@ export interface Stats {
   speed: number;
 }
 
+export interface StatDvs {
+  attack: number;
+  defense: number;
+  speed: number;
+  special: number;
+}
+
+export interface PokemonStatProfile {
+  dvs: StatDvs;
+  statExp: Stats;
+}
+
 export interface MoveDefinition {
   id: string;
   name: string;
@@ -236,6 +248,8 @@ export interface Creature {
   types: ElementType[];
   weightHg?: number;
   level?: number;
+  statProfile?: PokemonStatProfile;
+  statBonuses?: Stats;
   stats: Stats;
   currentHp: number;
   moves: MoveDefinition[];

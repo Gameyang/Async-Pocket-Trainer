@@ -31,7 +31,7 @@ export function estimateDamage(
   attacker: Creature,
   defender: Creature,
   move: MoveDefinition,
-  damageScale = 0.24,
+  damageScale = 1,
   context: DamageContext = {},
 ): number {
   if (move.category === "status") {
@@ -50,14 +50,24 @@ export function estimateDamage(
 
   const attack = getAttackStat(attacker, defender, move);
   const defense = getDefenseStat(defender, move);
-  const stab = attacker.types.includes(move.type) ? 1.25 : 1;
+  const stab = attacker.types.includes(move.type) ? 1.5 : 1;
   const effectiveness = getTypeEffectiveness(move.type, defender.types);
   const sideMultiplier = getSideDefenseMultiplier(move, context);
-  const raw = ((power * attack) / Math.max(1, defense)) * damageScale + 2;
+  const raw = calculateBaseDamage(resolveBattleLevel(attacker), power, attack, defense);
+  const averageVariance = 0.925;
 
   return Math.max(
     0,
-    Math.floor(raw * stab * effectiveness * sideMultiplier * (context.hitCount ?? 1) * move.accuracy),
+    Math.floor(
+      raw *
+        stab *
+        effectiveness *
+        sideMultiplier *
+        averageVariance *
+        damageScale *
+        (context.hitCount ?? 1) *
+        move.accuracy,
+    ),
   );
 }
 
@@ -66,7 +76,7 @@ export function calculateDamage(
   defender: Creature,
   move: MoveDefinition,
   rng: SeededRng,
-  damageScale = 0.24,
+  damageScale = 1,
   context: DamageContext = {},
 ): DamageResult {
   const effectiveness = getTypeEffectiveness(move.type, defender.types);
@@ -91,9 +101,9 @@ export function calculateDamage(
 
   const attack = getAttackStat(attacker, defender, move);
   const defense = getDefenseStat(defender, move);
-  const stab = attacker.types.includes(move.type) ? 1.25 : 1;
+  const stab = attacker.types.includes(move.type) ? 1.5 : 1;
   const sideMultiplier = getSideDefenseMultiplier(move, context);
-  const variance = 0.9 + rng.nextFloat() * 0.2;
+  const variance = 0.85 + rng.nextFloat() * 0.16;
   const criticalChance = clamp(
     attacker.stats.speed / 720 + (move.meta.critRate + (context.criticalChanceBonus ?? 0)) * 0.12,
     0.04,
@@ -101,7 +111,7 @@ export function calculateDamage(
   );
   const critical = rng.chance(criticalChance);
   const criticalMultiplier = critical ? 1.5 : 1;
-  const raw = ((power * attack) / Math.max(1, defense)) * damageScale + 2;
+  const raw = calculateBaseDamage(resolveBattleLevel(attacker), power, attack, defense);
   const damage = Math.max(
     1,
     Math.floor(
@@ -111,6 +121,7 @@ export function calculateDamage(
         sideMultiplier *
         variance *
         criticalMultiplier *
+        damageScale *
         (context.hitCount ?? 1),
     ),
   );
@@ -148,6 +159,30 @@ function getDefenseStat(defender: Creature, move: MoveDefinition): number {
   return move.category === "special"
     ? getModifiedStat(defender, "special")
     : getModifiedStat(defender, "defense");
+}
+
+function calculateBaseDamage(
+  level: number,
+  power: number,
+  attack: number,
+  defense: number,
+): number {
+  const levelFactor = Math.floor((2 * level) / 5) + 2;
+  return Math.floor((Math.floor((levelFactor * power * attack) / Math.max(1, defense)) / 50)) + 2;
+}
+
+function resolveBattleLevel(creature: Creature): number {
+  if (typeof creature.level === "number") {
+    return clamp(Math.round(creature.level), 1, 100);
+  }
+
+  const statTotal =
+    creature.stats.hp +
+    creature.stats.attack +
+    creature.stats.defense +
+    creature.stats.special +
+    creature.stats.speed;
+  return clamp(Math.round(statTotal / 18), 1, 100);
 }
 
 function getSideDefenseMultiplier(move: MoveDefinition, context: DamageContext): number {

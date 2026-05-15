@@ -147,19 +147,19 @@ describe("HeadlessGameClient", () => {
         ...bulbasaur,
         instanceId: "sort-low",
         powerScore: 10,
-        currentHp: Math.max(1, Math.floor(bulbasaur.stats.hp * 0.3)),
+        currentHp: Math.max(1, Math.floor(bulbasaur.stats.hp * 0.9)),
       },
       {
         ...charmander,
         instanceId: "sort-high",
         powerScore: 30,
-        currentHp: Math.max(1, Math.floor(charmander.stats.hp * 0.9)),
+        currentHp: Math.max(1, Math.floor(charmander.stats.hp * 0.6)),
       },
       {
         ...squirtle,
         instanceId: "sort-mid",
         powerScore: 20,
-        currentHp: Math.max(1, Math.floor(squirtle.stats.hp * 0.6)),
+        currentHp: Math.max(1, Math.floor(squirtle.stats.hp * 0.3)),
       },
     ];
     saved.state.shopInventory = {

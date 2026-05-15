@@ -56,7 +56,7 @@ describe("game frame contract", () => {
     expect(validateFrameContract(frame)).toEqual([]);
     expect(frame.phase).toBe("starterChoice");
     expect(frame.scene.starterOptions.map((option) => option.speciesId)).toEqual([1, 4, 7]);
-    expect(frame.scene.starterOptions.map((option) => option.level)).toEqual([1, 1, 1]);
+    expect(frame.scene.starterOptions.map((option) => option.level)).toEqual([5, 5, 5]);
     expect(frame.scene.bgmKey).toBe("bgm.starterReady");
 
     client.dispatch(frame.actions[0].action);

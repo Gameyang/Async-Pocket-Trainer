@@ -104,6 +104,7 @@ describe("browser sync controller", () => {
     await sync.beforeDispatch({ type: "RESOLVE_NEXT_ENCOUNTER" });
     client.dispatch({ type: "RESOLVE_NEXT_ENCOUNTER" });
     await sync.afterDispatch({ type: "RESOLVE_NEXT_ENCOUNTER" });
+    await sync.prefetchNextCheckpoint();
 
     const records = await adapter.listTeamBattleRecords({ challengerPlayerId: "player-a" });
     const battle = client.getSnapshot().lastBattle;
@@ -327,6 +328,13 @@ function strengthenClientTeam(client: HeadlessGameClient): void {
   const snapshot = client.saveSnapshot();
   snapshot.state.team = snapshot.state.team.map((creature) => ({
     ...creature,
+    statBonuses: {
+      hp: 900,
+      attack: 900,
+      defense: 900,
+      special: 900,
+      speed: 900,
+    },
     currentHp: 999,
     powerScore: 999,
     stats: {
@@ -346,6 +354,29 @@ function weakenTrainerSnapshot(snapshot: TrainerSnapshot): TrainerSnapshot {
     teamPower: 1,
     team: snapshot.team.map((creature) => ({
       ...creature,
+      level: 1,
+      statProfile: {
+        dvs: {
+          attack: 0,
+          defense: 0,
+          speed: 0,
+          special: 0,
+        },
+        statExp: {
+          hp: 0,
+          attack: 0,
+          defense: 0,
+          special: 0,
+          speed: 0,
+        },
+      },
+      statBonuses: {
+        hp: 0,
+        attack: 0,
+        defense: 0,
+        special: 0,
+        speed: 0,
+      },
       currentHp: 1,
       powerScore: 1,
       stats: {

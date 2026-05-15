@@ -1,7 +1,11 @@
-import { createCreature, normalizeCreatureBattleLoadout } from "../creatureFactory";
+import {
+  createCreature,
+  normalizeCreatureBattleLoadout,
+  rerollCreatureStatProfile,
+} from "../creatureFactory";
 import { getMove, getSpecies } from "../data/catalog";
 import { formatWave } from "../localization";
-import { scoreCreature, scoreTeam } from "../scoring";
+import { scoreTeam } from "../scoring";
 import type { SeededRng } from "../rng";
 import type {
   Creature,
@@ -9,7 +13,6 @@ import type {
   EncounterSnapshot,
   GameBalance,
   RouteId,
-  Stats,
 } from "../types";
 import type { TrainerSnapshot, TrainerSnapshotCreature } from "../sync/trainerSnapshot";
 import { createOpponentTeamContext } from "../sync/teamBattleRecord";
@@ -177,6 +180,13 @@ function snapshotCreatureToCreature(creature: TrainerSnapshotCreature): Creature
     speciesName: creature.speciesName,
     types: [...species.types],
     level: creature.level,
+    statProfile: creature.statProfile
+      ? {
+          dvs: { ...creature.statProfile.dvs },
+          statExp: { ...creature.statProfile.statExp },
+        }
+      : undefined,
+    statBonuses: creature.statBonuses ? { ...creature.statBonuses } : undefined,
     stats: { ...creature.stats },
     currentHp: creature.stats.hp,
     moves: creature.moves.map((moveId) => getMove(moveId)),
@@ -195,27 +205,16 @@ function applyRouteToCreature(
     return creature;
   }
 
-  const stats = scaleStats(creature.stats, balance.eliteStatMultiplier);
-  const powerScore = scoreCreature({ stats, moves: creature.moves, types: creature.types });
+  const elite = rerollCreatureStatProfile(
+    creature,
+    `elite:${creature.instanceId}:${creature.level ?? 1}`,
+    "elite",
+  );
 
   return {
-    ...creature,
-    stats,
-    currentHp: stats.hp,
-    rarityScore: Math.round(creature.rarityScore * balance.eliteStatMultiplier),
-    powerScore,
-  };
-}
-
-function scaleStats(stats: Stats, multiplier: number): Stats {
-  const scale = (value: number) => Math.max(1, Math.round(value * multiplier));
-
-  return {
-    hp: scale(stats.hp),
-    attack: scale(stats.attack),
-    defense: scale(stats.defense),
-    special: scale(stats.special),
-    speed: scale(stats.speed),
+    ...elite,
+    currentHp: elite.stats.hp,
+    rarityScore: Math.round(elite.rarityScore * balance.eliteStatMultiplier),
   };
 }
 

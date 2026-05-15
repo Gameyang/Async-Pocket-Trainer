@@ -49,6 +49,15 @@ describe("renderer contract boundaries", () => {
     expect(source).toContain("resolveEffectShape");
   });
 
+  it("keeps battle effects able to layer Lottie templates over DOM shapes", () => {
+    const engine = readEffectsSource("engine.ts");
+    const lottie = readEffectsSource("lottieDirector.ts");
+
+    expect(engine).toContain("applyLottieMotionTemplate");
+    expect(lottie).toContain("lottie-web");
+    expect(lottie).toContain("fx-lottie-layer");
+  });
+
   it("does not advertise an installable PWA shell on static GitHub Pages", () => {
     const index = readFileSync(new URL("../../index.html", import.meta.url), "utf8");
 
@@ -58,4 +67,8 @@ describe("renderer contract boundaries", () => {
 
 function readSource(fileName: string): string {
   return readFileSync(new URL(`./${fileName}`, import.meta.url), "utf8");
+}
+
+function readEffectsSource(fileName: string): string {
+  return readFileSync(new URL(`./effects/${fileName}`, import.meta.url), "utf8");
 }

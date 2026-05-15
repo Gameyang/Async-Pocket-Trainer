@@ -7,6 +7,15 @@ import {
   speciesCatalog,
 } from "./data/catalog";
 import { SeededRng, clamp } from "./rng";
+import {
+  calculatePokemonStats,
+  createEmptyStats,
+  createPokemonStatProfile,
+  normalizeLevel,
+  normalizePokemonStatProfile,
+  normalizeStatBonuses,
+  type StatProfileRole,
+} from "./pokemonStats";
 import { scoreCreature } from "./scoring";
 import type { Creature, ElementType, GameBalance, MoveDefinition, SpeciesDefinition, Stats } from "./types";
 
@@ -33,11 +42,14 @@ export function createCreature(options: CreatureFactoryOptions): Creature {
       );
   const level = normalizeLevel(options.level ?? options.wave);
   const moves = pickMoves(species, level, options.rng);
-  const growth =
-    options.role === "trainer"
-      ? options.balance.trainerStatGrowthPerWave
-      : options.balance.wildStatGrowthPerWave;
-  const stats = scaleStats(species.baseStats, options.wave, growth, options.rng, options.role);
+  const statProfile = createPokemonStatProfile({
+    seed: createStatProfileSeed(options, species.id, level),
+    speciesId: species.id,
+    level,
+    role: options.role,
+  });
+  const statBonuses = createEmptyStats();
+  const stats = calculatePokemonStats(species.baseStats, level, statProfile, statBonuses);
   const partial = {
     stats,
     moves,
@@ -53,6 +65,8 @@ export function createCreature(options: CreatureFactoryOptions): Creature {
     types: [...species.types],
     weightHg: species.weightHg,
     level,
+    statProfile,
+    statBonuses,
     stats,
     currentHp: stats.hp,
     moves,
@@ -66,6 +80,13 @@ export function cloneCreature(creature: Creature): Creature {
   return {
     ...creature,
     types: [...creature.types],
+    statProfile: creature.statProfile
+      ? {
+          dvs: { ...creature.statProfile.dvs },
+          statExp: { ...creature.statProfile.statExp },
+        }
+      : undefined,
+    statBonuses: creature.statBonuses ? { ...creature.statBonuses } : undefined,
     stats: { ...creature.stats },
     moves: creature.moves.map(cloneMoveDefinition),
     status: creature.status ? { ...creature.status } : undefined,
@@ -78,13 +99,90 @@ export function normalizeCreatureBattleLoadout(creature: Creature): Creature {
   const cloned = cloneCreature(creature);
   const level = resolveExistingCreatureLevel(cloned);
   const moves = normalizeCreatureMoves(cloned.speciesId, level, cloned.moves);
+  const normalized = recalculateCreatureStats({
+    ...cloned,
+    level,
+    moves,
+  });
+
+  return {
+    ...normalized,
+    moves,
+    powerScore: scoreCreature({ stats: normalized.stats, moves, types: normalized.types }),
+  };
+}
+
+export function recalculateCreatureStats(creature: Creature): Creature {
+  const cloned = cloneCreature(creature);
+  const level = resolveExistingCreatureLevel(cloned);
+  const species = getSpecies(cloned.speciesId);
+  const statProfile = normalizePokemonStatProfile(
+    cloned.statProfile ??
+      createPokemonStatProfile({
+        seed: `legacy:${cloned.instanceId}:${cloned.speciesId}`,
+        speciesId: cloned.speciesId,
+        level,
+        role: "trainer",
+      }),
+  );
+  const statBonuses = normalizeStatBonuses(cloned.statBonuses);
+  const oldMaxHp = Math.max(1, cloned.stats.hp);
+  const hpRatio =
+    cloned.currentHp <= 0 ? 0 : clamp(cloned.currentHp / oldMaxHp, 0, 1);
+  const stats = calculatePokemonStats(species.baseStats, level, statProfile, statBonuses);
+  const currentHp =
+    hpRatio <= 0 ? 0 : Math.max(1, Math.min(stats.hp, Math.round(stats.hp * hpRatio)));
 
   return {
     ...cloned,
     level,
-    moves,
-    powerScore: scoreCreature({ stats: cloned.stats, moves, types: cloned.types }),
+    statProfile,
+    statBonuses,
+    stats,
+    currentHp,
+    powerScore: scoreCreature({ stats, moves: cloned.moves, types: cloned.types }),
   };
+}
+
+export function applyCreatureStatBonus(
+  creature: Creature,
+  stat: keyof Stats,
+  bonus: number,
+): Creature {
+  const oldCurrentHp = creature.currentHp;
+  const statBonuses = normalizeStatBonuses({
+    ...creature.statBonuses,
+    [stat]: (creature.statBonuses?.[stat] ?? 0) + Math.max(0, Math.round(bonus)),
+  });
+  const updated = recalculateCreatureStats({
+    ...creature,
+    statBonuses,
+  });
+
+  return stat === "hp"
+    ? {
+        ...updated,
+        currentHp: Math.min(updated.stats.hp, oldCurrentHp + Math.max(0, Math.round(bonus))),
+      }
+    : updated;
+}
+
+export function rerollCreatureStatProfile(
+  creature: Creature,
+  seed: string,
+  role: StatProfileRole = "trainer",
+): Creature {
+  const level = resolveExistingCreatureLevel(creature);
+
+  return recalculateCreatureStats({
+    ...creature,
+    statProfile: createPokemonStatProfile({
+      seed,
+      speciesId: creature.speciesId,
+      level,
+      role,
+    }),
+  });
 }
 
 export function normalizeCreatureMoves(
@@ -240,35 +338,6 @@ function resolveExistingCreatureLevel(creature: Creature): number {
   return normalizeLevel(Math.max(1, Math.round(statTotal / 18)));
 }
 
-function normalizeLevel(level: number): number {
-  return clamp(Math.round(level), 1, 100);
-}
-
-function scaleStats(
-  baseStats: Stats,
-  wave: number,
-  growthPerWave: number,
-  rng: SeededRng,
-  role: CreatureFactoryOptions["role"],
-): Stats {
-  const roleBonus = role === "starter" ? 0.45 : 0;
-  const growthScale = 1 + Math.max(0, wave - 1) * growthPerWave + roleBonus;
-
-  return {
-    hp: scaleStat(baseStats.hp, growthScale, rng, true),
-    attack: scaleStat(baseStats.attack, growthScale, rng, false),
-    defense: scaleStat(baseStats.defense, growthScale, rng, false),
-    special: scaleStat(baseStats.special, growthScale, rng, false),
-    speed: scaleStat(baseStats.speed, growthScale, rng, false),
-  };
-}
-
-function scaleStat(baseValue: number, growthScale: number, rng: SeededRng, isHp: boolean): number {
-  const variance = 0.9 + rng.nextFloat() * 0.22;
-  const flatBonus = isHp ? 8 : 3;
-  return Math.max(5, Math.round(baseValue * growthScale * variance + flatBonus));
-}
-
 function getBaseStatTotal(species: SpeciesDefinition): number {
   return (
     species.baseStats.hp +
@@ -277,4 +346,12 @@ function getBaseStatTotal(species: SpeciesDefinition): number {
     species.baseStats.special +
     species.baseStats.speed
   );
+}
+
+function createStatProfileSeed(
+  options: CreatureFactoryOptions,
+  speciesId: number,
+  level: number,
+): string {
+  return `${speciesId}:${options.wave}:${level}:${options.role}:${options.rng.getState()}`;
 }

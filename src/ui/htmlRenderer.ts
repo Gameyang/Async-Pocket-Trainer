@@ -45,6 +45,7 @@ import {
 import { effectEngine } from "./effects/engine";
 import { resolveEffectDescriptor, resolveEffectShape } from "./effects/mapping";
 import { getElementPalette } from "./effects/palette";
+import { AudioMixer } from "./audio/audioMixer";
 
 const BATTLE_REPLAY_STEP_MS = 540;
 const FEEDBACK_TOAST_DURATION_MS = 3600;
@@ -146,25 +147,6 @@ interface ActiveFeedbackToast extends ScheduledFeedbackToast {
   expiresAt: number;
 }
 
-interface AudioState {
-  unlocked: boolean;
-  ctx?: AudioContext;
-  masterGain?: GainNode;
-  bgmGain?: GainNode;
-  sfxGain?: GainNode;
-  compressor?: DynamicsCompressorNode;
-  currentBgmKey?: FrameBgmKey;
-  bgmSource?: AudioBufferSourceNode;
-  bufferCache: Map<string, Promise<AudioBuffer | undefined>>;
-  activeSfxSources: Set<AudioBufferSourceNode>;
-  playedCueIds: Set<string>;
-  lastReplayKey: string;
-}
-
-const BGM_BASE_GAIN = 0.55;
-const BGM_DUCKED_GAIN = 0.28;
-const SFX_VOICE_LIMIT = 8;
-
 type BattleMotionClip =
   | "use-strike"
   | "use-launch"
@@ -212,13 +194,13 @@ export function mountHtmlRenderer(
     replayKey: "",
     cursor: 0,
   };
-  const audioState: AudioState = {
-    unlocked: false,
-    playedCueIds: new Set(),
-    lastReplayKey: "",
-    bufferCache: new Map(),
-    activeSfxSources: new Set(),
-  };
+  const audioMixer = new AudioMixer({
+    resolveSfxUrl,
+    resolveBgmUrl,
+    warn: (message, error) => {
+      console.warn(`[audio] ${message}`, error ?? "");
+    },
+  });
   const lifecycle: AppLifecycleState = {
     suspended: isPageSuspended(),
   };
@@ -252,24 +234,30 @@ export function mountHtmlRenderer(
       playbackView.activeEvent,
       findActiveVisualCue(frame, playbackView.activeEvent),
     );
-    bindActions(root, client, frame, playbackView, audioState, shopTarget, render);
+    bindActions(root, client, frame, playbackView, audioMixer, shopTarget, render);
     bindShopTargetSelection(root, client, shopTarget, render);
     bindTeamDetailPopup(root);
     bindTeamRecord(root, options, render);
     bindStarterReroll(root, options, render);
     bindStarterDexSelection(root);
-    syncAudio(audioState, frame, playbackView, lifecycle);
+    audioMixer.apply({
+      bgmKey: frame.scene.bgmKey,
+      visualCues: frame.visualCues,
+      battleReplayKey: playbackView.replayKey,
+      activeReplaySequence: playbackView.activeEvent?.sequence,
+      isReplayPlaying: playbackView.isPlaying,
+      hasOngoingReplay: Boolean(playbackView.replayKey),
+    });
     scheduleBattlePlayback(battlePlayback, frame, render, lifecycle);
     scheduleFeedbackToast(transientFeedback, render, lifecycle);
   };
 
   render();
-  bindAppLifecycle(lifecycle, audioState, battlePlayback, render);
+  bindAppLifecycle(lifecycle, battlePlayback, render);
 }
 
 function bindAppLifecycle(
   lifecycle: AppLifecycleState,
-  audioState: AudioState,
   playback: BattlePlaybackState,
   render: () => void,
 ): void {
@@ -277,7 +265,6 @@ function bindAppLifecycle(
     const changed = !lifecycle.suspended;
     lifecycle.suspended = true;
     clearBattlePlaybackTimer(playback);
-    pauseAudio(audioState);
 
     if (changed) {
       render();
@@ -314,7 +301,7 @@ function bindActions(
   client: FrameClient,
   frame: GameFrame,
   playback: BattlePlaybackView,
-  audioState: AudioState,
+  audioMixer: AudioMixer,
   shopTarget: ShopTargetState,
   render: () => void,
 ): void {
@@ -337,7 +324,7 @@ function bindActions(
         }
 
         const currencyBurstOrigin = captureCurrencyBurstOrigin(action, button);
-        unlockAudio(audioState);
+        audioMixer.unlock();
         busy = true;
         root.dataset.busy = "true";
         let dispatched = false;
@@ -2993,313 +2980,6 @@ function createBattleReplayKey(frame: GameFrame): string {
       ].join(":"),
     )
     .join("|");
-}
-
-function unlockAudio(audioState: AudioState): void {
-  audioState.unlocked = true;
-  ensureAudioGraph(audioState);
-  void audioState.ctx?.resume().catch(() => undefined);
-}
-
-function ensureAudioGraph(audioState: AudioState): boolean {
-  if (audioState.ctx) {
-    return true;
-  }
-
-  const Ctor =
-    typeof window !== "undefined"
-      ? (window.AudioContext ??
-        (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext)
-      : undefined;
-
-  if (!Ctor) {
-    return false;
-  }
-
-  const ctx = new Ctor();
-  // Gentle bus compressor — tames peaks when several SFX overlap with BGM.
-  const compressor = ctx.createDynamicsCompressor();
-  compressor.threshold.value = -10;
-  compressor.knee.value = 8;
-  compressor.ratio.value = 4;
-  compressor.attack.value = 0.005;
-  compressor.release.value = 0.12;
-
-  const masterGain = ctx.createGain();
-  masterGain.gain.value = 0.85;
-
-  const bgmGain = ctx.createGain();
-  bgmGain.gain.value = BGM_BASE_GAIN;
-
-  const sfxGain = ctx.createGain();
-  sfxGain.gain.value = 1.0;
-
-  bgmGain.connect(masterGain);
-  sfxGain.connect(masterGain);
-  masterGain.connect(compressor);
-  compressor.connect(ctx.destination);
-
-  audioState.ctx = ctx;
-  audioState.compressor = compressor;
-  audioState.masterGain = masterGain;
-  audioState.bgmGain = bgmGain;
-  audioState.sfxGain = sfxGain;
-  return true;
-}
-
-function syncAudio(
-  audioState: AudioState,
-  frame: GameFrame,
-  playback: BattlePlaybackView,
-  lifecycle: AppLifecycleState,
-): void {
-  if (!audioState.unlocked || lifecycle.suspended) {
-    pauseAudio(audioState);
-    return;
-  }
-
-  if (audioState.ctx?.state === "suspended") {
-    void audioState.ctx.resume().catch(() => undefined);
-  }
-
-  if (playback.replayKey !== audioState.lastReplayKey) {
-    audioState.playedCueIds.clear();
-    audioState.lastReplayKey = playback.replayKey;
-  }
-
-  syncBgm(audioState, frame.scene.bgmKey);
-
-  const activeSequence = playback.activeEvent?.sequence;
-  const playableCues = frame.visualCues.filter((cue) =>
-    shouldPlaySfxCue(cue, playback, activeSequence),
-  );
-  const hasPriorityCue = playableCues.some((cue) => cue.type !== "phase.change");
-
-  for (const cue of playableCues) {
-    if (hasPriorityCue && cue.type === "phase.change") {
-      continue;
-    }
-
-    if (audioState.playedCueIds.has(cue.id)) {
-      continue;
-    }
-
-    audioState.playedCueIds.add(cue.id);
-    playSfx(audioState, cue.soundKey);
-  }
-}
-
-function shouldPlaySfxCue(
-  cue: FrameVisualCue,
-  playback: BattlePlaybackView,
-  activeSequence: number | undefined,
-): boolean {
-  if (playback.isPlaying) {
-    return isBattleSfxCue(cue) && cue.sequence === activeSequence;
-  }
-
-  if (playback.replayKey && isBattleSfxCue(cue)) {
-    return false;
-  }
-
-  return true;
-}
-
-function isBattleSfxCue(cue: FrameVisualCue): boolean {
-  return (
-    cue.type === "battle.hit" ||
-    cue.type === "battle.miss" ||
-    cue.type === "battle.support" ||
-    cue.type === "creature.faint"
-  );
-}
-
-function loadAudioBuffer(
-  audioState: AudioState,
-  url: string,
-): Promise<AudioBuffer | undefined> {
-  const cached = audioState.bufferCache.get(url);
-  if (cached) {
-    return cached;
-  }
-
-  const ctx = audioState.ctx;
-  if (!ctx) {
-    return Promise.resolve(undefined);
-  }
-
-  const promise = fetch(url)
-    .then((response) => response.arrayBuffer())
-    .then((arrayBuffer) => ctx.decodeAudioData(arrayBuffer))
-    .catch((error) => {
-      console.warn(`[audio] failed to decode ${url}:`, error);
-      audioState.bufferCache.delete(url);
-      return undefined;
-    });
-
-  audioState.bufferCache.set(url, promise);
-  return promise;
-}
-
-function syncBgm(audioState: AudioState, bgmKey: FrameBgmKey): void {
-  if (!ensureAudioGraph(audioState) || !audioState.ctx) {
-    return;
-  }
-
-  if (audioState.currentBgmKey === bgmKey && audioState.bgmSource) {
-    return;
-  }
-
-  if (audioState.bgmSource) {
-    try {
-      audioState.bgmSource.stop();
-    } catch {
-      // Source may have already ended.
-    }
-    audioState.bgmSource = undefined;
-  }
-
-  audioState.currentBgmKey = bgmKey;
-  const url = resolveBgmUrl(bgmKey);
-  if (!url) {
-    return;
-  }
-
-  void loadAudioBuffer(audioState, url).then((buffer) => {
-    if (!buffer || audioState.currentBgmKey !== bgmKey || !audioState.ctx || !audioState.bgmGain) {
-      return;
-    }
-
-    // Discard if BGM was swapped or stopped while the buffer was loading.
-    if (audioState.bgmSource) {
-      return;
-    }
-
-    const source = audioState.ctx.createBufferSource();
-    source.buffer = buffer;
-    source.loop = true;
-    source.connect(audioState.bgmGain);
-    source.start();
-    audioState.bgmSource = source;
-  });
-}
-
-function pauseAudio(audioState: AudioState): void {
-  if (audioState.ctx?.state === "running") {
-    void audioState.ctx.suspend().catch(() => undefined);
-  }
-}
-
-function playSfx(audioState: AudioState, soundKey: string): void {
-  if (!ensureAudioGraph(audioState) || !audioState.ctx || !audioState.sfxGain) {
-    return;
-  }
-
-  const url = resolveSfxUrl(soundKey);
-  if (!url) {
-    console.warn(`[audio] missing sfx asset for key: ${soundKey}`);
-    return;
-  }
-
-  const volume = resolveSfxVolume(soundKey);
-  const shouldDuck = soundKey !== "sfx.phase.change";
-
-  void loadAudioBuffer(audioState, url).then((buffer) => {
-    if (!buffer || !audioState.ctx || !audioState.sfxGain) {
-      return;
-    }
-
-    // Cap concurrent voices — stop the oldest if we exceed the limit.
-    if (audioState.activeSfxSources.size >= SFX_VOICE_LIMIT) {
-      const oldest = audioState.activeSfxSources.values().next().value;
-      if (oldest) {
-        try {
-          oldest.stop();
-        } catch {
-          // Already stopped.
-        }
-        audioState.activeSfxSources.delete(oldest);
-      }
-    }
-
-    const source = audioState.ctx.createBufferSource();
-    source.buffer = buffer;
-    const gain = audioState.ctx.createGain();
-    gain.gain.value = volume;
-    source.connect(gain).connect(audioState.sfxGain);
-    source.addEventListener("ended", () => {
-      audioState.activeSfxSources.delete(source);
-    });
-    audioState.activeSfxSources.add(source);
-
-    if (shouldDuck) {
-      duckBgm(audioState, buffer.duration);
-    }
-
-    try {
-      source.start();
-    } catch (error) {
-      console.warn(`[audio] sfx start failed for ${soundKey}:`, error);
-      audioState.activeSfxSources.delete(source);
-    }
-  });
-}
-
-function duckBgm(audioState: AudioState, sfxDuration: number): void {
-  const ctx = audioState.ctx;
-  const bgmGain = audioState.bgmGain;
-  if (!ctx || !bgmGain) {
-    return;
-  }
-
-  const now = ctx.currentTime;
-  const hold = Math.max(0.15, Math.min(sfxDuration, 0.9));
-  const attack = 0.04;
-  const release = 0.25;
-
-  bgmGain.gain.cancelScheduledValues(now);
-  bgmGain.gain.setValueAtTime(bgmGain.gain.value, now);
-  bgmGain.gain.linearRampToValueAtTime(BGM_DUCKED_GAIN, now + attack);
-  bgmGain.gain.setValueAtTime(BGM_DUCKED_GAIN, now + attack + hold);
-  bgmGain.gain.linearRampToValueAtTime(BGM_BASE_GAIN, now + attack + hold + release);
-}
-
-function resolveSfxVolume(soundKey: string): number {
-  if (soundKey === "sfx.battle.critical.hit") {
-    return 0.72;
-  }
-
-  if (soundKey.startsWith("sfx.battle.support.")) {
-    // Support cues are longer and sustained — keep them subdued so they sit under impacts.
-    return 0.42;
-  }
-
-  if (soundKey.startsWith("sfx.battle.type.")) {
-    // Element impact body — main voice that should cut through.
-    return soundKey.endsWith(".critical") ? 0.62 : 0.55;
-  }
-
-  if (soundKey === "sfx.battle.hit") {
-    return 0.55;
-  }
-
-  if (soundKey === "sfx.battle.miss") {
-    return 0.42;
-  }
-
-  if (soundKey === "sfx.creature.faint") {
-    return 0.68;
-  }
-
-  if (soundKey === "sfx.capture.success" || soundKey === "sfx.capture.fail") {
-    return 0.6;
-  }
-
-  if (soundKey === "sfx.phase.change") {
-    return 0.32;
-  }
-
-  return 0.4;
 }
 
 function escapeHtml(value: string): string {

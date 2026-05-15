@@ -1,6 +1,12 @@
 import { runAutoBattle } from "./battle/battleEngine";
 import { attemptCapture } from "./capture/captureSystem";
-import { createCreature, healTeam, normalizeCreatureBattleLoadout } from "./creatureFactory";
+import {
+  applyCreatureStatBonus,
+  createCreature,
+  healTeam,
+  normalizeCreatureBattleLoadout,
+  rerollCreatureStatProfile,
+} from "./creatureFactory";
 import { defaultBalance, getMove, getSpecies, movesById, starterSpeciesIds } from "./data/catalog";
 import {
   DEFAULT_HEADLESS_TRAINER_NAME,
@@ -744,6 +750,7 @@ export class HeadlessGameClient {
       wave: 1,
       balance: this.balance,
       speciesId: starterSpeciesId,
+      level: 5,
       role: "starter",
     });
 
@@ -1251,21 +1258,7 @@ export class HeadlessGameClient {
   }
 
   private applyStatBoostToTarget(target: Creature, stat: ShopStatKey, bonus: number): void {
-    const oldMaxHp = target.stats.hp;
-    target.stats = {
-      ...target.stats,
-      [stat]: target.stats[stat] + bonus,
-    };
-    if (stat === "hp") {
-      target.currentHp = Math.min(target.stats.hp, target.currentHp + bonus);
-    } else {
-      target.currentHp = Math.min(target.currentHp, target.stats.hp || oldMaxHp);
-    }
-    target.powerScore = scoreCreature({
-      stats: target.stats,
-      moves: target.moves,
-      types: target.types,
-    });
+    Object.assign(target, applyCreatureStatBonus(target, stat, bonus));
   }
 
   private buyStatReroll(targetEntityId: string | undefined): void {
@@ -1289,25 +1282,14 @@ export class HeadlessGameClient {
     }
 
     this.state.money -= cost;
-    const rerollFactor = () => 0.94 + this.rng.nextFloat() * 0.2;
-    const newStats: typeof target.stats = {
-      hp: Math.max(5, Math.round(target.stats.hp * rerollFactor())),
-      attack: Math.max(5, Math.round(target.stats.attack * rerollFactor())),
-      defense: Math.max(5, Math.round(target.stats.defense * rerollFactor())),
-      special: Math.max(5, Math.round(target.stats.special * rerollFactor())),
-      speed: Math.max(5, Math.round(target.stats.speed * rerollFactor())),
-    };
-    const oldMaxHp = target.stats.hp;
-    target.stats = newStats;
-    target.currentHp = Math.max(
-      1,
-      Math.min(newStats.hp, Math.round((target.currentHp / Math.max(1, oldMaxHp)) * newStats.hp)),
+    Object.assign(
+      target,
+      rerollCreatureStatProfile(
+        target,
+        `${this.state.seed}:stat-reroll:${this.state.currentWave}:${target.instanceId}:${this.rng.nextUint()}`,
+        "trainer",
+      ),
     );
-    target.powerScore = scoreCreature({
-      stats: target.stats,
-      moves: target.moves,
-      types: target.types,
-    });
     this.flashTeamEffect(target.instanceId, "stat-reroll");
     this.addEvent(
       "stat_reroll_applied",

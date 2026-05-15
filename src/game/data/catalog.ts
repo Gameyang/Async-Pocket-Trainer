@@ -26,7 +26,7 @@ export const defaultBalance: GameBalance = {
   wildRarityBudgetWaveDivisor: 9,
   wildStatGrowthPerWave: 0.03,
   trainerStatGrowthPerWave: 0.016,
-  battleDamageScale: 0.15,
+  battleDamageScale: 0.85,
   rewardBase: 15,
   rewardPerWave: 3,
   trainerRewardBonus: 16,

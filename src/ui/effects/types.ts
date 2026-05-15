@@ -45,4 +45,8 @@ export interface EffectGeometry {
   angleDeg: number;
 }
 
+export interface EffectAnimationHandle {
+  cancel(): void;
+}
+
 export type ShapeBuilder = (descriptor: EffectDescriptor, geometry: EffectGeometry) => HTMLElement;

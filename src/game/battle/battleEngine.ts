@@ -186,8 +186,8 @@ export function runAutoBattle(options: AutoBattleOptions): BattleResult {
     kind: options.kind,
     winner,
     turns,
-    playerTeam: clearBattleStatuses(playerTeam),
-    enemyTeam: clearBattleStatuses(enemyTeam),
+    playerTeam: clearBattleStatuses(playerTeam, options.normalizeLoadouts ?? true),
+    enemyTeam: clearBattleStatuses(enemyTeam, options.normalizeLoadouts ?? true),
     log,
     replay,
   };
@@ -2131,13 +2131,17 @@ function getEffectiveSpeed(creature: Creature): number {
     : Math.max(1, Math.floor(speed));
 }
 
-function clearBattleStatuses(team: readonly Creature[]): Creature[] {
-  return team.map((creature) => ({
-    ...creature,
-    status: undefined,
-    statStages: undefined,
-    volatile: undefined,
-  }));
+function clearBattleStatuses(team: readonly Creature[], normalizeLoadouts: boolean): Creature[] {
+  return team.map((creature) => {
+    const cleaned = {
+      ...creature,
+      status: undefined,
+      statStages: undefined,
+      volatile: undefined,
+    };
+
+    return normalizeLoadouts ? normalizeCreatureBattleLoadout(cleaned) : cloneCreature(cleaned);
+  });
 }
 
 function resolveWinner(

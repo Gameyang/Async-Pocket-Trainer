@@ -85,6 +85,48 @@
   animation: none;
 }
 
+.fx-lottie-layer {
+  position: absolute;
+  display: block;
+  pointer-events: none;
+  z-index: 6;
+  overflow: visible;
+  opacity: calc(0.54 + var(--fx-intensity, 0.72) * 0.34);
+  filter: saturate(1.16) drop-shadow(0 0 8px color-mix(in srgb, var(--fx-primary) 68%, transparent));
+  mix-blend-mode: screen;
+}
+
+.fx-lottie-layer svg,
+.fx-lottie-layer .fx-lottie-svg {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+  overflow: visible;
+}
+
+.fx-shape-projectile > .fx-lottie-layer {
+  left: 0;
+  top: calc(var(--fx-lottie-height, 112px) / -2);
+  width: var(--fx-lottie-width, var(--fx-lottie-distance, 180px));
+  height: var(--fx-lottie-height, 112px);
+  transform: rotate(var(--fx-lottie-angle, 0deg));
+  transform-origin: left center;
+}
+
+.fx-shape-beam > .fx-lottie-layer {
+  inset: -44px -8px;
+}
+
+.fx-shape-strike > .fx-lottie-layer,
+.fx-shape-burst > .fx-lottie-layer,
+.fx-shape-aura > .fx-lottie-layer {
+  inset: -18%;
+}
+
+.fx-shape-aura > .fx-lottie-layer {
+  opacity: calc(0.42 + var(--fx-intensity, 0.72) * 0.22);
+}
+
 .fx-shape-strike {
   transform: rotate(-18deg);
   animation: fx-strike-life var(--fx-duration) ease-out forwards;

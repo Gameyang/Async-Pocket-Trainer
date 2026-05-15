@@ -1,22 +1,37 @@
-import { scoreTeam } from "../scoring";
+import { scoreCreature, scoreTeam } from "../scoring";
+import { getMove, getSpecies } from "../data/catalog";
+import {
+  calculatePokemonStats,
+  createPokemonStatProfile,
+  normalizeLevel,
+  normalizePokemonStatProfile,
+  normalizeStatBonuses,
+} from "../pokemonStats";
 import {
   ballTypes,
   type BallType,
   type Creature,
   type GamePhase,
   type GameState,
+  type PokemonStatProfile,
   type RunSummary,
   type Stats,
   type TeamRecordSummary,
 } from "../types";
 
-export const TRAINER_SNAPSHOT_VERSION = 1;
+export const LEGACY_TRAINER_SNAPSHOT_VERSION = 1;
+export const TRAINER_SNAPSHOT_VERSION = 2;
+export type TrainerSnapshotVersion =
+  | typeof LEGACY_TRAINER_SNAPSHOT_VERSION
+  | typeof TRAINER_SNAPSHOT_VERSION;
 
 export interface TrainerSnapshotCreature {
   creatureId: string;
   speciesId: number;
   speciesName: string;
   level?: number;
+  statProfile?: PokemonStatProfile;
+  statBonuses?: Stats;
   stats: Stats;
   currentHp: number;
   moves: string[];
@@ -38,7 +53,7 @@ export interface TrainerSnapshot {
 }
 
 export interface SheetTrainerRow {
-  version: typeof TRAINER_SNAPSHOT_VERSION;
+  version: TrainerSnapshotVersion;
   playerId: string;
   trainerName: string;
   wave: number;
@@ -105,18 +120,20 @@ export function parseSheetTrainerRow(row: unknown): TrainerSnapshot {
   const source = requireRecord(row, "SheetTrainerRow");
   const version = readRequiredNumber(source, "version");
 
-  if (version !== TRAINER_SNAPSHOT_VERSION) {
+  if (version !== LEGACY_TRAINER_SNAPSHOT_VERSION && version !== TRAINER_SNAPSHOT_VERSION) {
     throw new Error(`Unsupported trainer row schema version: ${version}`);
   }
 
+  const seed = readRequiredString(source, "seed");
   const team = parseJsonArray(readRequiredString(source, "teamJson"), "teamJson").map(
-    parseSnapshotCreature,
+    (creature, index) => parseSnapshotCreature(creature, index, seed, version),
   );
   const runSummary = parseRunSummary(
     parseJsonRecord(readRequiredString(source, "runSummaryJson"), "runSummaryJson"),
   );
   const createdAt = readRequiredString(source, "createdAt");
   assertIsoDate(createdAt, "createdAt");
+  readRequiredNumber(source, "teamPower");
 
   const snapshot: TrainerSnapshot = {
     version: TRAINER_SNAPSHOT_VERSION,
@@ -124,8 +141,8 @@ export function parseSheetTrainerRow(row: unknown): TrainerSnapshot {
     trainerName: readRequiredString(source, "trainerName"),
     wave: readPositiveInteger(source, "wave"),
     createdAt,
-    seed: readRequiredString(source, "seed"),
-    teamPower: readRequiredNumber(source, "teamPower"),
+    seed,
+    teamPower: team.reduce((total, creature) => total + creature.powerScore, 0),
     team,
     runSummary,
   };
@@ -149,6 +166,13 @@ function toSnapshotCreature(creature: Creature): TrainerSnapshotCreature {
     speciesId: creature.speciesId,
     speciesName: creature.speciesName,
     level: creature.level,
+    statProfile: creature.statProfile
+      ? {
+          dvs: { ...creature.statProfile.dvs },
+          statExp: { ...creature.statProfile.statExp },
+        }
+      : undefined,
+    statBonuses: creature.statBonuses ? { ...creature.statBonuses } : undefined,
     stats: { ...creature.stats },
     currentHp: creature.currentHp,
     moves: creature.moves.map((move) => move.id),
@@ -157,25 +181,84 @@ function toSnapshotCreature(creature: Creature): TrainerSnapshotCreature {
   };
 }
 
-function parseSnapshotCreature(value: unknown, index: number): TrainerSnapshotCreature {
+function parseSnapshotCreature(
+  value: unknown,
+  index: number,
+  rowSeed: string,
+  rowVersion: number,
+): TrainerSnapshotCreature {
   const source = requireRecord(value, `team[${index}]`);
-  const stats = parseStats(requireRecord(source.stats, `team[${index}].stats`));
+  const rawStats = parseStats(requireRecord(source.stats, `team[${index}].stats`));
   const moves = parseJsonStringArray(source.moves, `team[${index}].moves`);
+  const speciesId = readPositiveInteger(source, "speciesId");
+  const level =
+    source.level === undefined
+      ? inferSnapshotLevel(rawStats)
+      : readPositiveInteger(source, "level");
+  const statProfile =
+    source.statProfile === undefined
+      ? createPokemonStatProfile({
+          seed: `${rowSeed}:snapshot:${index}`,
+          speciesId,
+          level,
+          role: "trainer",
+        })
+      : normalizePokemonStatProfile(
+          parseStatProfile(requireRecord(source.statProfile, `team[${index}].statProfile`)),
+        );
+  const statBonuses =
+    source.statBonuses === undefined
+      ? normalizeStatBonuses(undefined)
+      : normalizeStatBonuses(
+          parseNonNegativeStats(requireRecord(source.statBonuses, `team[${index}].statBonuses`)),
+        );
+  const species = getSpecies(speciesId);
+  const stats = calculatePokemonStats(species.baseStats, level, statProfile, statBonuses);
+  const rawCurrentHp = readNonNegativeNumber(source, "currentHp");
+  const hpRatio = rawStats.hp <= 0 ? 1 : Math.min(1, rawCurrentHp / rawStats.hp);
+  const powerScore =
+    rowVersion === LEGACY_TRAINER_SNAPSHOT_VERSION || source.statProfile === undefined
+      ? scoreCreature({
+          stats,
+          moves: moves.map((moveId) => getMove(moveId)),
+          types: species.types,
+        })
+      : readNonNegativeNumber(source, "powerScore");
 
   return {
     creatureId: readRequiredString(source, "creatureId"),
-    speciesId: readPositiveInteger(source, "speciesId"),
+    speciesId,
     speciesName: readRequiredString(source, "speciesName"),
-    level:
-      source.level === undefined
-        ? undefined
-        : readPositiveInteger(source, "level"),
+    level,
+    statProfile,
+    statBonuses,
     stats,
-    currentHp: readNonNegativeNumber(source, "currentHp"),
+    currentHp:
+      rawCurrentHp <= 0 ? 0 : Math.max(1, Math.min(stats.hp, Math.round(stats.hp * hpRatio))),
     moves,
-    powerScore: readNonNegativeNumber(source, "powerScore"),
+    powerScore,
     rarityScore: readNonNegativeNumber(source, "rarityScore"),
   };
+}
+
+function parseStatProfile(source: Record<string, unknown>): PokemonStatProfile {
+  const dvs = requireRecord(source.dvs, "statProfile.dvs");
+  const statExp = requireRecord(source.statExp, "statProfile.statExp");
+
+  return {
+    dvs: {
+      attack: readRequiredNumber(dvs, "attack"),
+      defense: readRequiredNumber(dvs, "defense"),
+      speed: readRequiredNumber(dvs, "speed"),
+      special: readRequiredNumber(dvs, "special"),
+    },
+    statExp: parseNonNegativeStats(statExp),
+  };
+}
+
+function inferSnapshotLevel(stats: Stats): number {
+  const total = stats.hp + stats.attack + stats.defense + stats.special + stats.speed;
+  return normalizeLevel(Math.max(1, Math.round(total / 18)));
 }
 
 function parseRunSummary(source: Record<string, unknown>): RunSummary {
@@ -239,6 +322,16 @@ function parseStats(source: Record<string, unknown>): Stats {
     defense: readPositiveInteger(source, "defense"),
     special: readPositiveInteger(source, "special"),
     speed: readPositiveInteger(source, "speed"),
+  };
+}
+
+function parseNonNegativeStats(source: Record<string, unknown>): Stats {
+  return {
+    hp: readNonNegativeInteger(source, "hp"),
+    attack: readNonNegativeInteger(source, "attack"),
+    defense: readNonNegativeInteger(source, "defense"),
+    special: readNonNegativeInteger(source, "special"),
+    speed: readNonNegativeInteger(source, "speed"),
   };
 }
 

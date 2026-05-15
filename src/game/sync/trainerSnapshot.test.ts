@@ -27,7 +27,7 @@ describe("trainer snapshot sync schema", () => {
     const row = serializeTrainerSnapshot(snapshot);
 
     expect(row).toMatchObject({
-      version: 1,
+      version: 2,
       playerId: "player-a",
       trainerName: "Sheet Tester",
       wave: snapshot.wave,
@@ -68,7 +68,7 @@ describe("trainer snapshot sync schema", () => {
     const row = serializeTrainerSnapshot(snapshot);
 
     expect(() =>
-      parseSheetTrainerRow({ ...row, version: 2 } satisfies Omit<SheetTrainerRow, "version"> & {
+      parseSheetTrainerRow({ ...row, version: 3 } satisfies Omit<SheetTrainerRow, "version"> & {
         version: number;
       }),
     ).toThrow(/Unsupported trainer row schema version/);
@@ -105,6 +105,37 @@ describe("trainer snapshot sync schema", () => {
   it("identifies configured checkpoint waves", () => {
     expect(isCheckpointWave(5, 5)).toBe(true);
     expect(isCheckpointWave(6, 5)).toBe(false);
+  });
+
+  it("migrates legacy v1 rows to official stat profiles", () => {
+    const snapshot = buildSnapshot("legacy-a", "Legacy A", "legacy-sheet-a", 5);
+    const row = serializeTrainerSnapshot(snapshot);
+    const legacyRow = {
+      ...row,
+      version: 1,
+      teamJson: JSON.stringify(
+        snapshot.team.map(({ statProfile: _statProfile, statBonuses: _statBonuses, ...creature }) => ({
+          ...creature,
+          stats: {
+            hp: 999,
+            attack: 999,
+            defense: 999,
+            special: 999,
+            speed: 999,
+          },
+          currentHp: 999,
+        })),
+      ),
+    } satisfies SheetTrainerRow;
+
+    const migrated = parseSheetTrainerRow(legacyRow);
+
+    expect(migrated.version).toBe(2);
+    expect(migrated.team[0].statProfile).toBeDefined();
+    expect(migrated.team[0].stats.hp).toBeLessThan(999);
+    expect(migrated.teamPower).toBe(
+      migrated.team.reduce((total, creature) => total + creature.powerScore, 0),
+    );
   });
 });
 

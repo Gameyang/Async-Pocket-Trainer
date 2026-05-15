@@ -64,6 +64,14 @@ describe("creature move assignment", () => {
 
     expect(created.moves).toHaveLength(2);
     expect(created.level).toBe(1);
+    expect(created.statProfile).toBeDefined();
+    expect(created.statBonuses).toEqual({
+      hp: 0,
+      attack: 0,
+      defense: 0,
+      special: 0,
+      speed: 0,
+    });
     expect(created.moves.filter((move) => move.category !== "status")).toHaveLength(1);
     expect(created.moves.filter((move) => move.category === "status")).toHaveLength(1);
   });

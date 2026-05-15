@@ -1,9 +1,16 @@
-import type { EffectDescriptor, EffectGeometry, EffectRect, ShapeBuilder } from "./types";
+import type {
+  EffectAnimationHandle,
+  EffectDescriptor,
+  EffectGeometry,
+  EffectRect,
+  ShapeBuilder,
+} from "./types";
 import { buildAuraShape } from "./shapes/aura";
 import { buildBeamShape } from "./shapes/beam";
 import { buildBurstShape } from "./shapes/burst";
 import { buildProjectileShape } from "./shapes/projectile";
 import { buildStrikeShape } from "./shapes/strike";
+import { applyLottieMotionTemplate } from "./lottieDirector";
 import { applyDomMotionPreset } from "./motionDirector";
 
 export interface EffectInstance {
@@ -11,7 +18,7 @@ export interface EffectInstance {
   cueId: string;
   effectKey: string;
   rootEl: HTMLElement;
-  animations: Animation[];
+  animations: EffectAnimationHandle[];
   startedAt: number;
   durationMs: number;
 }
@@ -112,7 +119,10 @@ export function createEffectEngine(options: EffectEngineOptions = {}): EffectEng
 
       applyPalette(rootEl, descriptor);
       overlay.appendChild(rootEl);
-      const animations = applyDomMotionPreset(rootEl, descriptor, geometry);
+      const animations = [
+        ...applyDomMotionPreset(rootEl, descriptor, geometry),
+        ...applyLottieMotionTemplate(rootEl, descriptor, geometry),
+      ];
       active.push({
         id: `fx-${nextInstanceId}`,
         cueId,

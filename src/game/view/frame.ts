@@ -8,6 +8,11 @@ import {
 } from "../achievements";
 import { normalizeCreatureMoves } from "../creatureFactory";
 import {
+  calculatePokemonStats,
+  createEmptyStats,
+  createPokemonStatProfile,
+} from "../pokemonStats";
+import {
   ballActionSlug,
   getBallCost,
   getHealProduct,
@@ -649,22 +654,35 @@ function createStarterOptions(state: GameState): FrameStarterOption[] {
 }
 
 export function speciesToStarterOption(species: SpeciesDefinition): FrameStarterOption {
+  const starterLevel = 5;
   const moves = normalizeCreatureMoves(
     species.id,
-    1,
+    starterLevel,
     species.movePool.map((moveId) => getMove(moveId)),
+  );
+  const statProfile = createPokemonStatProfile({
+    seed: `starter-option:${species.id}`,
+    speciesId: species.id,
+    level: starterLevel,
+    role: "starter",
+  });
+  const stats = calculatePokemonStats(
+    species.baseStats,
+    starterLevel,
+    statProfile,
+    createEmptyStats(),
   );
 
   return {
     speciesId: species.id,
     name: species.name,
-    level: 1,
+    level: starterLevel,
     typeLabels: localizeTypes(species.types),
     assetKey: `monster:${species.id}`,
     assetPath: `resources/pokemon/${species.id.toString().padStart(4, "0")}.webp`,
-    power: scoreCreature({ stats: species.baseStats, moves, types: species.types }),
+    power: scoreCreature({ stats, moves, types: species.types }),
     moves: moves.map(toFrameMoveSummary),
-    stats: { ...species.baseStats },
+    stats,
   };
 }
 

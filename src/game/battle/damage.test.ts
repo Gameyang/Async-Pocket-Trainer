@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { SeededRng } from "../rng";
 import type { Creature, MoveDefinition } from "../types";
 import { runAutoBattle } from "./battleEngine";
-import { calculateDamage, getTypeEffectiveness } from "./damage";
+import { calculateDamage, estimateDamage, getTypeEffectiveness } from "./damage";
 
 describe("battle damage rules", () => {
   it("applies type effectiveness including immunities", () => {
@@ -40,6 +40,20 @@ describe("battle damage rules", () => {
     expect(normal.critical).toBe(false);
     expect(critical.critical).toBe(true);
     expect(critical.damage).toBeGreaterThan(normal.damage);
+  });
+
+  it("uses level in the classic damage formula and STAB multiplier", () => {
+    const levelFive = creature("level-5", [tackle], { attack: 50, speed: 50 }, 5);
+    const levelThirty = creature("level-30", [tackle], { attack: 50, speed: 50 }, 30);
+    const defender = creature("defender", [tackle], { defense: 50 });
+    const nonStab = { ...tackle, type: "fire" as const };
+
+    expect(estimateDamage(levelThirty, defender, tackle)).toBeGreaterThan(
+      estimateDamage(levelFive, defender, tackle),
+    );
+    expect(estimateDamage(levelFive, defender, tackle)).toBeGreaterThan(
+      estimateDamage(levelFive, defender, nonStab),
+    );
   });
 
   it("applies status ailments and residual poison damage through replay events", () => {
@@ -487,6 +501,7 @@ function creature(
   instanceId: string,
   moves: MoveDefinition[],
   statOverrides: Partial<Creature["stats"]> = {},
+  level = 20,
 ): Creature {
   const stats = {
     hp: 100,
@@ -502,6 +517,7 @@ function creature(
     speciesId: 1,
     speciesName: instanceId,
     types: ["normal"],
+    level,
     stats,
     currentHp: stats.hp,
     moves,
