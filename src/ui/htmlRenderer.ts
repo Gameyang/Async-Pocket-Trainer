@@ -30,6 +30,7 @@ import {
   localizeType,
 } from "../game/localization";
 import { formatBattleFieldLabel } from "../game/battleField";
+import { getHealItemName } from "../game/shopCatalog";
 import {
   createBattleCueText,
   createBattleEventSummary,
@@ -1728,18 +1729,24 @@ function createFeedbackToast(entry: FrameTimelineEntry): ScheduledFeedbackToast 
       ...toastBase,
       kind: "item",
       tone: "success",
-      title: "팀 휴식 완료",
-      message: cost > 0 ? `${formatMoney(cost)} 사용` : "팀 HP가 회복되었습니다",
+      title: `팀 ${getHealItemName(5)} 사용`,
+      message: cost > 0 ? `${formatMoney(cost)} 사용 · 팀 HP 회복` : "팀 HP가 회복되었습니다",
     };
   }
 
   if (entry.type === "team_healed" || entry.type === "creature_healed") {
+    const tier = readHealTier(data.tier);
+    const scope = readString(data.scope);
+    const title = tier
+      ? `${scope === "team" ? "팀 " : ""}${getHealItemName(tier)} 사용`
+      : "회복 아이템 사용";
+
     return {
       ...toastBase,
       kind: "item",
       tone: "success",
-      title: entry.type === "team_healed" ? "전체 회복 사용" : "단일 회복 사용",
-      message: cost > 0 ? `${formatMoney(cost)} 사용` : "HP를 회복했습니다",
+      title,
+      message: cost > 0 ? `${formatMoney(cost)} 사용 · HP 회복` : "HP를 회복했습니다",
     };
   }
 
@@ -1922,6 +1929,11 @@ function createDeniedToastMessage(type: string): string {
 
 function readNumber(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function readHealTier(value: unknown): HealVisualTier | undefined {
+  const tier = readNumber(value);
+  return tier >= 1 && tier <= 5 && Number.isInteger(tier) ? (tier as HealVisualTier) : undefined;
 }
 
 function readString(value: unknown): string | undefined {
@@ -2757,12 +2769,18 @@ function renderShopActionCard(action: FrameAction, frame: GameFrame): string {
   const portraitAttribute = action.portrait ? ' data-portrait-card="true"' : "";
   const ownedAttribute = action.portrait?.owned ? ' data-portrait-owned="true"' : "";
   const selectedAttribute = action.portrait?.selected ? ' data-portrait-selected="true"' : "";
+  const healVisual = resolveHealVisual(action);
+  const healAttribute = healVisual
+    ? ` data-heal-scope="${healVisual.scope}" data-heal-tier="${healVisual.tier}"${
+        healVisual.premium ? ' data-heal-premium="true"' : ""
+      }`
+    : "";
   const visual = action.portrait
     ? renderShopPortraitIcon(action.portrait.assetPath, action.portrait.label)
     : renderActionIcon(action);
 
   return `
-    <button type="button" class="shop-card" data-action-id="${escapeHtml(action.id)}" data-shop-kind="${profile.kind}" data-role="${action.role}"${gradeAttribute}${featuredAttribute}${saleAttribute}${premiumAttribute}${portraitAttribute}${ownedAttribute}${selectedAttribute}${soldOutAttribute} aria-label="${escapeHtml(ariaLabel)}"${disabled}${reason}>
+    <button type="button" class="shop-card" data-action-id="${escapeHtml(action.id)}" data-shop-kind="${profile.kind}" data-role="${action.role}"${gradeAttribute}${featuredAttribute}${saleAttribute}${premiumAttribute}${portraitAttribute}${ownedAttribute}${selectedAttribute}${soldOutAttribute}${healAttribute} aria-label="${escapeHtml(ariaLabel)}"${disabled}${reason}>
       ${visual}
       <small>${escapeHtml(compactMeta)}</small>
       <p class="shop-card-body"><strong>${escapeHtml(profile.title)}</strong>${escapeHtml(detailText)}</p>
@@ -3424,6 +3442,11 @@ function actionIconContent(action: FrameAction): string {
     return renderBallSvg(action.action.ball);
   }
 
+  const healVisual = resolveHealVisual(action);
+  if (healVisual) {
+    return renderHealSvg(healVisual);
+  }
+
   return escapeHtml(actionEmoji(action));
 }
 
@@ -3469,13 +3492,75 @@ function renderBallSvg(ball: string): string {
   </svg>`;
 }
 
-const HEAL_TIER_EMOJI: Record<1 | 2 | 3 | 4 | 5, string> = {
-  1: "🩹",
-  2: "💊",
-  3: "🧪",
-  4: "💉",
-  5: "🛡️",
+type HealVisualTier = 1 | 2 | 3 | 4 | 5;
+type HealVisualScope = "single" | "team";
+
+interface HealVisual {
+  scope: HealVisualScope;
+  tier: HealVisualTier;
+  premium?: boolean;
+}
+
+interface HealIconPalette {
+  body: string;
+  liquid: string;
+  cap: string;
+  mark: string;
+}
+
+const PREMIUM_HEAL_VISUAL_PATTERN = /^premium:heal:(single|team):([1-5])$/;
+
+const HEAL_ICON_PALETTES: Record<HealVisualTier, HealIconPalette> = {
+  1: { body: "#f4ffe8", liquid: "#bdf6a0", cap: "#73c76f", mark: "#2f7e54" },
+  2: { body: "#efffde", liquid: "#9ee879", cap: "#56b86a", mark: "#276f4a" },
+  3: { body: "#e8ffd8", liquid: "#74d764", cap: "#38a85d", mark: "#205f40" },
+  4: { body: "#ddfbcc", liquid: "#4cc45d", cap: "#2a9251", mark: "#174d35" },
+  5: { body: "#d6f5c7", liquid: "#2aa85a", cap: "#1f7a4d", mark: "#103c2c" },
 };
+
+function resolveHealVisual(action: FrameAction): HealVisual | undefined {
+  if (action.action.type === "REST_TEAM") {
+    return { scope: "team", tier: 5 };
+  }
+
+  if (action.action.type === "BUY_HEAL") {
+    return { scope: action.action.scope, tier: action.action.tier };
+  }
+
+  if (action.action.type !== "BUY_PREMIUM_SHOP_ITEM") {
+    return undefined;
+  }
+
+  const match = PREMIUM_HEAL_VISUAL_PATTERN.exec(action.action.offerId);
+  if (!match) {
+    return undefined;
+  }
+
+  return {
+    scope: match[1] === "team" ? "team" : "single",
+    tier: Number(match[2]) as HealVisualTier,
+    premium: true,
+  };
+}
+
+function renderHealSvg(visual: HealVisual): string {
+  const palette = HEAL_ICON_PALETTES[visual.tier];
+  const scopeMark =
+    visual.scope === "team"
+      ? `<circle cx="8.1" cy="18.7" r="1.15" fill="${palette.mark}" />` +
+        `<circle cx="12" cy="18.7" r="1.15" fill="${palette.mark}" />` +
+        `<circle cx="15.9" cy="18.7" r="1.15" fill="${palette.mark}" />`
+      : `<path d="M12 18.1c1.6-1.25 2.55-2.2 2.55-3.25 0-.78-.48-1.34-1.18-1.34-.52 0-.93.28-1.37.78-.44-.5-.85-.78-1.37-.78-.7 0-1.18.56-1.18 1.34 0 1.05.95 2 2.55 3.25Z" fill="${palette.mark}" />`;
+
+  return `<svg class="heal-svg" data-heal-icon-tier="${visual.tier}" data-heal-icon-scope="${visual.scope}" viewBox="0 0 24 24" width="100%" height="100%" aria-hidden="true">
+    <path d="M9.2 2.8h5.6v3.4H9.2Z" fill="${palette.cap}" stroke="#131c28" stroke-width="1.35" stroke-linejoin="round"/>
+    <path d="M8.1 6.1h7.8l1.9 3.1v9.1c0 1.8-1.35 3.1-3.15 3.1h-5.3c-1.8 0-3.15-1.3-3.15-3.1V9.2Z" fill="${palette.body}" stroke="#131c28" stroke-width="1.45" stroke-linejoin="round"/>
+    <path d="M7.8 12.15h8.4v5.9c0 1.05-.72 1.78-1.78 1.78H9.58c-1.06 0-1.78-.73-1.78-1.78Z" fill="${palette.liquid}"/>
+    <path d="M11 9.4h2v2.2h2.2v2H13v2.2h-2v-2.2H8.8v-2H11Z" fill="${palette.mark}"/>
+    ${scopeMark}
+    <path d="M9.1 7.5c.7-.35 1.65-.55 2.6-.55" fill="none" stroke="#ffffff" stroke-width="1.05" stroke-linecap="round" opacity="0.86"/>
+  </svg>`;
+}
 
 const RARITY_BOOST_EMOJI: Record<1 | 2 | 3, string> = {
   1: "⭐",
@@ -3520,9 +3605,8 @@ function actionEmoji(action: FrameAction): string {
     case "DISCARD_CAPTURE":
       return "🚪";
     case "REST_TEAM":
-      return "🛌";
     case "BUY_HEAL":
-      return HEAL_TIER_EMOJI[action.action.tier];
+      return "💚";
     case "BUY_SCOUT":
       return action.action.kind === "rarity"
         ? SCOUT_RARITY_EMOJI[action.action.tier]
