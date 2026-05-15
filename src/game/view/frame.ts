@@ -1789,14 +1789,14 @@ function createTrainerPortraitActions(state: GameState): FrameAction[] {
       return {
         id: trainerPortraitActionId(portrait.id),
         label: owned
-          ? `${portrait.label} equip`
+          ? `${portrait.label} 적용`
           : `${portrait.label} ${formatTrainerPoints(portrait.tpCost)}`,
         role: "secondary",
         enabled: selected ? false : owned || canAfford,
         tpCost: owned ? undefined : portrait.tpCost,
         portrait: portraitView,
         action: { type: "BUY_TRAINER_PORTRAIT", portraitId: portrait.id },
-        reason: selected ? "Already active" : owned || canAfford ? undefined : "Not enough gems",
+        reason: selected ? "이미 적용 중인 스킨입니다" : owned || canAfford ? undefined : "보석이 부족합니다",
       };
     },
   );
@@ -1851,13 +1851,13 @@ function formatShopStatLabel(stat: ShopStatKey): string {
     case "hp":
       return "HP";
     case "attack":
-      return "공";
+      return "공격";
     case "defense":
-      return "방";
+      return "방어";
     case "special":
-      return "특";
+      return "특수";
     case "speed":
-      return "스";
+      return "속도";
   }
 }
 
@@ -1928,7 +1928,7 @@ function createTeachMoveActions(state: GameState): FrameAction[] {
     const hasEligibleTarget = eligibleTargetIds.length > 0;
     return {
       id: `shop:teach-move:${element}`,
-      label: `${localizeType(element)} 기술 머신 ${formatMoney(product.cost)}`,
+      label: `${localizeType(element)} 기술머신 ${formatMoney(product.cost)}`,
       role: "secondary" as const,
       enabled: state.money >= product.cost && hasEligibleTarget,
       cost: product.cost,
@@ -1976,7 +1976,7 @@ function createTypeLockActions(state: GameState): FrameAction[] {
     const product = getTypeLockProduct(element);
     return {
       id: `shop:type-lock:${element}`,
-      label: `${localizeType(element)} 고정 ${formatMoney(product.cost)}`,
+      label: `${localizeType(element)} 타입 고정 ${formatMoney(product.cost)}`,
       role: "secondary" as const,
       enabled: state.money >= product.cost,
       cost: product.cost,
@@ -1993,7 +1993,7 @@ function createRarityBoostActions(state: GameState): FrameAction[] {
 
     return {
       id: `shop:rarity-boost:${tier}`,
-      label: `희귀도 +${bonusPercent}% ${formatMoney(product.cost)}`,
+      label: `희귀 포켓몬 확률 +${bonusPercent}% ${formatMoney(product.cost)}`,
       role: "secondary" as const,
       enabled: state.money >= product.cost,
       cost: product.cost,
@@ -2009,7 +2009,7 @@ function createLevelBoostActions(state: GameState): FrameAction[] {
 
     return {
       id: `shop:level-boost:${tier}`,
-      label: `숙련도 ${product.min}~${product.max} ${formatMoney(product.cost)}`,
+      label: `다음 만남 레벨 +${product.min}~${product.max} ${formatMoney(product.cost)}`,
       role: "secondary" as const,
       enabled: state.money >= product.cost,
       cost: product.cost,

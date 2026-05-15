@@ -11,9 +11,10 @@ import {
   formatWave,
   localizeBall,
   localizeBattleStatus,
+  localizeType,
   withJosa,
 } from "../game/localization";
-import { getHealItemName } from "../game/shopCatalog";
+import { getHealItemName, getPremiumOffer } from "../game/shopCatalog";
 
 export type FrameBattleEffect =
   | "attack"
@@ -884,9 +885,9 @@ export function createShopActionProfile(action: FrameAction, frame: GameFrame): 
   if (action.action.type === "REST_TEAM") {
     return {
       kind: "rest",
-      kicker: "전체",
-      title: getHealItemName(5),
-      detail: `팀 HP ${Math.round(frame.hud.teamHpRatio * 100)}%`,
+      kicker: "팀 회복",
+      title: `팀 ${getHealItemName(5)}`,
+      detail: `팀 전체 HP 완전 회복 · 현재 ${Math.round(frame.hud.teamHpRatio * 100)}%`,
       meta: action.cost === undefined ? action.label : formatMoney(action.cost),
     };
   }
@@ -894,12 +895,17 @@ export function createShopActionProfile(action: FrameAction, frame: GameFrame): 
   if (action.action.type === "BUY_HEAL") {
     return {
       kind: "rest",
-      kicker: action.action.scope === "team" ? "전체" : "단일",
-      title: getHealItemName(action.action.tier),
+      kicker: action.action.scope === "team" ? "팀 회복" : "단일 회복",
+      title:
+        action.action.scope === "team"
+          ? `팀 ${getHealItemName(action.action.tier)}`
+          : getHealItemName(action.action.tier),
       detail:
         action.action.scope === "team"
-          ? `팀 HP ${Math.round(frame.hud.teamHpRatio * 100)}%`
-          : "가장 다친 포켓몬",
+          ? `팀 전체 HP ${formatHealPercent(action.action.tier)} 회복 · 현재 ${Math.round(
+              frame.hud.teamHpRatio * 100,
+            )}%`
+          : `선택한 포켓몬 HP ${formatHealPercent(action.action.tier)} 회복`,
       meta: action.cost === undefined ? action.label : formatMoney(action.cost),
     };
   }
@@ -909,12 +915,15 @@ export function createShopActionProfile(action: FrameAction, frame: GameFrame): 
     if (healOffer) {
       return {
         kind: "rest",
-        kicker: healOffer.scope === "team" ? "전체" : "단일",
-        title: getHealItemName(healOffer.tier),
+        kicker: healOffer.scope === "team" ? "보석 팀 회복" : "보석 단일 회복",
+        title:
+          healOffer.scope === "team"
+            ? `팀 ${getHealItemName(healOffer.tier)}`
+            : getHealItemName(healOffer.tier),
         detail:
           healOffer.scope === "team"
-            ? "보석 전용 · 팀 전체 HP 50%"
-            : "보석 전용 · 포켓몬 1마리 HP 50%",
+            ? "팀 전체 HP 50% 회복"
+            : "선택한 포켓몬 HP 50% 회복",
         meta: action.tpCost !== undefined ? formatTrainerPoints(action.tpCost) : action.label,
       };
     }
@@ -926,7 +935,7 @@ export function createShopActionProfile(action: FrameAction, frame: GameFrame): 
       kind: "item",
       kicker: "볼",
       title: localizeBall(ball),
-      detail: `보유 ${frame.hud.balls[ball]}`,
+      detail: `${formatBallShopDetail(ball)} · 보유 ${frame.hud.balls[ball]}개`,
       meta: action.cost === undefined ? action.label : formatMoney(action.cost),
     };
   }
@@ -934,9 +943,15 @@ export function createShopActionProfile(action: FrameAction, frame: GameFrame): 
   if (action.action.type === "BUY_SCOUT") {
     return {
       kind: "scout",
-      kicker: action.action.kind === "rarity" ? "희귀" : "강도",
-      title: `탐지 ${action.action.tier}단계`,
-      detail: action.action.kind === "rarity" ? "희귀도 리포트" : "전투력 리포트",
+      kicker: "정보",
+      title:
+        action.action.kind === "rarity"
+          ? `희귀도 스캔 Lv.${action.action.tier}`
+          : `전투력 스캔 Lv.${action.action.tier}`,
+      detail:
+        action.action.kind === "rarity"
+          ? "다음 상대의 희귀 등급을 미리 확인"
+          : "다음 상대의 전투력을 미리 확인",
       meta: action.cost === undefined ? action.label : formatMoney(action.cost),
     };
   }
@@ -944,9 +959,9 @@ export function createShopActionProfile(action: FrameAction, frame: GameFrame): 
   if (action.action.type === "BUY_RARITY_BOOST") {
     return {
       kind: "rarity-boost",
-      kicker: "희귀도",
-      title: "희귀도 보정",
-      detail: "다음 만남 종족값 상승",
+      kicker: "만남 보너스",
+      title: "희귀 포켓몬 확률 UP",
+      detail: "다음 만남에서 높은 종족값 등장률 증가",
       meta: action.cost === undefined ? "선택" : formatMoney(action.cost),
     };
   }
@@ -954,9 +969,9 @@ export function createShopActionProfile(action: FrameAction, frame: GameFrame): 
   if (action.action.type === "BUY_LEVEL_BOOST") {
     return {
       kind: "level-boost",
-      kicker: "숙련도",
-      title: "숙련도 보정",
-      detail: "다음 만남 레벨 상승",
+      kicker: "만남 보너스",
+      title: "다음 만남 레벨 UP",
+      detail: "다음 포켓몬이 더 높은 레벨로 등장",
       meta: action.cost === undefined ? "선택" : formatMoney(action.cost),
     };
   }
@@ -966,7 +981,7 @@ export function createShopActionProfile(action: FrameAction, frame: GameFrame): 
       kind: "stat-boost",
       kicker: formatShopStatLabel(action.action.stat),
       title: `${formatShopStatLabel(action.action.stat)} 강화`,
-      detail: "선택 포켓몬 단일 능력치 상승",
+      detail: "선택한 포켓몬의 해당 능력치 영구 상승",
       meta: action.cost === undefined ? "선택" : formatMoney(action.cost),
     };
   }
@@ -976,7 +991,7 @@ export function createShopActionProfile(action: FrameAction, frame: GameFrame): 
       kind: "stat-reroll",
       kicker: "재추첨",
       title: "능력치 재추첨",
-      detail: "선택 포켓몬 능력치 재계산",
+      detail: "선택한 포켓몬의 능력치 분포 다시 뽑기",
       meta: action.cost === undefined ? "선택" : formatMoney(action.cost),
     };
   }
@@ -984,9 +999,9 @@ export function createShopActionProfile(action: FrameAction, frame: GameFrame): 
   if (action.action.type === "BUY_TEACH_MOVE") {
     return {
       kind: "teach-move",
-      kicker: "기술 머신",
-      title: "기술 머신",
-      detail: "선택 포켓몬에 강한 기술 학습",
+      kicker: "기술머신",
+      title: `${localizeType(action.action.element)} 기술머신`,
+      detail: "선택한 포켓몬에게 해당 타입 기술 학습",
       meta: action.cost === undefined ? "선택" : formatMoney(action.cost),
     };
   }
@@ -995,8 +1010,8 @@ export function createShopActionProfile(action: FrameAction, frame: GameFrame): 
     return {
       kind: "type-lock",
       kicker: "타입 고정",
-      title: "타입 고정",
-      detail: "다음 만남 속성 고정",
+      title: `${localizeType(action.action.element)} 타입 고정`,
+      detail: "다음 만남을 해당 타입 포켓몬으로 고정",
       meta: action.cost === undefined ? "선택" : formatMoney(action.cost),
     };
   }
@@ -1004,9 +1019,9 @@ export function createShopActionProfile(action: FrameAction, frame: GameFrame): 
   if (action.action.type === "SORT_TEAM") {
     return {
       kind: "team-sort",
-      kicker: "팀 정렬",
-      title: formatTeamSortLabel(action.action.sortBy, action.action.direction),
-      detail: "상단 팀 6마리 순서 정리",
+      kicker: "편의 기능",
+      title: "팀 자동 정렬",
+      detail: formatTeamSortDetail(action.action.sortBy, action.action.direction),
       meta: action.cost === undefined ? "선택" : formatMoney(action.cost),
     };
   }
@@ -1014,19 +1029,20 @@ export function createShopActionProfile(action: FrameAction, frame: GameFrame): 
   if (action.action.type === "REROLL_SHOP_INVENTORY") {
     return {
       kind: "reroll",
-      kicker: "재구성",
-      title: "상점 재구성",
-      detail: "모든 카드 새로 추첨",
+      kicker: "상점",
+      title: "상품 새로고침",
+      detail: "현재 상품 8개를 다시 뽑기",
       meta: action.cost === undefined ? "선택" : formatMoney(action.cost),
     };
   }
 
   if (action.action.type === "BUY_PREMIUM_SHOP_ITEM") {
+    const offer = getPremiumOffer(action.action.offerId);
     return {
       kind: "premium",
-      kicker: "보석 전용",
-      title: action.label.replace(/^TP\s+/, "").replace(/\s💎\s*\d+$/, ""),
-      detail: "보석으로만 구매",
+      kicker: "보석 상품",
+      title: offer.label,
+      detail: offer.detail,
       meta: action.tpCost !== undefined ? formatTrainerPoints(action.tpCost) : action.label,
     };
   }
@@ -1034,10 +1050,10 @@ export function createShopActionProfile(action: FrameAction, frame: GameFrame): 
   if (action.action.type === "BUY_TRAINER_PORTRAIT") {
     return {
       kind: "portrait",
-      kicker: action.portrait?.owned ? "Owned portrait" : "Portrait shop",
-      title: action.portrait?.label ?? "Trainer portrait",
-      detail: action.portrait?.owned ? "Equip this portrait" : "Unlock and equip",
-      meta: action.tpCost !== undefined ? formatTrainerPoints(action.tpCost) : "Owned",
+      kicker: action.portrait?.owned ? "보유 스킨" : "훈련사 스킨",
+      title: action.portrait?.label ?? "훈련사 스킨",
+      detail: action.portrait?.owned ? "이 스킨으로 변경" : "구매 후 바로 적용",
+      meta: action.tpCost !== undefined ? formatTrainerPoints(action.tpCost) : "보유중",
     };
   }
 
@@ -1106,20 +1122,54 @@ function formatShopStatLabel(stat: unknown): string {
     case "hp":
       return "HP";
     case "attack":
-      return "공";
+      return "공격";
     case "defense":
-      return "방";
+      return "방어";
     case "special":
-      return "특";
+      return "특수";
     case "speed":
-      return "스";
+      return "속도";
     default:
       return "능력치";
   }
 }
 
-function formatTeamSortLabel(sortBy: unknown, direction: unknown): string {
-  const sortLabel = sortBy === "power" ? "전투력" : "건강상태";
-  const directionLabel = direction === "asc" ? "오름차순" : "내림차순";
-  return `${sortLabel} ${directionLabel}`;
+function formatHealPercent(tier: 1 | 2 | 3 | 4 | 5): string {
+  switch (tier) {
+    case 1:
+      return "20%";
+    case 2:
+      return "35%";
+    case 3:
+      return "50%";
+    case 4:
+      return "75%";
+    case 5:
+      return "100%";
+  }
+}
+
+function formatBallShopDetail(ball: unknown): string {
+  switch (ball) {
+    case "pokeBall":
+      return "기본 포획용 볼";
+    case "greatBall":
+      return "포획 성공률이 더 높은 볼";
+    case "ultraBall":
+      return "강한 포켓몬용 고급 볼";
+    case "hyperBall":
+      return "희귀 포켓몬용 특수 볼";
+    case "masterBall":
+      return "가장 높은 등급의 포획 볼";
+    default:
+      return "포획용 볼";
+  }
+}
+
+function formatTeamSortDetail(sortBy: unknown, direction: unknown): string {
+  if (sortBy === "power") {
+    return direction === "asc" ? "전투력 낮은 순으로 팀 배치" : "전투력 높은 순으로 팀 배치";
+  }
+
+  return direction === "asc" ? "HP 낮은 포켓몬부터 배치" : "HP 높은 포켓몬부터 배치";
 }

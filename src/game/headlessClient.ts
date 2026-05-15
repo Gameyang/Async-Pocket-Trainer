@@ -653,7 +653,7 @@ export class HeadlessGameClient {
       };
       this.addEvent(
         "premium_purchased",
-        `희귀도 보정 +${Math.round(effect.bonus * 100)}%가 적용되었습니다.`,
+        `다음 만남의 희귀 포켓몬 확률이 +${Math.round(effect.bonus * 100)}% 증가했습니다.`,
         {
           offerId,
           bonus: effect.bonus,
@@ -674,7 +674,7 @@ export class HeadlessGameClient {
       };
       this.addEvent(
         "premium_purchased",
-        `숙련도 보정 +${effect.min}~${effect.max}이(가) 적용되었습니다.`,
+        `다음 만남의 레벨 보너스 +${effect.min}~${effect.max}이 적용되었습니다.`,
         {
           offerId,
           min: effect.min,
@@ -706,12 +706,12 @@ export class HeadlessGameClient {
 
   private buyTrainerPortrait(portraitId: string): void {
     if (this.state.phase !== "ready") {
-      this.addEvent("portrait_ignored", "Portraits can only be changed while ready.");
+      this.addEvent("portrait_ignored", "훈련사 스킨은 준비 화면에서만 변경할 수 있습니다.");
       return;
     }
 
     if (!isTrainerPortraitPurchasable(portraitId)) {
-      this.addEvent("portrait_denied", "Unknown trainer portrait.");
+      this.addEvent("portrait_denied", "사용할 수 없는 훈련사 스킨입니다.");
       return;
     }
 
@@ -720,7 +720,7 @@ export class HeadlessGameClient {
     const owned = new Set(getOwnedTrainerPortraitIds(meta));
 
     if (getSelectedTrainerPortraitId(meta) === portrait.id) {
-      this.addEvent("portrait_ignored", "This trainer portrait is already active.", {
+      this.addEvent("portrait_ignored", "이미 적용 중인 훈련사 스킨입니다.", {
         portraitId: portrait.id,
       });
       return;
@@ -728,7 +728,7 @@ export class HeadlessGameClient {
 
     if (owned.has(portrait.id)) {
       meta.selectedTrainerPortraitId = portrait.id;
-      this.addEvent("portrait_selected", `${portrait.label} portrait equipped.`, {
+      this.addEvent("portrait_selected", `${portrait.label} 스킨을 적용했습니다.`, {
         portraitId: portrait.id,
         portraitPath: portrait.assetPath,
       });
@@ -736,7 +736,7 @@ export class HeadlessGameClient {
     }
 
     if (meta.trainerPoints < portrait.tpCost) {
-      this.addEvent("portrait_denied", "Not enough gems for this trainer portrait.", {
+      this.addEvent("portrait_denied", "훈련사 스킨 구매에 필요한 보석이 부족합니다.", {
         portraitId: portrait.id,
         tpCost: portrait.tpCost,
       });
@@ -746,7 +746,7 @@ export class HeadlessGameClient {
     meta.trainerPoints -= portrait.tpCost;
     meta.ownedTrainerPortraitIds = [...owned, portrait.id];
     meta.selectedTrainerPortraitId = portrait.id;
-    this.addEvent("portrait_purchased", `${portrait.label} portrait purchased and equipped.`, {
+    this.addEvent("portrait_purchased", `${portrait.label} 스킨을 구매하고 적용했습니다.`, {
       portraitId: portrait.id,
       portraitPath: portrait.assetPath,
       trainerPointsSpent: portrait.tpCost,
@@ -1264,7 +1264,7 @@ export class HeadlessGameClient {
     };
     this.addEvent(
       "boost_applied",
-      `희귀도 보정 +${Math.round(product.bonus * 100)}%가 적용되었습니다.`,
+      `다음 만남의 희귀 포켓몬 확률이 +${Math.round(product.bonus * 100)}% 증가했습니다.`,
       { kind: "rarity", tier, bonus: product.bonus },
     );
   }
@@ -1294,7 +1294,7 @@ export class HeadlessGameClient {
     };
     this.addEvent(
       "boost_applied",
-      `숙련도 보정 +${product.min}~${product.max}이(가) 적용되었습니다.`,
+      `다음 만남의 레벨 보너스 +${product.min}~${product.max}이 적용되었습니다.`,
       { kind: "level", tier, min: product.min, max: product.max },
     );
   }
@@ -1399,7 +1399,7 @@ export class HeadlessGameClient {
     const cost = this.resolveDiscountedCost(`shop:teach-move:${element}`, product.cost);
 
     if (this.state.money < cost) {
-      this.addEvent("teach_move_denied", "기술 머신에 필요한 코인이 부족합니다.");
+      this.addEvent("teach_move_denied", "기술머신에 필요한 코인이 부족합니다.");
       return;
     }
 
@@ -1968,13 +1968,13 @@ function formatShopStatLabel(stat: ShopStatKey): string {
     case "hp":
       return "HP";
     case "attack":
-      return "공";
+      return "공격";
     case "defense":
-      return "방";
+      return "방어";
     case "special":
-      return "특";
+      return "특수";
     case "speed":
-      return "스";
+      return "속도";
   }
 }
 

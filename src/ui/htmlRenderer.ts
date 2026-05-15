@@ -1901,7 +1901,7 @@ function createFeedbackToast(entry: FrameTimelineEntry): ScheduledFeedbackToast 
       ...toastBase,
       kind: "item",
       tone: "success",
-      title: "기술 머신 사용",
+      title: "기술머신 사용",
       message: targetName ? `${targetName} 기술 갱신` : "새 기술을 익혔습니다",
     };
   }
@@ -1921,7 +1921,7 @@ function createFeedbackToast(entry: FrameTimelineEntry): ScheduledFeedbackToast 
       ...toastBase,
       kind: "item",
       tone: "success",
-      title: "상점 재구성 완료",
+      title: "상품 새로고침 완료",
       message: cost > 0 ? `${formatMoney(cost)} 사용` : "상품 목록을 갱신했습니다",
     };
   }
@@ -1986,13 +1986,13 @@ function feedbackToastKindLabel(kind: ActiveFeedbackToast["kind"]): string {
 function formatBoostToastMessage(data: Record<string, unknown>): string {
   if (data.kind === "rarity") {
     const bonus = readNumber(data.bonus);
-    return bonus > 0 ? `희귀도 +${Math.round(bonus * 100)}%` : "희귀도 보정 적용";
+    return bonus > 0 ? `희귀 포켓몬 확률 +${Math.round(bonus * 100)}%` : "희귀 확률 보너스 적용";
   }
 
   if (data.kind === "level") {
     const min = readNumber(data.min);
     const max = readNumber(data.max);
-    return max > 0 ? `숙련도 +${min}~${max}` : "숙련도 보정 적용";
+    return max > 0 ? `다음 만남 레벨 +${min}~${max}` : "레벨 보너스 적용";
   }
 
   return "다음 만남에 적용됩니다";
@@ -2016,7 +2016,7 @@ function createDeniedToastMessage(type: string): string {
   }
 
   if (type.includes("teach_move")) {
-    return "기술 머신 조건을 확인하세요";
+    return "기술머신 조건을 확인하세요";
   }
 
   if (type.includes("stat")) {
@@ -2412,8 +2412,8 @@ function renderReadyScreen({
         <div class="shop-board">
           ${
             trainerPortrait
-              ? `<span class="shop-current-portrait" aria-label="Trainer portrait">
-                  <img src="${resolveTrainerAssetPath(trainerPortrait.assetPath)}" alt="${escapeHtml(`${frame.hud.trainerName} trainer portrait`)}" />
+              ? `<span class="shop-current-portrait" aria-label="훈련사 스킨">
+                  <img src="${resolveTrainerAssetPath(trainerPortrait.assetPath)}" alt="${escapeHtml(`${frame.hud.trainerName} 훈련사 스킨`)}" />
                 </span>`
               : ""
           }
@@ -3062,13 +3062,13 @@ function formatShopStatLabel(stat: unknown): string {
     case "hp":
       return "HP";
     case "attack":
-      return "공";
+      return "공격";
     case "defense":
-      return "방";
+      return "방어";
     case "special":
-      return "특";
+      return "특수";
     case "speed":
-      return "스";
+      return "속도";
     default:
       return "능력치";
   }
