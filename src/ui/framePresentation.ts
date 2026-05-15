@@ -13,6 +13,7 @@ import {
   localizeBattleStatus,
   withJosa,
 } from "../game/localization";
+import { getHealItemName } from "../game/shopCatalog";
 
 export type FrameBattleEffect =
   | "attack"
@@ -56,6 +57,7 @@ export interface ShopActionProfile {
 }
 
 const MAX_READY_SHOP_ACTIONS = 9;
+const premiumHealOfferPattern = /^premium:heal:(single|team):([1-5])$/;
 
 export function getLatestVisualCue(frame: GameFrame): FrameVisualCue | undefined {
   return [...frame.visualCues].reverse().find((cue) => cue.type !== "phase.change");
@@ -882,8 +884,8 @@ export function createShopActionProfile(action: FrameAction, frame: GameFrame): 
   if (action.action.type === "REST_TEAM") {
     return {
       kind: "rest",
-      kicker: "정비",
-      title: "전체 회복 5단계",
+      kicker: "전체",
+      title: getHealItemName(5),
       detail: `팀 HP ${Math.round(frame.hud.teamHpRatio * 100)}%`,
       meta: action.cost === undefined ? action.label : formatMoney(action.cost),
     };
@@ -893,13 +895,29 @@ export function createShopActionProfile(action: FrameAction, frame: GameFrame): 
     return {
       kind: "rest",
       kicker: action.action.scope === "team" ? "전체" : "단일",
-      title: `회복 ${action.action.tier}단계`,
+      title: getHealItemName(action.action.tier),
       detail:
         action.action.scope === "team"
           ? `팀 HP ${Math.round(frame.hud.teamHpRatio * 100)}%`
           : "가장 다친 포켓몬",
       meta: action.cost === undefined ? action.label : formatMoney(action.cost),
     };
+  }
+
+  if (action.action.type === "BUY_PREMIUM_SHOP_ITEM") {
+    const healOffer = parsePremiumHealOfferId(action.action.offerId);
+    if (healOffer) {
+      return {
+        kind: "rest",
+        kicker: healOffer.scope === "team" ? "전체" : "단일",
+        title: getHealItemName(healOffer.tier),
+        detail:
+          healOffer.scope === "team"
+            ? "보석 전용 · 팀 전체 HP 50%"
+            : "보석 전용 · 포켓몬 1마리 HP 50%",
+        meta: action.tpCost !== undefined ? formatTrainerPoints(action.tpCost) : action.label,
+      };
+    }
   }
 
   if (action.action.type === "BUY_BALL") {
@@ -1067,6 +1085,20 @@ export function renderPhaseLabel(phase: GameFrame["phase"]): string {
 
 function findAction(actions: readonly FrameAction[], id: string): FrameAction | undefined {
   return actions.find((action) => action.id === id);
+}
+
+function parsePremiumHealOfferId(
+  offerId: string,
+): { scope: "single" | "team"; tier: 1 | 2 | 3 | 4 | 5 } | undefined {
+  const match = premiumHealOfferPattern.exec(offerId);
+  if (!match) {
+    return undefined;
+  }
+
+  return {
+    scope: match[1] === "team" ? "team" : "single",
+    tier: Number(match[2]) as 1 | 2 | 3 | 4 | 5,
+  };
 }
 
 function formatShopStatLabel(stat: unknown): string {

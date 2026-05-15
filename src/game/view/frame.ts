@@ -16,6 +16,7 @@ import { calculatePokemonStats, createEmptyStats, createPokemonStatProfile } fro
 import {
   ballActionSlug,
   getBallCost,
+  getHealItemName,
   getHealProduct,
   getLevelBoostProduct,
   getPremiumOffer,
@@ -2032,10 +2033,11 @@ function healAction(
 ): FrameAction {
   const product = getHealProduct(scope, tier);
   const isFullTeamRest = scope === "team" && tier === 5;
+  const itemName = getHealItemName(tier);
   const label =
     scope === "team"
-      ? `전체 회복 ${tier}단계 ${formatMoney(product.cost)}`
-      : `단일 회복 ${tier}단계 ${formatMoney(product.cost)}`;
+      ? `팀 ${itemName} ${formatMoney(product.cost)}`
+      : `${itemName} ${formatMoney(product.cost)}`;
 
   return {
     id: isFullTeamRest ? "shop:rest" : `shop:heal:${scope}:${tier}`,

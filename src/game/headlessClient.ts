@@ -23,6 +23,7 @@ import { createBattleFieldOrder, normalizeBattleFieldOrder } from "./battleField
 import { chooseReplacementIndex, getTeamHealthRatio, scoreCreature, scoreTeam } from "./scoring";
 import {
   getBallCost,
+  getHealItemName,
   getHealProduct,
   getLevelBoostProduct,
   getPremiumOffer,
@@ -1201,12 +1202,13 @@ export class HeadlessGameClient {
         ? healTeamByRatio(this.state.team, product.healRatio)
         : healSingleByRatio(this.state.team, product.healRatio, targetEntityId);
     const healedHp = totalCurrentHp(this.state.team) - beforeHp;
+    const itemName = getHealItemName(tier);
     this.flashTeamEffect(focusEntityId, "heal");
     this.addEvent(
       scope === "team" ? "team_healed" : "creature_healed",
       scope === "team"
-        ? `전체 회복 ${tier}단계로 팀 HP를 ${healedHp} 회복했습니다.`
-        : `단일 회복 ${tier}단계로 가장 다친 포켓몬 HP를 ${healedHp} 회복했습니다.`,
+        ? `${itemName}으로 팀 HP를 ${healedHp} 회복했습니다.`
+        : `${itemName}으로 가장 다친 포켓몬 HP를 ${healedHp} 회복했습니다.`,
       {
         scope,
         tier,

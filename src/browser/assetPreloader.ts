@@ -37,12 +37,19 @@ const localSfxAssetUrls = import.meta.glob<string>("../resources/audio/sfx/*.m4a
   query: "?url",
 });
 
+const showdownCryAssetUrls = import.meta.glob<string>("../resources/audio/cries/showdown/*.m4a", {
+  eager: true,
+  import: "default",
+  query: "?url",
+});
+
 export const GAME_ASSET_CACHE_NAME = "apt-game-assets-v1";
 export const GAME_ASSET_PRELOAD_MANIFEST_KEY = "apt.gameAssetPreloadManifest.v1";
 
 const DEFAULT_PRELOAD_CONCURRENCY = 6;
+const DEFAULT_DELAYED_PRELOAD_CONCURRENCY = 2;
 
-export type GameAssetPreloadKind = "pokemon-sprite" | "ui-motion" | "bgm" | "sfx";
+export type GameAssetPreloadKind = "pokemon-sprite" | "ui-motion" | "bgm" | "sfx" | "pokemon-cry";
 
 export interface GameAssetPreloadItem {
   readonly id: string;
@@ -118,6 +125,21 @@ export function getPreloadableGameAssets(): readonly GameAssetPreloadItem[] {
   return [...dedupedByUrl.values()];
 }
 
+export function getDelayedGameAssets(): readonly GameAssetPreloadItem[] {
+  const assets = [
+    ...entriesToAssets(showdownCryAssetUrls, "pokemon-cry", "Pokemon cry"),
+  ];
+
+  const dedupedByUrl = new Map<string, GameAssetPreloadItem>();
+  for (const asset of assets) {
+    if (!dedupedByUrl.has(asset.url)) {
+      dedupedByUrl.set(asset.url, asset);
+    }
+  }
+
+  return [...dedupedByUrl.values()];
+}
+
 export async function preloadGameAssets(
   options: PreloadGameAssetsOptions = {},
 ): Promise<GameAssetPreloadResult> {
@@ -174,6 +196,59 @@ export async function preloadGameAssets(
     state,
     state.failed > 0 ? "일부 리소스는 플레이 중 다시 확인" : "준비 완료",
   );
+
+  return result;
+}
+
+export async function preloadDelayedGameAssets(
+  options: PreloadGameAssetsOptions = {},
+): Promise<GameAssetPreloadResult> {
+  await registerGameAssetServiceWorker();
+
+  const assets = getDelayedGameAssets();
+  const state: AssetPreloadState = {
+    completed: 0,
+    loaded: 0,
+    cached: 0,
+    failed: 0,
+  };
+  const failures: GameAssetPreloadFailure[] = [];
+  const cache = await openGameAssetCache();
+  const concurrency = Math.max(
+    1,
+    Math.min(options.concurrency ?? DEFAULT_DELAYED_PRELOAD_CONCURRENCY, assets.length || 1),
+  );
+
+  emitProgress(options.onProgress, "checking", assets.length, state, "Checking delayed assets");
+
+  await runWithConcurrency(assets, concurrency, async (asset) => {
+    try {
+      const preloadResult = await preloadAsset(asset, cache, options.signal);
+      state.completed += 1;
+      state.loaded += 1;
+      state.cached += preloadResult.fromCache ? 1 : 0;
+      emitProgress(options.onProgress, "loading", assets.length, state, asset.label);
+    } catch (error) {
+      state.completed += 1;
+      state.failed += 1;
+      failures.push({
+        sourcePath: asset.sourcePath,
+        url: asset.url,
+        reason: getErrorMessage(error),
+      });
+      emitProgress(options.onProgress, "loading", assets.length, state, asset.label);
+    }
+  });
+
+  const result: GameAssetPreloadResult = {
+    total: assets.length,
+    loaded: state.loaded,
+    cached: state.cached,
+    failed: state.failed,
+    failures,
+  };
+
+  emitProgress(options.onProgress, "complete", assets.length, state, "Delayed assets ready");
 
   return result;
 }

@@ -133,6 +133,14 @@ const healRatios: Record<HealTier, number> = {
   5: 1,
 };
 
+const healItemNames: Record<HealTier, string> = {
+  1: "상처약",
+  2: "좋은상처약",
+  3: "고급상처약",
+  4: "풀회복약",
+  5: "회복약",
+};
+
 const singleHealCosts: Record<HealTier, number> = {
   1: 4,
   2: 7,
@@ -338,6 +346,10 @@ export function getHealProduct(scope: HealScope, tier: HealTier): HealProduct {
   };
 }
 
+export function getHealItemName(tier: HealTier): string {
+  return healItemNames[tier];
+}
+
 export function getScoutProduct(kind: ScoutKind, tier: ScoutTier): ScoutProduct {
   return {
     kind,
@@ -378,12 +390,12 @@ export function ballActionSlug(ball: BallType): string {
 
 function createPremiumOffers(): PremiumOffer[] {
   const offers: PremiumOffer[] = [
-    premiumOffer("premium:heal:single:3", 3, "단일 회복 3단계", "포켓몬 1마리 HP 50%", 4, {
+    premiumOffer("premium:heal:single:3", 3, getHealItemName(3), "포켓몬 1마리 HP 50%", 4, {
       kind: "heal",
       scope: "single",
       healRatio: 0.5,
     }),
-    premiumOffer("premium:heal:team:3", 4, "전체 회복 3단계", "팀 전체 HP 50%", 4, {
+    premiumOffer("premium:heal:team:3", 4, getHealItemName(3), "팀 전체 HP 50%", 4, {
       kind: "heal",
       scope: "team",
       healRatio: 0.5,

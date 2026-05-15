@@ -2,6 +2,7 @@ import "./style.css";
 
 import {
   type GameAssetPreloadProgress,
+  preloadDelayedGameAssets,
   preloadGameAssets,
 } from "./browser/assetPreloader";
 import { createBrowserGameRuntime } from "./browser/gameRuntime";
@@ -37,6 +38,19 @@ async function bootGame(app: HTMLDivElement): Promise<void> {
   }
 
   mountGame(app);
+  preloadDelayedGameAssetsInBackground();
+}
+
+function preloadDelayedGameAssetsInBackground(): void {
+  void preloadDelayedGameAssets()
+    .then((result) => {
+      if (result.failed > 0) {
+        console.warn(`Unable to preload ${result.failed}/${result.total} delayed game assets.`);
+      }
+    })
+    .catch((error) => {
+      console.warn("Unable to preload delayed game assets:", error);
+    });
 }
 
 function mountGame(app: HTMLDivElement): void {

@@ -143,6 +143,25 @@ test("renders phase-specific screens with stable responsive layout", async ({ pa
   await assertResponsiveLayout(page, testInfo.project.name);
 });
 
+test("updates tutorial guide screen-area copy for portrait and landscape layouts", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 414, height: 896 });
+  await openFresh(page);
+
+  const guide = page.locator(".tutorial-guide-layer");
+  const guideBody = page.locator(".tutorial-guide-body");
+  await expect(guide).toBeVisible();
+  await expect(guide).toHaveAttribute("data-tutorial-layout", "portrait");
+  await page.locator("[data-tutorial-next]").click();
+  await expect(guideBody).toContainText("카드 아래에 선택 버튼");
+  await expect(guideBody).not.toContainText("{starterSelectButtonArea}");
+
+  await page.setViewportSize({ width: 896, height: 414 });
+  await expect(guide).toHaveAttribute("data-tutorial-layout", "landscape");
+  await expect(guideBody).toContainText("왼쪽 카드 안에 선택 버튼");
+});
+
 test("confirms battle replay, capture feedback, and ball count rendering", async ({ page }) => {
   await openSnapshot(page, captureDecisionSnapshot());
   const shell = page.locator(".app-shell");

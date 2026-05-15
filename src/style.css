@@ -88,9 +88,21 @@ button:disabled {
   height: 1.4em;
 }
 
+.heal-svg {
+  display: block;
+  width: 1.4em;
+  height: 1.4em;
+  filter: drop-shadow(0 1px 0 rgba(255, 255, 255, 0.45));
+}
+
 .shop-card .button-icon .ball-svg {
   width: 26px;
   height: 26px;
+}
+
+.shop-card .button-icon .heal-svg {
+  width: 27px;
+  height: 27px;
 }
 
 .shop-card[data-shop-kind="item"] .button-icon {
@@ -106,6 +118,11 @@ button:disabled {
 }
 
 .shop-card[data-shop-featured="true"] .button-icon .ball-svg {
+  width: 38px;
+  height: 38px;
+}
+
+.shop-card[data-shop-featured="true"] .button-icon .heal-svg {
   width: 38px;
   height: 38px;
 }
@@ -3589,6 +3606,35 @@ button.shop-team-slot:hover:not(:disabled) {
   background: linear-gradient(90deg, #e25248, #f38a5c);
 }
 
+.shop-team-slot .slot-meter[data-hp-critical="true"] {
+  border-color: #8f1512;
+  box-shadow:
+    0 0 0 1px rgba(255, 85, 76, 0.55),
+    0 0 8px rgba(226, 37, 31, 0.82),
+    0 0 14px rgba(226, 37, 31, 0.48);
+  animation: shop-critical-hp-glow 2.2s ease-in-out infinite;
+}
+
+.shop-team-slot .slot-meter[data-hp-critical="true"] span {
+  background: linear-gradient(90deg, #c9161d, #ff5a4d);
+}
+
+@keyframes shop-critical-hp-glow {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 1px rgba(255, 85, 76, 0.34),
+      0 0 5px rgba(226, 37, 31, 0.48),
+      0 0 10px rgba(226, 37, 31, 0.26);
+  }
+  50% {
+    box-shadow:
+      0 0 0 2px rgba(255, 85, 76, 0.78),
+      0 0 11px rgba(226, 37, 31, 0.96),
+      0 0 20px rgba(226, 37, 31, 0.62);
+  }
+}
+
 .team-detail-popup {
   position: absolute;
   z-index: 36;
@@ -4373,6 +4419,7 @@ button.move-detail-content:hover {
 .shop-card {
   --shop-kind-color: #f4d45a;
   --shop-kind-deep: #b8902c;
+  --shop-icon-bg: var(--shop-kind-color);
   position: relative;
   display: grid;
   grid-template-columns: 38px minmax(0, 1fr);
@@ -4405,7 +4452,7 @@ button.move-detail-content:hover {
   height: 34px;
   border: 2px solid #131c28;
   border-radius: 50%;
-  background: var(--shop-kind-color);
+  background: var(--shop-icon-bg);
   box-shadow:
     inset 0 2px 0 rgba(255, 255, 255, 0.55),
     inset 0 -3px 0 rgba(0, 0, 0, 0.18);
@@ -4490,6 +4537,66 @@ button.move-detail-content:hover {
 .shop-card[data-shop-kind="rest"] {
   --shop-kind-color: #7fcf8f;
   --shop-kind-deep: #2f7e54;
+}
+
+.shop-card[data-heal-scope="single"][data-heal-tier="1"] {
+  --shop-kind-color: #bdf6a0;
+  --shop-kind-deep: #43804b;
+  --shop-icon-bg: #c8f59b;
+}
+
+.shop-card[data-heal-scope="single"][data-heal-tier="2"] {
+  --shop-kind-color: #9ee879;
+  --shop-kind-deep: #37784a;
+  --shop-icon-bg: #a7ea82;
+}
+
+.shop-card[data-heal-scope="single"][data-heal-tier="3"] {
+  --shop-kind-color: #74d764;
+  --shop-kind-deep: #2f7047;
+  --shop-icon-bg: #82dd6d;
+}
+
+.shop-card[data-heal-scope="single"][data-heal-tier="4"] {
+  --shop-kind-color: #4cc45d;
+  --shop-kind-deep: #286843;
+  --shop-icon-bg: #5eca68;
+}
+
+.shop-card[data-heal-scope="single"][data-heal-tier="5"] {
+  --shop-kind-color: #2aa85a;
+  --shop-kind-deep: #205f3d;
+  --shop-icon-bg: #40b464;
+}
+
+.shop-card[data-heal-scope="team"][data-heal-tier="1"] {
+  --shop-kind-color: #a9f3b8;
+  --shop-kind-deep: #3b7d59;
+  --shop-icon-bg: #b3f1c1;
+}
+
+.shop-card[data-heal-scope="team"][data-heal-tier="2"] {
+  --shop-kind-color: #87e5a2;
+  --shop-kind-deep: #327551;
+  --shop-icon-bg: #91e6ac;
+}
+
+.shop-card[data-heal-scope="team"][data-heal-tier="3"] {
+  --shop-kind-color: #62d58a;
+  --shop-kind-deep: #2a6d49;
+  --shop-icon-bg: #6bd796;
+}
+
+.shop-card[data-heal-scope="team"][data-heal-tier="4"] {
+  --shop-kind-color: #3fc370;
+  --shop-kind-deep: #236541;
+  --shop-icon-bg: #4bc67b;
+}
+
+.shop-card[data-heal-scope="team"][data-heal-tier="5"] {
+  --shop-kind-color: #238f57;
+  --shop-kind-deep: #1d5738;
+  --shop-icon-bg: #309d62;
 }
 
 .shop-card[data-shop-kind="item"] {
@@ -4752,6 +4859,7 @@ button.move-detail-content:hover {
 .shop-card:disabled {
   --shop-kind-color: #c5c2b3;
   --shop-kind-deep: #6f6a58;
+  --shop-icon-bg: #c5c2b3;
   border-color: rgba(19, 28, 40, 0.6);
   background: #eeecdf;
   box-shadow:

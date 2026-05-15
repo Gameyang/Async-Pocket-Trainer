@@ -38,16 +38,16 @@
 
 | Action ID | 효과 | 비용 | 가중치 | 재고 |
 | --- | --- | ---: | ---: | ---: |
-| `shop:rest` | 팀 전체 HP 완전 회복 | 현재 20 | 8 | 1 |
-| `shop:heal:single:1` | 포켓몬 1마리 최대 HP의 20% 회복 | 4 | 14 | 1 |
-| `shop:heal:single:2` | 포켓몬 1마리 최대 HP의 35% 회복 | 7 | 12 | 1 |
-| `shop:heal:single:3` | 포켓몬 1마리 최대 HP의 50% 회복 | 10 | 8 | 1 |
-| `shop:heal:single:4` | 포켓몬 1마리 최대 HP의 75% 회복 | 14 | 5 | 1 |
-| `shop:heal:single:5` | 포켓몬 1마리 최대 HP의 100% 회복 | 20 | 3 | 1 |
-| `shop:heal:team:1` | 팀 전체 최대 HP의 20% 회복 | 6 | 12 | 1 |
-| `shop:heal:team:2` | 팀 전체 최대 HP의 35% 회복 | 10 | 10 | 1 |
-| `shop:heal:team:3` | 팀 전체 최대 HP의 50% 회복 | 14 | 7 | 1 |
-| `shop:heal:team:4` | 팀 전체 최대 HP의 75% 회복 | 18 | 4 | 1 |
+| `shop:rest` | 팀 회복약 - 팀 전체 HP 완전 회복 | 현재 20 | 8 | 1 |
+| `shop:heal:single:1` | 상처약 - 포켓몬 1마리 최대 HP의 20% 회복 | 4 | 14 | 1 |
+| `shop:heal:single:2` | 좋은상처약 - 포켓몬 1마리 최대 HP의 35% 회복 | 7 | 12 | 1 |
+| `shop:heal:single:3` | 고급상처약 - 포켓몬 1마리 최대 HP의 50% 회복 | 10 | 8 | 1 |
+| `shop:heal:single:4` | 풀회복약 - 포켓몬 1마리 최대 HP의 75% 회복 | 14 | 5 | 1 |
+| `shop:heal:single:5` | 회복약 - 포켓몬 1마리 최대 HP의 100% 회복 | 20 | 3 | 1 |
+| `shop:heal:team:1` | 팀 상처약 - 팀 전체 최대 HP의 20% 회복 | 6 | 12 | 1 |
+| `shop:heal:team:2` | 팀 좋은상처약 - 팀 전체 최대 HP의 35% 회복 | 10 | 10 | 1 |
+| `shop:heal:team:3` | 팀 고급상처약 - 팀 전체 최대 HP의 50% 회복 | 14 | 7 | 1 |
+| `shop:heal:team:4` | 팀 풀회복약 - 팀 전체 최대 HP의 75% 회복 | 18 | 4 | 1 |
 
 ## 볼 그룹
 
@@ -137,8 +137,8 @@
 
 | Action ID 패턴 | 효과 | TP 비용 |
 | --- | --- | ---: |
-| `shop:premium:heal:single:3` | 포켓몬 1마리 HP 50% 회복 | 3 |
-| `shop:premium:heal:team:3` | 팀 전체 HP 50% 회복 | 4 |
+| `shop:premium:heal:single:3` | 고급상처약 - 포켓몬 1마리 HP 50% 회복 | 3 |
+| `shop:premium:heal:team:3` | 팀 고급상처약 - 팀 전체 HP 50% 회복 | 4 |
 | `shop:premium:ball:ultraball` | 울트라볼 +1 | 5 |
 | `shop:premium:ball:masterball:2` | 마스터볼 +2 | 16 |
 | `shop:premium:ball:masterball:3` | 마스터볼 +3 | 24 |
