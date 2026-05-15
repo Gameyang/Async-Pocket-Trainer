@@ -202,21 +202,46 @@ describe("HeadlessGameClient", () => {
     expect(client.getSnapshot().money).toBe(14);
   });
 
-  it("rolls eight shop product items across every inventory group", () => {
+  it("rolls nine shop product items across every inventory group", () => {
     const client = new HeadlessGameClient({ seed: "shop-nine-grid" });
     client.dispatch({ type: "START_RUN", starterSpeciesId: 1 });
 
     const inventory = client.getSnapshot().shopInventory;
     const groups = new Set(inventory?.entries.map((entry) => shopInventoryGroup(entry.actionId)));
-    expect(inventory?.entries).toHaveLength(8);
-    expect(groups).toEqual(new Set(["recovery", "balls", "encounter", "team", "premium"]));
+    expect(inventory?.entries).toHaveLength(9);
+    expect(groups).toEqual(
+      new Set(["recovery", "balls", "encounter", "team", "premium", "portrait"]),
+    );
 
     const productActionIds = client
       .getFrame()
       .actions.map((action) => action.id)
       .filter((id) => id.startsWith("shop:") && id !== "shop:reroll");
 
-    expect(productActionIds).toHaveLength(8);
+    expect(productActionIds).toHaveLength(9);
+  });
+
+  it("buys and equips trainer portraits with gems", () => {
+    const client = new HeadlessGameClient({ seed: "portrait-shop" });
+    client.dispatch({ type: "START_RUN", starterSpeciesId: 1 });
+    client.setMetaCurrency({ trainerPoints: 100, claimedAchievements: [] });
+
+    const action = client
+      .getFrame()
+      .actions.find((candidate) => candidate.id.startsWith("shop:portrait:"));
+
+    expect(action?.enabled).toBe(true);
+    expect(action?.action.type).toBe("BUY_TRAINER_PORTRAIT");
+
+    client.dispatch(action!.action);
+    const state = client.getSnapshot();
+    const portraitId =
+      action!.action.type === "BUY_TRAINER_PORTRAIT" ? action!.action.portraitId : "";
+
+    expect(state.metaCurrency?.selectedTrainerPortraitId).toBe(portraitId);
+    expect(state.metaCurrency?.ownedTrainerPortraitIds).toContain(portraitId);
+    expect(state.metaCurrency?.trainerPoints).toBeLessThan(100);
+    expect(client.getFrame().hud.trainerPortrait?.id).toBe(portraitId);
   });
 
   it("saves and loads a run snapshot without changing deterministic continuation", () => {
@@ -237,6 +262,50 @@ describe("HeadlessGameClient", () => {
     }
 
     expect(restored.saveSnapshot()).toEqual(original.saveSnapshot());
+  });
+
+  it("preserves battle field state across battle replay and snapshot restore", () => {
+    const client = startFromFrameAction("field-snapshot");
+    const battleFieldOrder = client.getSnapshot().battleFieldOrder ?? [];
+
+    expect(battleFieldOrder).toHaveLength(18);
+    expect(new Set(battleFieldOrder).size).toBe(18);
+
+    dispatchFrameAction(client, "encounter:next");
+    const battleFrame = client.getFrame();
+    const firstFieldId = battleFieldOrder[0];
+    const secondFieldId = battleFieldOrder[1];
+
+    expect(battleFrame.hud.battleField).toMatchObject({ id: firstFieldId, timeOfDay: "day" });
+    expect(battleFrame.scene.battleField).toMatchObject({ id: firstFieldId, timeOfDay: "day" });
+    expect(client.getSnapshot().pendingEncounter?.battleField).toMatchObject({
+      id: firstFieldId,
+      timeOfDay: "day",
+    });
+    expect(client.getSnapshot().lastBattle?.battleField).toMatchObject({
+      id: firstFieldId,
+      timeOfDay: "day",
+    });
+
+    dispatchFrameAction(client, "capture:skip");
+    const readyFrame = client.getFrame();
+    expect(readyFrame.hud.wave).toBe(2);
+    expect(readyFrame.hud.battleField).toMatchObject({ id: firstFieldId, timeOfDay: "day" });
+    expect(readyFrame.scene.battleField).toMatchObject({ id: firstFieldId, timeOfDay: "day" });
+
+    const saved = client.saveSnapshot();
+    saved.state.currentWave = 6;
+    saved.state.phase = "ready";
+    const restored = HeadlessGameClient.fromSnapshot(saved);
+
+    expect(restored.getFrame().hud.battleField).toMatchObject({
+      id: secondFieldId,
+      timeOfDay: "night",
+    });
+    expect(restored.getFrame().scene.battleField).toMatchObject({
+      id: firstFieldId,
+      timeOfDay: "day",
+    });
   });
 
   it("clones save snapshots at the client boundary", () => {
@@ -505,5 +574,6 @@ function shopInventoryGroup(actionId: string): string {
     return "team";
   }
   if (actionId.startsWith("shop:premium:")) return "premium";
+  if (actionId.startsWith("shop:portrait:")) return "portrait";
   return "unknown";
 }

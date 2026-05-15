@@ -21,7 +21,7 @@ describe("browser sync settings storage", () => {
       enabled: true,
       mode: "publicCsv",
       spreadsheetId: expect.any(String),
-      range: "APT_WAVE_TEAMS!A:I",
+      range: "APT_WAVE_TEAMS!A:J",
     });
   });
 
@@ -32,7 +32,7 @@ describe("browser sync settings storage", () => {
         enabled: true,
         mode: "googleApi",
         spreadsheetId: "sheet-1",
-        range: "APT_WAVE_TEAMS!A:I",
+        range: "APT_WAVE_TEAMS!A:J",
         apiKey: "key-1",
       },
       storage,
@@ -53,7 +53,7 @@ describe("browser sync settings storage", () => {
         enabled: true,
         mode: "publicCsv",
         spreadsheetId: "sheet-1",
-        range: "APT_WAVE_TEAMS!A:I",
+        range: "APT_WAVE_TEAMS!A:J",
         appsScriptSubmitUrl: "https://script.google.com/macros/s/deploy-id/exec",
       },
       storage,
@@ -80,7 +80,7 @@ describe("browser sync settings storage", () => {
         enabled: true,
         mode: "googleApi",
         spreadsheetId: "sheet-1",
-        range: "APT_WAVE_TEAMS!A:I",
+        range: "APT_WAVE_TEAMS!A:J",
         accessToken: "token-1",
       },
       storage,

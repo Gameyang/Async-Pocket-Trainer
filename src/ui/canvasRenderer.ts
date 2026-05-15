@@ -8,6 +8,7 @@ import type {
   GameFrame,
 } from "../game/view/frame";
 import { formatMoney, formatWave, localizeBallShort } from "../game/localization";
+import { getBattleFieldCanvasPalette } from "../game/battleField";
 import { ballTypes } from "../game/types";
 import {
   createBattleCueText,
@@ -84,7 +85,7 @@ function drawFrame(context: CanvasRenderingContext2D, frame: GameFrame, draw: Dr
   const entitiesById = new Map(frame.entities.map((entity) => [entity.id, entity]));
   const latestCue = getLatestVisualCue(frame);
   const latestEvent = latestCue
-    ? frame.battleReplay.events.find((event) => event.sequence === latestCue.sequence)
+    ? frame.battleReplay.events.find((event) => referencesCueSequence(event, latestCue.sequence))
     : frame.battleReplay.events.at(-1);
   const activeIds = resolveActiveBattleEntityIds(frame, entitiesById, latestEvent, latestCue);
   const screenEntities: ScreenEntities = {
@@ -178,7 +179,7 @@ function drawBattleScreen(
   latestCue: FrameVisualCue | undefined,
   entitiesById: ReadonlyMap<string, FrameEntity>,
 ): void {
-  drawBattlefield(context, draw);
+  drawBattlefield(context, frame, draw);
 
   const drawnEntityIds = new Set<string>();
   const drawOnce = (entity: FrameEntity | undefined) => {
@@ -204,19 +205,27 @@ function drawBattleScreen(
   drawTeamStrip(context, draw, screenEntities.players);
 }
 
-function drawBattlefield(context: CanvasRenderingContext2D, draw: DrawContext): void {
+function drawBattlefield(
+  context: CanvasRenderingContext2D,
+  frame: GameFrame,
+  draw: DrawContext,
+): void {
   const rect = drawScreenFrame(context, draw);
+  const palette = getBattleFieldCanvasPalette(frame.scene.battleField);
   const grassTop = rect.y + rect.height * 0.52;
   const skyGradient = context.createLinearGradient(0, rect.y, 0, grassTop);
-  skyGradient.addColorStop(0, "#8bd8ff");
-  skyGradient.addColorStop(1, "#ffe189");
+  skyGradient.addColorStop(0, palette.skyTop);
+  skyGradient.addColorStop(1, palette.skyBottom);
   context.fillStyle = skyGradient;
   context.fillRect(rect.x, rect.y, rect.width, grassTop - rect.y);
-  context.fillStyle = "#58b368";
+  const groundGradient = context.createLinearGradient(0, grassTop, 0, rect.y + rect.height);
+  groundGradient.addColorStop(0, palette.groundTop);
+  groundGradient.addColorStop(1, palette.groundBottom);
+  context.fillStyle = groundGradient;
   context.fillRect(rect.x, grassTop, rect.width, rect.height - (grassTop - rect.y));
 
-  drawPlatform(context, draw.width * 0.7, rect.y + rect.height * 0.34, 150, 48);
-  drawPlatform(context, draw.width * 0.31, rect.y + rect.height * 0.74, 190, 58);
+  drawPlatform(context, draw.width * 0.7, rect.y + rect.height * 0.34, 150, 48, palette.platform);
+  drawPlatform(context, draw.width * 0.31, rect.y + rect.height * 0.74, 190, 58, palette.platform);
 }
 
 function drawStarterScreen(
@@ -273,10 +282,14 @@ function drawReadyScreen(
   draw: DrawContext,
   screenEntities: ScreenEntities,
 ): void {
-  const rect = drawScreenFrame(context, draw, "#8bd8ff");
-  context.fillStyle = "#68aa72";
+  const palette = getBattleFieldCanvasPalette(frame.hud.battleField);
+  const rect = drawScreenFrame(context, draw, palette.skyTop);
+  const groundGradient = context.createLinearGradient(0, rect.y, 0, rect.y + rect.height);
+  groundGradient.addColorStop(0, palette.groundTop);
+  groundGradient.addColorStop(1, palette.groundBottom);
+  context.fillStyle = groundGradient;
   context.fillRect(rect.x, rect.y + rect.height * 0.48, rect.width, rect.height * 0.52);
-  drawPlatform(context, draw.width * 0.5, rect.y + 170, rect.width * 0.58, 48);
+  drawPlatform(context, draw.width * 0.5, rect.y + 170, rect.width * 0.58, 48, palette.platform);
   drawTextPanel(
     context,
     `${formatWave(frame.hud.wave)} 관리 단계`,
@@ -432,9 +445,10 @@ function drawPlatform(
   centerY: number,
   width: number,
   height: number,
+  fill = "#70b865",
 ): void {
   context.save();
-  context.fillStyle = "#70b865";
+  context.fillStyle = fill;
   context.strokeStyle = "#2f7e54";
   context.lineWidth = 3;
   context.beginPath();
@@ -691,7 +705,9 @@ function drawBattleSummary(
   const event =
     activeEvent ??
     (latestCue
-      ? frame.battleReplay.events.find((candidate) => candidate.sequence === latestCue.sequence)
+      ? frame.battleReplay.events.find((candidate) =>
+          referencesCueSequence(candidate, latestCue.sequence),
+        )
       : frame.battleReplay.events.at(-1));
   const summary = createBattleEventSummary(event, latestCue, frame.entities);
   const label = summary
@@ -710,6 +726,10 @@ function drawBattleSummary(
   context.fillText(turn, 32, top + 17);
   context.font = "700 12px sans-serif";
   context.fillText(label.slice(0, 34), 32, top + 36);
+}
+
+function referencesCueSequence(event: FrameBattleReplayEvent, cueSequence: number): boolean {
+  return event.sequence === cueSequence || event.sourceSequence === cueSequence;
 }
 
 function drawTeamStrip(

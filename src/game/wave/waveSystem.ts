@@ -3,11 +3,13 @@ import {
   normalizeCreatureBattleLoadout,
   rerollCreatureStatProfile,
 } from "../creatureFactory";
+import { resolveBattleFieldForWave } from "../battleField";
 import { getMove, getSpecies } from "../data/catalog";
 import { formatWave } from "../localization";
 import { scoreTeam } from "../scoring";
 import type { SeededRng } from "../rng";
 import type {
+  BattleFieldId,
   Creature,
   ElementType,
   EncounterSnapshot,
@@ -42,8 +44,10 @@ export function createWildEncounter(
   balance: GameBalance,
   routeId: RouteId = "normal",
   boost?: EncounterBoostOptions,
+  battleFieldOrder?: readonly BattleFieldId[],
 ): EncounterSnapshot {
   const effectiveWave = resolveBoostWave(wave, rng, boost);
+  const battleField = resolveBattleFieldForWave(wave, battleFieldOrder);
   const creature = applyRouteToCreature(
     createCreature({
       rng,
@@ -52,6 +56,7 @@ export function createWildEncounter(
       role: "wild",
       rarityBoost: boost?.rarityBonus ?? 0,
       lockedType: boost?.lockedType,
+      preferredType: battleField.element,
     }),
     routeId,
     balance,
@@ -61,6 +66,7 @@ export function createWildEncounter(
     kind: "wild",
     source: "generated",
     routeId,
+    battleField,
     wave,
     opponentName: `${routeLabel(routeId)}야생 ${creature.speciesName}`,
     enemyTeam: [creature],
@@ -73,8 +79,10 @@ export function createTrainerEncounter(
   balance: GameBalance,
   routeId: RouteId = "normal",
   boost?: EncounterBoostOptions,
+  battleFieldOrder?: readonly BattleFieldId[],
 ): EncounterSnapshot {
   const effectiveWave = resolveBoostWave(wave, rng, boost);
+  const battleField = resolveBattleFieldForWave(wave, battleFieldOrder);
   const checkpointCount = Math.max(1, Math.floor(effectiveWave / balance.checkpointInterval));
   const teamSize = Math.min(
     balance.maxTeamSize,
@@ -98,6 +106,7 @@ export function createTrainerEncounter(
     kind: "trainer",
     source: "generated",
     routeId,
+    battleField,
     wave,
     opponentName: `${routeLabel(routeId)}${formatWave(wave)} 트레이너 (${scoreTeam(team)})`,
     enemyTeam: team,
@@ -108,15 +117,18 @@ export function createTrainerEncounterFromSnapshot(
   snapshot: TrainerSnapshot,
   balance: GameBalance,
   routeId: RouteId = "normal",
+  battleFieldOrder?: readonly BattleFieldId[],
 ): EncounterSnapshot {
   const team = snapshot.team.map((creature) =>
     applyRouteToCreature(snapshotCreatureToCreature(creature), routeId, balance),
   );
+  const battleField = resolveBattleFieldForWave(snapshot.wave, battleFieldOrder);
 
   return {
     kind: "trainer",
     source: "sheet",
     routeId,
+    battleField,
     wave: snapshot.wave,
     opponentName: `${routeLabel(routeId)}${snapshot.trainerName} 기록 (${scoreTeam(team)})`,
     opponentTeam: createOpponentTeamContext(snapshot, scoreTeam(team)),
@@ -130,10 +142,11 @@ export function createEncounter(
   balance: GameBalance,
   routeId: RouteId = "normal",
   boost?: EncounterBoostOptions,
+  battleFieldOrder?: readonly BattleFieldId[],
 ): EncounterSnapshot {
   return wave % balance.checkpointInterval === 0
-    ? createTrainerEncounter(wave, rng, balance, routeId, boost)
-    : createWildEncounter(wave, rng, balance, routeId, boost);
+    ? createTrainerEncounter(wave, rng, balance, routeId, boost, battleFieldOrder)
+    : createWildEncounter(wave, rng, balance, routeId, boost, battleFieldOrder);
 }
 
 export function calculateReward(

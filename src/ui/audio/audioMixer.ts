@@ -90,14 +90,17 @@ export class AudioMixer {
     const cues = frame.visualCues.filter((cue) => this.shouldPlayCue(cue, frame));
     const hasPriority = cues.some((cue) => cue.type !== "phase.change");
     for (const cue of cues) {
-      if (hasPriority && cue.type === "phase.change") {
-        continue;
-      }
+      const soundKeys = resolveCueSoundKeys(cue, !(hasPriority && cue.type === "phase.change"));
       if (this.playedCueIds.has(cue.id)) {
         continue;
       }
+      if (soundKeys.length === 0) {
+        continue;
+      }
       this.playedCueIds.add(cue.id);
-      this.playSfx(cue.soundKey);
+      for (const soundKey of soundKeys) {
+        this.playSfx(soundKey);
+      }
     }
   }
 
@@ -421,7 +424,29 @@ function isBattleSfxCue(cue: FrameVisualCue): boolean {
   );
 }
 
+function resolveCueSoundKeys(cue: FrameVisualCue, includePrimary: boolean): string[] {
+  if (!includePrimary) {
+    return cue.cryKey ? [cue.cryKey] : [];
+  }
+
+  if (
+    (cue.type === "creature.faint" || cue.type === "capture.success" || cue.type === "phase.change") &&
+    cue.cryKey
+  ) {
+    return [cue.cryKey];
+  }
+
+  const keys = [cue.soundKey];
+  if (cue.cryKey && cue.cryKey !== cue.soundKey) {
+    keys.push(cue.cryKey);
+  }
+  return keys;
+}
+
 function resolveSfxVolume(soundKey: string): number {
+  if (soundKey.startsWith("sfx.cry.")) {
+    return 0.46;
+  }
   if (soundKey === "sfx.battle.critical.hit") {
     return 0.72;
   }

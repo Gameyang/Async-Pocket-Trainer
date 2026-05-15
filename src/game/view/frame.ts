@@ -1,4 +1,5 @@
 import { getMove, getSpecies, starterSpeciesIds } from "../data/catalog";
+import { resolveBattleFieldForWave } from "../battleField";
 import {
   calculateDexUnlockReward,
   calculateSkillUnlockReward,
@@ -7,11 +8,7 @@ import {
   isAchievementClaimed,
 } from "../achievements";
 import { normalizeCreatureMoves } from "../creatureFactory";
-import {
-  calculatePokemonStats,
-  createEmptyStats,
-  createPokemonStatProfile,
-} from "../pokemonStats";
+import { calculatePokemonStats, createEmptyStats, createPokemonStatProfile } from "../pokemonStats";
 import {
   ballActionSlug,
   getBallCost,
@@ -52,9 +49,19 @@ import {
 import { getLearnableLevelUpMoves } from "../moveLearning";
 import { getTeamHealthRatio, scoreCreature, scoreTeam } from "../scoring";
 import { ballTypes } from "../types";
+import trainerPortraitManifest from "../../resources/trainers/trainerPortraitManifest.json" with { type: "json" };
+import {
+  createTrainerPortraitShopOffers,
+  getSelectedTrainerPortraitId,
+  getTrainerPortrait,
+  getTrainerPortraitAssetPath,
+  isTrainerPortraitOwned,
+  trainerPortraitActionId,
+} from "../trainerPortraits";
 import type {
   BattleStat,
   BattleStatus,
+  BattleFieldState,
   BattleReplayEvent,
   BallType,
   Creature,
@@ -106,6 +113,8 @@ export interface FrameHud {
   teamHpRatio: number;
   gameOverReason?: string;
   trainerPoints: number;
+  trainerPortrait?: FrameTrainerPortrait;
+  battleField: BattleFieldState;
   encounterBoost?: {
     rarityBonus?: number;
     levelMin?: number;
@@ -124,6 +133,7 @@ export interface FrameScene {
   starterOptions: FrameStarterOption[];
   capture?: FrameCaptureScene;
   trainer?: FrameTrainerScene;
+  battleField: BattleFieldState;
   bgmKey: FrameBgmKey;
   teamEffect?: { entityId: string; kind: string; key: string };
 }
@@ -133,6 +143,7 @@ export interface FrameStarterOption {
   name: string;
   level: number;
   typeLabels: string[];
+  types: ElementType[];
   assetKey: string;
   assetPath: string;
   power: number;
@@ -146,10 +157,19 @@ export interface FrameStarterOption {
   };
 }
 
+export interface FrameTrainerPortrait {
+  id: string;
+  label: string;
+  assetPath: string;
+  owned: boolean;
+  selected: boolean;
+}
+
 export interface FrameMoveSummary {
   id: string;
   name: string;
   type: string;
+  typeKey: ElementType;
   power: number;
   accuracy: number;
   accuracyLabel: string;
@@ -205,8 +225,10 @@ export interface FrameEntity {
   assetPath: string;
   name: string;
   speciesId: number;
+  speciesIdentifier?: string;
   level: number;
   typeLabels: string[];
+  types: ElementType[];
   hp: {
     current: number;
     max: number;
@@ -246,6 +268,7 @@ export interface FrameAction {
   cost?: number;
   originalCost?: number;
   tpCost?: number;
+  portrait?: FrameTrainerPortrait;
   requiresTarget?: boolean;
   eligibleTargetIds?: string[];
   reason?: string;
@@ -265,11 +288,24 @@ export interface FrameBattleReplay {
   events: FrameBattleReplayEvent[];
 }
 
+export type FrameBattleReplayEventType =
+  | BattleReplayEvent["type"]
+  | "trainer.intro"
+  | "trainer.throw"
+  | "creature.summon"
+  | "trainer.outro";
+
+export type FrameBattleCeremonyStage = "intro" | "throw" | "summon" | "outro";
+
 export interface FrameBattleReplayEvent {
   sequence: number;
+  sourceSequence?: number;
   turn: number;
-  type: BattleReplayEvent["type"];
+  type: FrameBattleReplayEventType;
   label: string;
+  ceremonyStage?: FrameBattleCeremonyStage;
+  playerLine?: string;
+  opponentLine?: string;
   move?: string;
   moveType?: ElementType;
   moveCategory?: MoveCategory;
@@ -301,6 +337,7 @@ export type FrameVisualCue =
       sequence: number;
       effectKey: string;
       soundKey: string;
+      cryKey?: string;
       turn: number;
       sourceEntityId: string;
       targetEntityId: string;
@@ -318,6 +355,7 @@ export type FrameVisualCue =
       sequence: number;
       effectKey: string;
       soundKey: string;
+      cryKey?: string;
       turn: number;
       sourceEntityId?: string;
       targetEntityId?: string;
@@ -332,6 +370,7 @@ export type FrameVisualCue =
       sequence: number;
       effectKey: string;
       soundKey: string;
+      cryKey?: string;
       turn: number;
       entityId: string;
       label: string;
@@ -342,6 +381,7 @@ export type FrameVisualCue =
       sequence: number;
       effectKey: string;
       soundKey: string;
+      cryKey?: string;
       label: string;
       phase: GamePhase;
     }
@@ -351,6 +391,7 @@ export type FrameVisualCue =
       sequence: number;
       effectKey: string;
       soundKey: string;
+      cryKey?: string;
       label: string;
       ball: BallType;
       targetEntityId?: string;
@@ -364,6 +405,12 @@ export function createGameFrame(
 ): GameFrame {
   const captureScene = createCaptureScene(state);
   const dexContext = createFrameDexContext(state);
+  const currentBattleField = resolveBattleFieldForWave(state.currentWave, state.battleFieldOrder);
+  const sceneBattleField = resolveSceneBattleField(state, currentBattleField);
+  const trainerPortrait = createFrameTrainerPortrait(
+    getSelectedTrainerPortraitId(state.metaCurrency),
+    state,
+  );
   const playerEntities = state.team.map((creature, index) =>
     toFrameEntity(creature, "player", index, dexContext),
   );
@@ -428,6 +475,8 @@ export function createGameFrame(
       teamHpRatio: Number(getTeamHealthRatio(state.team).toFixed(4)),
       gameOverReason: state.gameOverReason,
       trainerPoints: state.metaCurrency?.trainerPoints ?? 0,
+      trainerPortrait,
+      battleField: currentBattleField,
       encounterBoost:
         state.encounterBoost && state.encounterBoost.wave === state.currentWave
           ? {
@@ -448,6 +497,7 @@ export function createGameFrame(
       starterOptions: createStarterOptions(state),
       capture: captureScene,
       trainer: createTrainerScene(state),
+      battleField: sceneBattleField,
       bgmKey: createBgmKey(state),
       teamEffect:
         state.lastTeamEffect && state.lastTeamEffect.frameId >= frameId
@@ -464,6 +514,13 @@ export function createGameFrame(
     battleReplay: createBattleReplay(state),
     visualCues: createVisualCues(state),
   };
+}
+
+function resolveSceneBattleField(
+  state: GameState,
+  currentBattleField: BattleFieldState,
+): BattleFieldState {
+  return state.pendingEncounter?.battleField ?? state.lastBattle?.battleField ?? currentBattleField;
 }
 
 export function validateFrameContract(frame: GameFrame): string[] {
@@ -556,6 +613,10 @@ export function validateFrameContract(frame: GameFrame): string[] {
       errors.push(`cue ${cue.id} has no sound key`);
     }
 
+    if (cue.cryKey && !/^sfx\.cry\.[a-z0-9-]+$/.test(cue.cryKey)) {
+      errors.push(`cue ${cue.id} has invalid cry key ${cue.cryKey}`);
+    }
+
     if (cue.type === "phase.change") {
       continue;
     }
@@ -627,11 +688,20 @@ export function validateFrameContract(frame: GameFrame): string[] {
   return errors;
 }
 
-const trainerPortraits = [
-  "resources/trainers/field-scout.webp",
-  "resources/trainers/checkpoint-captain.webp",
-  "resources/trainers/sheet-rival.webp",
-] as const;
+const generatedTrainerPortraits = trainerPortraitManifest.generated;
+const sheetTrainerPortrait = trainerPortraitManifest.sheet;
+
+function createFrameTrainerPortrait(portraitId: string, state: GameState): FrameTrainerPortrait {
+  const portrait = getTrainerPortrait(portraitId);
+
+  return {
+    id: portrait.id,
+    label: portrait.label,
+    assetPath: portrait.assetPath,
+    owned: isTrainerPortraitOwned(state.metaCurrency, portrait.id),
+    selected: getSelectedTrainerPortraitId(state.metaCurrency) === portrait.id,
+  };
+}
 
 interface FrameDexContext {
   unlockedMoveIds: ReadonlySet<string>;
@@ -678,6 +748,7 @@ export function speciesToStarterOption(species: SpeciesDefinition): FrameStarter
     name: species.name,
     level: starterLevel,
     typeLabels: localizeTypes(species.types),
+    types: [...species.types],
     assetKey: `monster:${species.id}`,
     assetPath: `resources/pokemon/${species.id.toString().padStart(4, "0")}.webp`,
     power: scoreCreature({ stats, moves, types: species.types }),
@@ -769,7 +840,11 @@ function createTrainerScene(state: GameState): FrameTrainerScene | undefined {
   const trainerName =
     state.pendingEncounter?.opponentName ?? state.lastBattle?.opponentName ?? "트레이너";
   const opponentTeam = state.pendingEncounter?.opponentTeam ?? state.lastBattle?.opponentTeam;
-  const portraitPath = pickTrainerPortrait(trainerName, source);
+  const portraitPath = pickTrainerPortrait(
+    trainerName,
+    source,
+    opponentTeam?.snapshotTrainerPortraitId,
+  );
 
   return {
     source,
@@ -783,13 +858,17 @@ function createTrainerScene(state: GameState): FrameTrainerScene | undefined {
   };
 }
 
-function pickTrainerPortrait(trainerName: string, source: EncounterSource): string {
+function pickTrainerPortrait(
+  trainerName: string,
+  source: EncounterSource,
+  savedPortraitId?: string,
+): string {
   if (source === "sheet") {
-    return "resources/trainers/sheet-rival.webp";
+    return savedPortraitId ? getTrainerPortraitAssetPath(savedPortraitId) : sheetTrainerPortrait;
   }
 
   const hash = trainerName.split("").reduce((sum, character) => sum + character.charCodeAt(0), 0);
-  return trainerPortraits[hash % (trainerPortraits.length - 1)];
+  return generatedTrainerPortraits[hash % generatedTrainerPortraits.length];
 }
 
 function createBgmKey(state: GameState): FrameBgmKey {
@@ -824,8 +903,10 @@ function toFrameEntity(
     assetPath: `resources/pokemon/${creature.speciesId.toString().padStart(4, "0")}.webp`,
     name: creature.speciesName,
     speciesId: creature.speciesId,
+    speciesIdentifier: getSpecies(creature.speciesId).identifier,
     level: creature.level ?? 1,
     typeLabels: localizeTypes(creature.types),
+    types: [...creature.types],
     hp: {
       current: creature.currentHp,
       max: creature.stats.hp,
@@ -851,6 +932,7 @@ function toFrameMoveSummary(move: MoveDefinition): FrameMoveSummary {
     id: move.id,
     name: move.name,
     type: localizeType(move.type),
+    typeKey: move.type,
     power: move.power,
     accuracy: move.accuracy,
     accuracyLabel:
@@ -1346,6 +1428,7 @@ function createReadyShopActions(state: GameState, balance: GameBalance): FrameAc
     ...createTeamSortActions(state),
     ...createTypeLockActions(state),
     ...createPremiumActions(state),
+    ...createTrainerPortraitActions(state),
   ];
   const inventory =
     state.shopInventory && state.shopInventory.wave === state.currentWave
@@ -1427,6 +1510,39 @@ function createPremiumActions(state: GameState): FrameAction[] {
             : undefined,
     };
   });
+}
+
+function createTrainerPortraitActions(state: GameState): FrameAction[] {
+  const tp = state.metaCurrency?.trainerPoints ?? 0;
+  const selectedId = getSelectedTrainerPortraitId(state.metaCurrency);
+
+  return createTrainerPortraitShopOffers(state.seed, state.currentWave, state.metaCurrency).map(
+    (portrait): FrameAction => {
+      const owned = isTrainerPortraitOwned(state.metaCurrency, portrait.id);
+      const selected = selectedId === portrait.id;
+      const canAfford = tp >= portrait.tpCost;
+      const portraitView: FrameTrainerPortrait = {
+        id: portrait.id,
+        label: portrait.label,
+        assetPath: portrait.assetPath,
+        owned,
+        selected,
+      };
+
+      return {
+        id: trainerPortraitActionId(portrait.id),
+        label: owned
+          ? `${portrait.label} equip`
+          : `${portrait.label} ${formatTrainerPoints(portrait.tpCost)}`,
+        role: "secondary",
+        enabled: selected ? false : owned || canAfford,
+        tpCost: owned ? undefined : portrait.tpCost,
+        portrait: portraitView,
+        action: { type: "BUY_TRAINER_PORTRAIT", portraitId: portrait.id },
+        reason: selected ? "Already active" : owned || canAfford ? undefined : "Not enough gems",
+      };
+    },
+  );
 }
 
 function resolveActivePremiumOffers(state: GameState): PremiumOfferId[] {
@@ -1731,10 +1847,20 @@ function createVisualCues(state: GameState): FrameVisualCue[] {
       sequence: state.lastBattle?.replay.at(-1)?.sequence ?? 0,
       effectKey: "phase.change",
       soundKey: "sfx.phase.change",
+      cryKey: createEncounterCryKey(state),
       label: state.phase,
       phase: state.phase,
     },
   ];
+}
+
+function createEncounterCryKey(state: GameState): string | undefined {
+  if (state.phase !== "captureDecision") {
+    return undefined;
+  }
+
+  const creature = state.pendingCapture ?? state.lastBattle?.enemyTeam[0];
+  return creature ? toCrySoundKey(getSpecies(creature.speciesId).identifier) : undefined;
 }
 
 function createCaptureCue(state: GameState): FrameVisualCue | undefined {
@@ -1754,6 +1880,10 @@ function createCaptureCue(state: GameState): FrameVisualCue | undefined {
     sequence: (state.lastBattle?.replay.at(-1)?.sequence ?? 0) + latestEvent.id,
     effectKey: type,
     soundKey: latestCapture.success ? "sfx.capture.success" : "sfx.capture.fail",
+    cryKey:
+      latestCapture.success && target
+        ? toCrySoundKey(getSpecies(target.speciesId).identifier)
+        : undefined,
     label: latestCapture.success ? "포획 성공!" : "포획 실패",
     ball: latestCapture.ball,
     targetEntityId: target?.instanceId,
@@ -1763,9 +1893,10 @@ function createCaptureCue(state: GameState): FrameVisualCue | undefined {
 
 function createBattleReplay(state: GameState): FrameBattleReplay {
   const lookup = createBattleEntityLookup(state);
-  const events = (state.lastBattle?.replay ?? []).map((event) =>
+  const baseEvents = (state.lastBattle?.replay ?? []).map((event) =>
     toFrameBattleReplayEvent(event, lookup),
   );
+  const events = createTrainerBattleCeremonyReplay(state, baseEvents);
 
   return {
     sequenceIndex: events.at(-1)?.sequence ?? 0,
@@ -1773,17 +1904,146 @@ function createBattleReplay(state: GameState): FrameBattleReplay {
   };
 }
 
+function createTrainerBattleCeremonyReplay(
+  state: GameState,
+  events: FrameBattleReplayEvent[],
+): FrameBattleReplayEvent[] {
+  const battle = state.lastBattle;
+
+  if (!battle || battle.kind !== "trainer" || events.length < 2) {
+    return events;
+  }
+
+  const endEvent = events.at(-1);
+  if (!endEvent || endEvent.type !== "battle.end") {
+    return events;
+  }
+
+  const playerLeadId = battle.playerTeam[0]?.instanceId;
+  const opponentLeadId = battle.enemyTeam[0]?.instanceId;
+  const opponentName =
+    state.pendingEncounter?.opponentName ?? battle.opponentName ?? "상대 트레이너";
+  const introEvents = createTrainerBattleIntroEvents(
+    state.trainerName,
+    opponentName,
+    playerLeadId,
+    opponentLeadId,
+  );
+  const remappedEvents = events.map((event, index) => {
+    const isFinalEvent = index === events.length - 1;
+
+    return {
+      ...event,
+      sequence: event.sequence + (isFinalEvent ? 4 : 3),
+      sourceSequence: event.sequence,
+    };
+  });
+  const finalEndEvent = remappedEvents.at(-1);
+
+  if (!finalEndEvent) {
+    return events;
+  }
+
+  return [
+    ...introEvents,
+    ...remappedEvents.slice(0, -1),
+    createTrainerBattleOutroEvent({
+      sequence: finalEndEvent.sequence - 1,
+      turn: finalEndEvent.turn,
+      winner: battle.winner,
+      playerName: state.trainerName,
+      opponentName,
+      playerLeadId,
+      opponentLeadId,
+    }),
+    finalEndEvent,
+  ];
+}
+
+function createTrainerBattleIntroEvents(
+  playerName: string,
+  opponentName: string,
+  playerLeadId: string | undefined,
+  opponentLeadId: string | undefined,
+): FrameBattleReplayEvent[] {
+  return [
+    {
+      sequence: 1,
+      turn: 0,
+      type: "trainer.intro",
+      ceremonyStage: "intro",
+      label: `${playerName}와 ${opponentName}이 전투 필드에 등장했습니다.`,
+      playerLine: "가자! 준비는 끝났어.",
+      opponentLine: "좋아, 승부를 시작하지.",
+      activePlayerId: playerLeadId,
+      activeEnemyId: opponentLeadId,
+    },
+    {
+      sequence: 2,
+      turn: 0,
+      type: "trainer.throw",
+      ceremonyStage: "throw",
+      label: "두 트레이너가 몬스터볼을 던졌습니다.",
+      playerLine: "나와줘!",
+      opponentLine: "앞으로!",
+      activePlayerId: playerLeadId,
+      activeEnemyId: opponentLeadId,
+    },
+    {
+      sequence: 3,
+      turn: 0,
+      type: "creature.summon",
+      ceremonyStage: "summon",
+      label: "첫 포켓몬이 전투 필드에 소환되었습니다.",
+      playerLine: "첫 수는 맡긴다!",
+      opponentLine: "전력을 보여줘.",
+      activePlayerId: playerLeadId,
+      activeEnemyId: opponentLeadId,
+    },
+  ];
+}
+
+function createTrainerBattleOutroEvent(options: {
+  sequence: number;
+  turn: number;
+  winner: "player" | "enemy";
+  playerName: string;
+  opponentName: string;
+  playerLeadId: string | undefined;
+  opponentLeadId: string | undefined;
+}): FrameBattleReplayEvent {
+  const playerWon = options.winner === "player";
+
+  return {
+    sequence: options.sequence,
+    turn: options.turn,
+    type: "trainer.outro",
+    ceremonyStage: "outro",
+    label: playerWon
+      ? `${options.playerName}의 승리로 전투가 마무리되었습니다.`
+      : `${options.opponentName}의 승리로 전투가 마무리되었습니다.`,
+    playerLine: playerWon ? "좋았어. 다음 전투도 준비하자." : "아직 끝나지 않았어.",
+    opponentLine: playerWon ? "강하군. 다음에는 지지 않겠어." : "승부는 내가 가져간다.",
+    activePlayerId: options.playerLeadId,
+    activeEnemyId: options.opponentLeadId,
+    winner: options.winner,
+  };
+}
+
 interface BattleEntityLookup {
   name: (entityId: string | undefined) => string;
   side: (entityId: string | undefined) => "player" | "enemy" | undefined;
+  cryKey: (entityId: string | undefined) => string | undefined;
 }
 
 function createBattleEntityLookup(state: GameState): BattleEntityLookup {
   const names = new Map<string, string>();
   const sides = new Map<string, "player" | "enemy">();
+  const cryKeys = new Map<string, string>();
   const addCreature = (creature: Creature, side: "player" | "enemy") => {
     names.set(creature.instanceId, creature.speciesName);
     sides.set(creature.instanceId, side);
+    cryKeys.set(creature.instanceId, toCrySoundKey(getSpecies(creature.speciesId).identifier));
   };
 
   state.team.forEach((creature) => addCreature(creature, "player"));
@@ -1793,11 +2053,16 @@ function createBattleEntityLookup(state: GameState): BattleEntityLookup {
 
   if (state.pendingCapture) {
     names.set(state.pendingCapture.instanceId, state.pendingCapture.speciesName);
+    cryKeys.set(
+      state.pendingCapture.instanceId,
+      toCrySoundKey(getSpecies(state.pendingCapture.speciesId).identifier),
+    );
   }
 
   return {
     name: (entityId) => (entityId ? (names.get(entityId) ?? "대상") : "대상"),
     side: (entityId) => (entityId ? sides.get(entityId) : undefined),
+    cryKey: (entityId) => (entityId ? cryKeys.get(entityId) : undefined),
   };
 }
 
@@ -2029,6 +2294,10 @@ function battleHitEffectKey(effectiveness: number, critical: boolean): string {
   return "battle.hit";
 }
 
+function toCrySoundKey(speciesIdentifier: string): string {
+  return `sfx.cry.${speciesIdentifier}`;
+}
+
 function battleHitSoundKey(moveType: ElementType | undefined, critical: boolean): string {
   if (!moveType) {
     return critical ? "sfx.battle.critical.hit" : "sfx.battle.hit";
@@ -2145,6 +2414,7 @@ function battleReplayEventToCue(
       sequence: event.sequence,
       effectKey: "creature.faint",
       soundKey: "sfx.creature.faint",
+      cryKey: lookup.cryKey(event.entityId),
       turn: event.turn,
       entityId: event.entityId,
       label: `${withJosa(entity, "이/가")} 쓰러졌습니다.`,
@@ -2189,6 +2459,7 @@ function createStateKey(state: GameState): string {
     state.phase,
     state.currentWave,
     state.selectedRoute?.id ?? "normal",
+    state.battleFieldOrder?.join(",") ?? "",
     state.money,
     state.team.map((creature) => `${creature.instanceId}:${creature.currentHp}`).join("|"),
     state.events.at(-1)?.id ?? 0,

@@ -24,7 +24,7 @@ describe("GoogleSheetsTrainerAdapter", () => {
     const requests: FetchRequest[] = [];
     const adapter = new GoogleSheetsTrainerAdapter({
       spreadsheetId: "spreadsheet-1",
-      range: "APT_WAVE_TEAMS!A:I",
+      range: "APT_WAVE_TEAMS!A:J",
       accessToken: "token-1",
       fetch: createFetch(requests, {}),
     });
@@ -32,7 +32,7 @@ describe("GoogleSheetsTrainerAdapter", () => {
     await expect(adapter.appendSnapshot(snapshot)).resolves.toEqual(row);
     expect(requests).toHaveLength(1);
     expect(requests[0].url).toContain(
-      "/spreadsheets/spreadsheet-1/values/APT_WAVE_TEAMS!A%3AI:append?",
+      "/spreadsheets/spreadsheet-1/values/APT_WAVE_TEAMS!A%3AJ:append?",
     );
     expect(requests[0].init).toMatchObject({
       method: "POST",
@@ -66,7 +66,7 @@ describe("GoogleSheetsTrainerAdapter", () => {
     ];
     const adapter = new GoogleSheetsTrainerAdapter({
       spreadsheetId: "spreadsheet-1",
-      range: "APT_WAVE_TEAMS!A:I",
+      range: "APT_WAVE_TEAMS!A:J",
       apiKey: "public-key",
       fetch: createFetch([], { values }),
     });
@@ -89,14 +89,11 @@ describe("GoogleSheetsTrainerAdapter", () => {
     const requests: FetchRequest[] = [];
     const adapter = new GoogleSheetsTrainerAdapter({
       spreadsheetId: "spreadsheet-1",
-      range: "APT_WAVE_TEAMS!A:I",
+      range: "APT_WAVE_TEAMS!A:J",
       teamRecordRange: "APT_TEAM_RECORDS!A:S",
       accessToken: "token-1",
       fetch: createFetch(requests, {
-        values: [
-          [...SHEET_TEAM_BATTLE_RECORD_COLUMNS],
-          sheetTeamBattleRecordRowToValues(record),
-        ],
+        values: [[...SHEET_TEAM_BATTLE_RECORD_COLUMNS], sheetTeamBattleRecordRowToValues(record)],
       }),
     });
 

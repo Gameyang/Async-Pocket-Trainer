@@ -74,6 +74,7 @@ export function createTrainerTeamId(snapshot: TrainerSnapshot): string {
   const teamKey = JSON.stringify({
     playerId: snapshot.playerId,
     trainerName: snapshot.trainerName,
+    trainerPortraitId: snapshot.trainerPortraitId,
     wave: snapshot.wave,
     createdAt: snapshot.createdAt,
     seed: snapshot.seed,
@@ -97,6 +98,7 @@ export function createOpponentTeamContext(
     teamId: createTrainerTeamId(snapshot),
     snapshotPlayerId: snapshot.playerId,
     snapshotTrainerName: snapshot.trainerName,
+    snapshotTrainerPortraitId: snapshot.trainerPortraitId,
     snapshotWave: snapshot.wave,
     snapshotCreatedAt: snapshot.createdAt,
     snapshotSeed: snapshot.seed,

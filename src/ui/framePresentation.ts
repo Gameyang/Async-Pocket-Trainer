@@ -69,8 +69,10 @@ export function findActiveVisualCue(
     return undefined;
   }
 
+  const activeSequence = activeEvent.sourceSequence ?? activeEvent.sequence;
+
   return frame.visualCues.find((cue) => {
-    if (cue.sequence !== activeEvent.sequence) {
+    if (cue.sequence !== activeSequence) {
       return false;
     }
 
@@ -308,6 +310,24 @@ export function createBattleEventSummary(
   const target = resolveEntityName(activeEvent.targetEntityId, entities);
   const entity = resolveEntityName(activeEvent.entityId, entities);
   const turn = activeEvent.turn > 0 ? `${activeEvent.turn}턴` : "개시";
+
+  if (activeEvent.ceremonyStage) {
+    return {
+      kind: activeEvent.ceremonyStage,
+      turn,
+      title:
+        activeEvent.ceremonyStage === "outro"
+          ? "트레이너 마무리"
+          : activeEvent.ceremonyStage === "summon"
+            ? "포켓몬 소환"
+            : activeEvent.ceremonyStage === "throw"
+              ? "볼 투척"
+              : "트레이너 등장",
+      result:
+        activeEvent.winner === "player" ? "승리" : activeEvent.winner === "enemy" ? "패배" : "준비",
+      detail: activeEvent.label,
+    };
+  }
 
   if (activeEvent.type === "battle.start") {
     return {
@@ -573,6 +593,10 @@ export function formatBattleEventLabel(
   const target = resolveEntityName(activeEvent.targetEntityId, entities);
   const entity = resolveEntityName(activeEvent.entityId, entities);
 
+  if (activeEvent.ceremonyStage) {
+    return activeEvent.label;
+  }
+
   if (activeEvent.type === "battle.start") {
     return "전투가 시작되었습니다.";
   }
@@ -764,6 +788,10 @@ function scoreReadyShopAction(
 
   if (action.action.type === "REROLL_SHOP_INVENTORY") {
     return 200 + (action.enabled ? 30 : 0);
+  }
+
+  if (action.action.type === "BUY_TRAINER_PORTRAIT") {
+    return 215 + (action.enabled ? 40 : 0);
   }
 
   return budgetFit + onSale;
@@ -982,6 +1010,16 @@ export function createShopActionProfile(action: FrameAction, frame: GameFrame): 
       title: action.label.replace(/^TP\s+/, "").replace(/\s💎\s*\d+$/, ""),
       detail: "보석으로만 구매",
       meta: action.tpCost !== undefined ? formatTrainerPoints(action.tpCost) : action.label,
+    };
+  }
+
+  if (action.action.type === "BUY_TRAINER_PORTRAIT") {
+    return {
+      kind: "portrait",
+      kicker: action.portrait?.owned ? "Owned portrait" : "Portrait shop",
+      title: action.portrait?.label ?? "Trainer portrait",
+      detail: action.portrait?.owned ? "Equip this portrait" : "Unlock and equip",
+      meta: action.tpCost !== undefined ? formatTrainerPoints(action.tpCost) : "Owned",
     };
   }
 

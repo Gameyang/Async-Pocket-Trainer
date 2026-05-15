@@ -27,12 +27,13 @@ describe("trainer snapshot sync schema", () => {
     const row = serializeTrainerSnapshot(snapshot);
 
     expect(row).toMatchObject({
-      version: 2,
+      version: 3,
       playerId: "player-a",
       trainerName: "Sheet Tester",
       wave: snapshot.wave,
       seed: "snapshot-row",
       teamPower: snapshot.teamPower,
+      trainerPortraitId: "field-scout",
     });
     expect(parseSheetTrainerRow(row)).toEqual(snapshot);
   });
@@ -68,7 +69,7 @@ describe("trainer snapshot sync schema", () => {
     const row = serializeTrainerSnapshot(snapshot);
 
     expect(() =>
-      parseSheetTrainerRow({ ...row, version: 3 } satisfies Omit<SheetTrainerRow, "version"> & {
+      parseSheetTrainerRow({ ...row, version: 4 } satisfies Omit<SheetTrainerRow, "version"> & {
         version: number;
       }),
     ).toThrow(/Unsupported trainer row schema version/);
@@ -114,23 +115,25 @@ describe("trainer snapshot sync schema", () => {
       ...row,
       version: 1,
       teamJson: JSON.stringify(
-        snapshot.team.map(({ statProfile: _statProfile, statBonuses: _statBonuses, ...creature }) => ({
-          ...creature,
-          stats: {
-            hp: 999,
-            attack: 999,
-            defense: 999,
-            special: 999,
-            speed: 999,
-          },
-          currentHp: 999,
-        })),
+        snapshot.team.map(
+          ({ statProfile: _statProfile, statBonuses: _statBonuses, ...creature }) => ({
+            ...creature,
+            stats: {
+              hp: 999,
+              attack: 999,
+              defense: 999,
+              special: 999,
+              speed: 999,
+            },
+            currentHp: 999,
+          }),
+        ),
       ),
     } satisfies SheetTrainerRow;
 
     const migrated = parseSheetTrainerRow(legacyRow);
 
-    expect(migrated.version).toBe(2);
+    expect(migrated.version).toBe(3);
     expect(migrated.team[0].statProfile).toBeDefined();
     expect(migrated.team[0].stats.hp).toBeLessThan(999);
     expect(migrated.teamPower).toBe(

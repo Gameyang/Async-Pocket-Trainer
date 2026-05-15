@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import { HeadlessGameClient } from "../game/headlessClient";
+import {
+  SHEET_TRAINER_ROW_COLUMNS,
+  sheetTrainerRowToValues,
+} from "../game/sync/googleSheetsAdapter";
 import { LocalTrainerSheetAdapter, type TrainerRowQuery } from "../game/sync/localSheetAdapter";
 import {
   createTrainerSnapshot,
@@ -15,7 +19,7 @@ const enabledSettings: SyncSettings = {
   enabled: true,
   mode: "googleApi",
   spreadsheetId: "sheet-1",
-  range: "APT_WAVE_TEAMS!A:I",
+  range: "APT_WAVE_TEAMS!A:J",
   apiKey: "key-1",
 };
 
@@ -161,7 +165,9 @@ describe("browser sync controller", () => {
     expect(client.getSnapshot().lastBattle?.winner).toBe("player");
     expect(status).toMatchObject({ state: "synced" });
     expect(
-      waveFiveRows.some((row) => row.playerId === "player-a" && row.seed === "auto-checkpoint-submit"),
+      waveFiveRows.some(
+        (row) => row.playerId === "player-a" && row.seed === "auto-checkpoint-submit",
+      ),
     ).toBe(true);
     expect(adapter.listSnapshotWaves).toEqual(expect.arrayContaining([5, 10]));
     expect(sync.getStatus()).toMatchObject({ state: "synced", candidateCount: 1 });
@@ -175,7 +181,7 @@ describe("browser sync controller", () => {
         enabled: true,
         mode: "googleApi",
         spreadsheetId: "sheet-1",
-        range: "APT_WAVE_TEAMS!A:I",
+        range: "APT_WAVE_TEAMS!A:J",
       },
       { playerId: "player-a" },
     );
@@ -196,7 +202,7 @@ describe("browser sync controller", () => {
         enabled: true,
         mode: "publicCsv",
         spreadsheetId: "sheet-1",
-        range: "APT_WAVE_TEAMS!A:I",
+        range: "APT_WAVE_TEAMS!A:J",
       },
       {
         playerId: "player-a",
@@ -239,7 +245,7 @@ describe("browser sync controller", () => {
         enabled: true,
         mode: "publicCsv",
         spreadsheetId: "sheet-1",
-        range: "APT_WAVE_TEAMS!A:I",
+        range: "APT_WAVE_TEAMS!A:J",
         appsScriptSubmitUrl: "https://script.google.com/macros/s/deploy-id/exec",
       },
       {
@@ -421,18 +427,7 @@ function buildOpponentSnapshot(
 }
 
 function toCsv(rows: readonly SheetTrainerRow[]): string {
-  const headers = [
-    "version",
-    "playerId",
-    "trainerName",
-    "wave",
-    "createdAt",
-    "seed",
-    "teamPower",
-    "teamJson",
-    "runSummaryJson",
-  ];
-  return [headers, ...rows.map((row) => Object.values(row).map(String))]
+  return [[...SHEET_TRAINER_ROW_COLUMNS], ...rows.map((row) => sheetTrainerRowToValues(row))]
     .map((row) => row.map(csvCell).join(","))
     .join("\n");
 }

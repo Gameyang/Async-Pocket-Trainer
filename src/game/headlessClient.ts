@@ -18,6 +18,7 @@ import {
 } from "./localization";
 import { getLearnableLevelUpMoves } from "./moveLearning";
 import { SeededRng } from "./rng";
+import { createBattleFieldOrder, normalizeBattleFieldOrder } from "./battleField";
 import { chooseReplacementIndex, getTeamHealthRatio, scoreCreature, scoreTeam } from "./scoring";
 import {
   getBallCost,
@@ -42,6 +43,14 @@ import {
   typeLockElements,
 } from "./shopCatalog";
 import { ballTypes } from "./types";
+import {
+  createTrainerPortraitShopOffers,
+  getTrainerPortrait,
+  getOwnedTrainerPortraitIds,
+  getSelectedTrainerPortraitId,
+  isTrainerPortraitPurchasable,
+  trainerPortraitActionId,
+} from "./trainerPortraits";
 import { createGameFrame, type GameFrame } from "./view/frame";
 import {
   calculateReward,
@@ -266,6 +275,9 @@ export class HeadlessGameClient {
       case "BUY_PREMIUM_DEX_UNLOCK":
         this.addEvent("premium_denied", "이전 프리미엄 상품은 더 이상 판매하지 않습니다.");
         break;
+      case "BUY_TRAINER_PORTRAIT":
+        this.buyTrainerPortrait(action.portraitId);
+        break;
       case "CLAIM_DEX_REWARD":
         this.claimDexReward(action.speciesId);
         break;
@@ -361,6 +373,15 @@ export class HeadlessGameClient {
         weight: getPremiumOffer(offerId).weight,
         stock: 1,
       })),
+      ...createTrainerPortraitShopOffers(
+        this.state.seed,
+        this.state.currentWave,
+        this.state.metaCurrency,
+      ).map((portrait) => ({
+        actionId: trainerPortraitActionId(portrait.id),
+        weight: 6,
+        stock: 1,
+      })),
     ];
 
     const premiumOffers =
@@ -369,12 +390,20 @@ export class HeadlessGameClient {
         ? this.state.premiumOfferIds.ids.filter(hasPremiumOffer)
         : rollActivePremiumOffers(this.state.seed, this.state.currentWave);
     const activePremiumActionIds = new Set(premiumOffers.map((offerId) => `shop:${offerId}`));
+    const portraitActionIds = new Set(
+      createTrainerPortraitShopOffers(
+        this.state.seed,
+        this.state.currentWave,
+        this.state.metaCurrency,
+      ).map((portrait) => trainerPortraitActionId(portrait.id)),
+    );
     const groups: ShopInventoryPoolEntry[][] = [
       pool.filter((entry) => isRecoveryShopAction(entry.actionId)),
       pool.filter((entry) => isBallShopAction(entry.actionId)),
       pool.filter((entry) => isEncounterBoostShopAction(entry.actionId)),
       pool.filter((entry) => isTeamUpgradeShopAction(entry.actionId)),
       pool.filter((entry) => activePremiumActionIds.has(entry.actionId)),
+      pool.filter((entry) => portraitActionIds.has(entry.actionId)),
     ];
     const bonusGroups: ShopInventoryPoolEntry[][] = [
       pool.filter(
@@ -676,6 +705,55 @@ export class HeadlessGameClient {
     }
   }
 
+  private buyTrainerPortrait(portraitId: string): void {
+    if (this.state.phase !== "ready") {
+      this.addEvent("portrait_ignored", "Portraits can only be changed while ready.");
+      return;
+    }
+
+    if (!isTrainerPortraitPurchasable(portraitId)) {
+      this.addEvent("portrait_denied", "Unknown trainer portrait.");
+      return;
+    }
+
+    const portrait = getTrainerPortrait(portraitId);
+    const meta = ensureMetaCurrency(this.state);
+    const owned = new Set(getOwnedTrainerPortraitIds(meta));
+
+    if (getSelectedTrainerPortraitId(meta) === portrait.id) {
+      this.addEvent("portrait_ignored", "This trainer portrait is already active.", {
+        portraitId: portrait.id,
+      });
+      return;
+    }
+
+    if (owned.has(portrait.id)) {
+      meta.selectedTrainerPortraitId = portrait.id;
+      this.addEvent("portrait_selected", `${portrait.label} portrait equipped.`, {
+        portraitId: portrait.id,
+        portraitPath: portrait.assetPath,
+      });
+      return;
+    }
+
+    if (meta.trainerPoints < portrait.tpCost) {
+      this.addEvent("portrait_denied", "Not enough gems for this trainer portrait.", {
+        portraitId: portrait.id,
+        tpCost: portrait.tpCost,
+      });
+      return;
+    }
+
+    meta.trainerPoints -= portrait.tpCost;
+    meta.ownedTrainerPortraitIds = [...owned, portrait.id];
+    meta.selectedTrainerPortraitId = portrait.id;
+    this.addEvent("portrait_purchased", `${portrait.label} portrait purchased and equipped.`, {
+      portraitId: portrait.id,
+      portraitPath: portrait.assetPath,
+      trainerPointsSpent: portrait.tpCost,
+    });
+  }
+
   autoStep(strategy: AutoPlayOptions["strategy"] = "greedy"): GameState {
     const before = signature(this.state);
 
@@ -728,6 +806,7 @@ export class HeadlessGameClient {
     return {
       seed: this.state.seed,
       trainerName: this.state.trainerName,
+      trainerPortraitId: getSelectedTrainerPortraitId(this.state.metaCurrency),
       finalWave: this.state.currentWave,
       phase: this.state.phase,
       money: this.state.money,
@@ -757,6 +836,9 @@ export class HeadlessGameClient {
     const previousMeta = this.state.metaCurrency;
     const previousUnlocked = this.state.unlockedSpeciesIds;
     const previousUnlockedMoves = this.state.unlockedMoveIds;
+    const battleFieldOrder = createBattleFieldOrder(
+      new SeededRng(`${this.state.seed}:battle-fields:${this.rng.getState()}`),
+    );
     this.state = {
       version: 1,
       seed: this.state.seed,
@@ -764,6 +846,7 @@ export class HeadlessGameClient {
       trainerName: trainerName ?? this.state.trainerName,
       phase: "ready",
       currentWave: 1,
+      battleFieldOrder,
       money: this.balance.startingMoney,
       balls: createStartingBalls(this.balance),
       team: [starter],
@@ -815,7 +898,13 @@ export class HeadlessGameClient {
   }
 
   setMetaCurrency(meta: MetaCurrencyState): void {
-    this.state.metaCurrency = { ...meta, claimedAchievements: [...meta.claimedAchievements] };
+    this.state.metaCurrency = {
+      ...meta,
+      claimedAchievements: [...meta.claimedAchievements],
+      ownedTrainerPortraitIds: meta.ownedTrainerPortraitIds
+        ? [...meta.ownedTrainerPortraitIds]
+        : undefined,
+    };
   }
 
   getMetaCurrency(): MetaCurrencyState {
@@ -884,6 +973,7 @@ export class HeadlessGameClient {
       ...battleResult,
       encounterSource: encounter.source,
       encounterRoute: encounter.routeId,
+      battleField: encounter.battleField,
       opponentName: encounter.opponentName,
       opponentTeam: encounter.opponentTeam,
       opponentTeamRecordChange: encounter.opponentTeam?.record
@@ -1544,11 +1634,23 @@ export class HeadlessGameClient {
     const snapshot = this.pickTrainerSnapshot(this.state.currentWave, rng);
 
     if (snapshot) {
-      return createTrainerEncounterFromSnapshot(snapshot, this.balance, routeId);
+      return createTrainerEncounterFromSnapshot(
+        snapshot,
+        this.balance,
+        routeId,
+        this.state.battleFieldOrder,
+      );
     }
 
     const boost = this.getActiveEncounterBoost();
-    return createEncounter(this.state.currentWave, rng, this.balance, routeId, boost);
+    return createEncounter(
+      this.state.currentWave,
+      rng,
+      this.balance,
+      routeId,
+      boost,
+      this.state.battleFieldOrder,
+    );
   }
 
   private resolveSupplyRoute(): void {
@@ -1678,6 +1780,9 @@ export function cloneState(state: GameState): GameState {
 function normalizeStateBattleLoadouts(state: GameState): GameState {
   const normalized: GameState = {
     ...state,
+    battleFieldOrder: state.battleFieldOrder
+      ? normalizeBattleFieldOrder(state.battleFieldOrder)
+      : undefined,
     team: state.team.map(normalizeCreatureBattleLoadout),
   };
 
@@ -2079,6 +2184,7 @@ function signature(state: GameState): string {
     state.phase,
     state.currentWave,
     state.money,
+    state.battleFieldOrder?.join(",") ?? "",
     ...ballTypes.map((ball) => state.balls[ball]),
     state.events.length,
   ].join(":");
@@ -2120,6 +2226,8 @@ function inferShopActionId(action: GameAction): string | undefined {
       return "shop:premium:team-reroll";
     case "BUY_PREMIUM_DEX_UNLOCK":
       return "shop:premium:dex-unlock";
+    case "BUY_TRAINER_PORTRAIT":
+      return trainerPortraitActionId(action.portraitId);
     default:
       return undefined;
   }

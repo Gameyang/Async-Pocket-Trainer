@@ -18,6 +18,39 @@ export type ElementType =
   | "steel"
   | "fairy";
 
+export type BattleFieldId =
+  | "forest"
+  | "volcano"
+  | "ocean"
+  | "city"
+  | "swamp"
+  | "desert"
+  | "highland"
+  | "jungle"
+  | "dojo"
+  | "ruins"
+  | "crags"
+  | "haunted-ruins"
+  | "tundra"
+  | "dragon-cave"
+  | "back-alley"
+  | "factory"
+  | "flower-field"
+  | "plains";
+
+export type BattleFieldTimeOfDay = "day" | "night";
+
+export interface BattleFieldState {
+  id: BattleFieldId;
+  label: string;
+  element: ElementType;
+  timeOfDay: BattleFieldTimeOfDay;
+  timeLabel: string;
+  waveBlock: number;
+  waveStart: number;
+  waveEnd: number;
+}
+
 export type MoveCategory = "physical" | "special" | "status";
 export type BattleStat = "attack" | "defense" | "special" | "speed" | "accuracy" | "evasion";
 export const ballTypes = ["pokeBall", "greatBall", "ultraBall", "hyperBall", "masterBall"] as const;
@@ -74,6 +107,7 @@ export interface OpponentTeamRecordContext {
   teamId: string;
   snapshotPlayerId: string;
   snapshotTrainerName: string;
+  snapshotTrainerPortraitId?: string;
   snapshotWave: number;
   snapshotCreatedAt: string;
   snapshotSeed: string;
@@ -118,6 +152,8 @@ export interface TeamEffectFlash {
 export interface MetaCurrencyState {
   trainerPoints: number;
   claimedAchievements: string[];
+  ownedTrainerPortraitIds?: string[];
+  selectedTrainerPortraitId?: string;
   lastSheetClaim?: {
     date: string;
     totalWins: number;
@@ -197,6 +233,7 @@ export interface MoveDefinition {
 
 export interface SpeciesDefinition {
   id: number;
+  identifier: string;
   name: string;
   types: ElementType[];
   baseStats: Stats;
@@ -414,6 +451,7 @@ export interface BattleResult {
   kind: EncounterKind;
   encounterSource?: EncounterSource;
   encounterRoute?: RouteId;
+  battleField?: BattleFieldState;
   opponentName?: string;
   opponentTeam?: OpponentTeamRecordContext;
   opponentTeamRecordChange?: TeamRecordChange;
@@ -429,6 +467,7 @@ export interface EncounterSnapshot {
   kind: EncounterKind;
   source?: EncounterSource;
   routeId?: RouteId;
+  battleField?: BattleFieldState;
   wave: number;
   opponentName: string;
   opponentTeam?: OpponentTeamRecordContext;
@@ -454,6 +493,7 @@ export interface GameBalance {
   wildRarityBudgetWaveDivisor: number;
   wildStatGrowthPerWave: number;
   trainerStatGrowthPerWave: number;
+  battleFieldTypeWeightMultiplier: number;
   battleDamageScale: number;
   rewardBase: number;
   rewardPerWave: number;
@@ -486,6 +526,7 @@ export interface GameState {
   trainerName: string;
   phase: GamePhase;
   currentWave: number;
+  battleFieldOrder?: BattleFieldId[];
   money: number;
   balls: Record<BallType, number>;
   team: Creature[];
@@ -532,6 +573,7 @@ export type GameAction =
   | { type: "BUY_PREMIUM_COIN_BAG" }
   | { type: "BUY_PREMIUM_TEAM_REROLL"; targetEntityId?: string }
   | { type: "BUY_PREMIUM_DEX_UNLOCK" }
+  | { type: "BUY_TRAINER_PORTRAIT"; portraitId: string }
   | { type: "CLAIM_DEX_REWARD"; speciesId: number }
   | { type: "CLAIM_SKILL_REWARD"; moveId: string }
   | { type: "REROLL_SHOP_INVENTORY" };
@@ -545,6 +587,7 @@ export interface AutoPlayOptions {
 export interface RunSummary {
   seed: string;
   trainerName: string;
+  trainerPortraitId?: string;
   finalWave: number;
   phase: GamePhase;
   money: number;

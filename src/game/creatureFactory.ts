@@ -17,7 +17,14 @@ import {
   type StatProfileRole,
 } from "./pokemonStats";
 import { scoreCreature } from "./scoring";
-import type { Creature, ElementType, GameBalance, MoveDefinition, SpeciesDefinition, Stats } from "./types";
+import type {
+  Creature,
+  ElementType,
+  GameBalance,
+  MoveDefinition,
+  SpeciesDefinition,
+  Stats,
+} from "./types";
 
 export interface CreatureFactoryOptions {
   rng: SeededRng;
@@ -28,6 +35,7 @@ export interface CreatureFactoryOptions {
   role: "starter" | "wild" | "trainer";
   rarityBoost?: number;
   lockedType?: ElementType;
+  preferredType?: ElementType;
 }
 
 export function createCreature(options: CreatureFactoryOptions): Creature {
@@ -39,6 +47,7 @@ export function createCreature(options: CreatureFactoryOptions): Creature {
         options.balance,
         options.rarityBoost ?? 0,
         options.lockedType,
+        options.preferredType,
       );
   const level = normalizeLevel(options.level ?? options.wave);
   const moves = pickMoves(species, level, options.rng);
@@ -127,8 +136,7 @@ export function recalculateCreatureStats(creature: Creature): Creature {
   );
   const statBonuses = normalizeStatBonuses(cloned.statBonuses);
   const oldMaxHp = Math.max(1, cloned.stats.hp);
-  const hpRatio =
-    cloned.currentHp <= 0 ? 0 : clamp(cloned.currentHp / oldMaxHp, 0, 1);
+  const hpRatio = cloned.currentHp <= 0 ? 0 : clamp(cloned.currentHp / oldMaxHp, 0, 1);
   const stats = calculatePokemonStats(species.baseStats, level, statProfile, statBonuses);
   const currentHp =
     hpRatio <= 0 ? 0 : Math.max(1, Math.min(stats.hp, Math.round(stats.hp * hpRatio)));
@@ -216,6 +224,7 @@ function pickSpeciesForWave(
   balance: GameBalance,
   rarityBoost: number,
   lockedType?: ElementType,
+  preferredType?: ElementType,
 ): SpeciesDefinition {
   const baseBudget = 1 + Math.floor(wave / balance.wildRarityBudgetWaveDivisor);
   const budgetBoost = rarityBoost > 0 ? Math.ceil(rarityBoost * 4) : 0;
@@ -235,12 +244,20 @@ function pickSpeciesForWave(
     ? speciesCatalog.filter((species) => species.types.includes(lockedType))
     : [];
   const available =
-    budgetCandidates.length > 0 ? budgetCandidates : typeCandidates.length > 0 ? typeCandidates : speciesCatalog;
+    budgetCandidates.length > 0
+      ? budgetCandidates
+      : typeCandidates.length > 0
+        ? typeCandidates
+        : speciesCatalog;
   const weighted = available.flatMap((species) => {
     const baseWeight = Math.max(1, 10 - species.rarity + Math.floor(wave / 5));
     const boostWeight =
       rarityBoost > 0 ? Math.max(0, Math.round(species.rarity * rarityBoost * 6)) : 0;
-    const weight = baseWeight + boostWeight;
+    const fieldMultiplier =
+      preferredType && species.types.includes(preferredType)
+        ? Math.max(1, Math.round(balance.battleFieldTypeWeightMultiplier))
+        : 1;
+    const weight = (baseWeight + boostWeight) * fieldMultiplier;
     return Array.from({ length: weight }, () => species);
   });
 

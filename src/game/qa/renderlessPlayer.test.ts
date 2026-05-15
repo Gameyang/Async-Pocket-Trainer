@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { createBrowserGameRuntime, createMemoryStorage } from "../../browser/gameRuntime";
 import { CODE_SYNC_SETTINGS } from "../../browser/syncSettings";
+import { resolveBattleFieldForWave } from "../battleField";
 import { SeededRng } from "../rng";
 import type { FrameAction, FrameEntity, GameFrame } from "../view/frame";
 import { resolveFrameActionPayload } from "./frameController";
@@ -60,6 +61,8 @@ describe("renderless player", () => {
 });
 
 function readyFrame(entities: FrameEntity[]): GameFrame {
+  const battleField = resolveBattleFieldForWave(3);
+
   return {
     protocolVersion: 1,
     frameId: 1,
@@ -80,6 +83,7 @@ function readyFrame(entities: FrameEntity[]): GameFrame {
       teamPower: 270,
       teamHpRatio: 1,
       trainerPoints: 0,
+      battleField,
     },
     scene: {
       title: "Wave 3",
@@ -87,6 +91,7 @@ function readyFrame(entities: FrameEntity[]): GameFrame {
       playerSlots: entities.map((creature) => creature.id),
       opponentSlots: [],
       starterOptions: [],
+      battleField,
       bgmKey: "bgm.starterReady",
     },
     entities,
@@ -117,6 +122,7 @@ function entity(id: string, slot: number, power: number): FrameEntity {
     speciesId: 1,
     level: 1,
     typeLabels: ["Normal"],
+    types: ["normal"],
     hp: {
       current: 100,
       max: 100,

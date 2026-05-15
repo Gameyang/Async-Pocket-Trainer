@@ -9,6 +9,7 @@ import {
   sheetNameFromRange,
   type PublicCsvFetchLike,
 } from "./publicCsvSheetAdapter";
+import { SHEET_TRAINER_ROW_COLUMNS, sheetTrainerRowToValues } from "./googleSheetsAdapter";
 import {
   createTrainerSnapshot,
   serializeTrainerSnapshot,
@@ -33,8 +34,8 @@ describe("PublicCsvTrainerAdapter", () => {
   });
 
   it("extracts sheet names from range syntax", () => {
-    expect(sheetNameFromRange("APT_WAVE_TEAMS!A:I")).toBe("APT_WAVE_TEAMS");
-    expect(sheetNameFromRange("'Async Trainers'!A:I")).toBe("Async Trainers");
+    expect(sheetNameFromRange("APT_WAVE_TEAMS!A:J")).toBe("APT_WAVE_TEAMS");
+    expect(sheetNameFromRange("'Async Trainers'!A:J")).toBe("Async Trainers");
   });
 
   it("parses quoted CSV cells with commas and escaped quotes", () => {
@@ -63,22 +64,12 @@ describe("PublicCsvTrainerAdapter", () => {
 
   it("skips malformed CSV rows while keeping valid trainer snapshots readable", async () => {
     const row = buildRow("public-a", "Public A", "public-sheet-a", 5);
-    const headers = [
-      "version",
-      "playerId",
-      "trainerName",
-      "wave",
-      "createdAt",
-      "seed",
-      "teamPower",
-      "teamJson",
-      "runSummaryJson",
-    ];
-    const malformed = ["1", "", "", "5", "", "", "0", "", ""];
+    const headers = [...SHEET_TRAINER_ROW_COLUMNS];
+    const malformed = ["1", "", "", "5", "", "", "0", "", "", ""];
     const adapter = new PublicCsvTrainerAdapter({
       csvUrl: "https://example.test/public.csv",
       fetch: createFetch(
-        [headers, malformed, Object.values(row).map(String)]
+        [headers, malformed, sheetTrainerRowToValues(row)]
           .map((cells) => cells.map(csvCell).join(","))
           .join("\n"),
       ),
@@ -112,17 +103,15 @@ describe("PublicCsvTrainerAdapter", () => {
           status: 200,
           statusText: "OK",
           async text() {
-            return url.includes("team-records")
-              ? toTeamBattleCsv([record])
-              : toCsv([]);
+            return url.includes("team-records") ? toTeamBattleCsv([record]) : toCsv([]);
           },
         };
       },
     });
 
-    await expect(adapter.listTeamBattleRecords({ opponentTeamId: "team-public-a" })).resolves.toEqual([
-      record,
-    ]);
+    await expect(
+      adapter.listTeamBattleRecords({ opponentTeamId: "team-public-a" }),
+    ).resolves.toEqual([record]);
     await expect(adapter.appendTeamBattleRecord(record)).rejects.toThrow(/read-only/);
     expect(requests).toContain("https://example.test/team-records.csv");
   });
@@ -140,18 +129,7 @@ function createFetch(csv: string): PublicCsvFetchLike {
 }
 
 function toCsv(rows: readonly SheetTrainerRow[]): string {
-  const headers = [
-    "version",
-    "playerId",
-    "trainerName",
-    "wave",
-    "createdAt",
-    "seed",
-    "teamPower",
-    "teamJson",
-    "runSummaryJson",
-  ];
-  return [headers, ...rows.map((row) => Object.values(row).map(String))]
+  return [[...SHEET_TRAINER_ROW_COLUMNS], ...rows.map((row) => sheetTrainerRowToValues(row))]
     .map((row) => row.map(csvCell).join(","))
     .join("\n");
 }

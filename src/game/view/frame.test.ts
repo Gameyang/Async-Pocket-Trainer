@@ -46,6 +46,9 @@ describe("game frame contract", () => {
     expect(frame.visualCues.every((cue) => Number.isInteger(cue.sequence))).toBe(true);
     expect(frame.visualCues.every((cue) => cue.effectKey.length > 0)).toBe(true);
     expect(frame.visualCues.every((cue) => cue.soundKey.length > 0)).toBe(true);
+    expect(frame.visualCues.find((cue) => cue.type === "phase.change")?.cryKey).toMatch(
+      /^sfx\.cry\.[a-z0-9-]+$/,
+    );
     expect(frame.scene.bgmKey).toBe("bgm.battleCapture");
   });
 
@@ -82,6 +85,9 @@ describe("game frame contract", () => {
       shakes: 3,
     });
     expect(frame.visualCues.map((cue) => cue.type)).toContain("capture.success");
+    expect(frame.visualCues.find((cue) => cue.type === "capture.success")?.cryKey).toMatch(
+      /^sfx\.cry\.[a-z0-9-]+$/,
+    );
   });
 
   it("localizes move detail effects for renderer-facing summaries", () => {
@@ -184,6 +190,12 @@ describe("game frame contract", () => {
       trainerName: "Sheet Rival",
     });
     opponent.dispatch({ type: "START_RUN", starterSpeciesId: 4 });
+    opponent.setMetaCurrency({
+      trainerPoints: 0,
+      claimedAchievements: [],
+      ownedTrainerPortraitIds: ["ps-trainer-aaron"],
+      selectedTrainerPortraitId: "ps-trainer-aaron",
+    });
     const opponentSnapshot = createTrainerSnapshot(opponent.getSnapshot(), {
       playerId: "sheet-rival",
       createdAt: "2026-05-12T00:00:00.000Z",
@@ -208,19 +220,30 @@ describe("game frame contract", () => {
     client.loadSnapshot(waveFive);
     client.dispatch({ type: "RESOLVE_NEXT_ENCOUNTER" });
     const frame = client.getFrame();
+    const replayTypes = frame.battleReplay.events.map((event) => event.type);
 
     expect(validateFrameContract(frame)).toEqual([]);
     expect(frame.scene.trainer).toMatchObject({
       source: "sheet",
       label: expect.any(String),
       trainerName: expect.stringContaining("Sheet Rival"),
-      portraitPath: "resources/trainers/sheet-rival.webp",
+      portraitPath: expect.stringMatching(/^resources\/trainers\/[a-z0-9-]+\.webp$/),
       record: expect.objectContaining({
         wins: 3,
         losses: 1,
       }),
     });
     expect(frame.scene.trainer?.recordChange?.deltaWinRate).toBeDefined();
+    expect(replayTypes.slice(0, 4)).toEqual([
+      "trainer.intro",
+      "trainer.throw",
+      "creature.summon",
+      "battle.start",
+    ]);
+    expect(replayTypes.at(-2)).toBe("trainer.outro");
+    expect(
+      frame.battleReplay.events.find((event) => event.type === "damage.apply")?.sourceSequence,
+    ).toBeDefined();
   });
 });
 

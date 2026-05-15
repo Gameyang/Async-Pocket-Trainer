@@ -5,6 +5,16 @@
 
 ## Columns
 
+`APT_WAVE_TEAMS!A:J`
+
+```text
+version, playerId, trainerName, wave, createdAt, seed, teamPower, teamJson,
+runSummaryJson, trainerPortraitId
+```
+
+`trainerPortraitId` stores the selected portrait id from the local trainer portrait manifest. Other
+clients resolve that id back to `src/resources/trainers/*.webp` when loading a saved sheet trainer.
+
 `APT_TEAM_RECORDS!A:S`
 
 ```text

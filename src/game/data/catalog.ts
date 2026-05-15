@@ -26,6 +26,7 @@ export const defaultBalance: GameBalance = {
   wildRarityBudgetWaveDivisor: 9,
   wildStatGrowthPerWave: 0.03,
   trainerStatGrowthPerWave: 0.016,
+  battleFieldTypeWeightMultiplier: 2,
   battleDamageScale: 0.85,
   rewardBase: 15,
   rewardPerWave: 3,
@@ -90,8 +91,8 @@ export function getMove(moveId: string): MoveDefinition {
 export function getUnlockedLevelUpMoveIds(speciesId: number, level: number): string[] {
   const normalizedLevel = clamp(Math.floor(level), 1, 100);
 
-  return getSpecies(speciesId).levelUpMoves
-    .filter((entry) => entry.level <= normalizedLevel)
+  return getSpecies(speciesId)
+    .levelUpMoves.filter((entry) => entry.level <= normalizedLevel)
     .map((entry) => entry.moveId);
 }
 
@@ -111,6 +112,7 @@ function toSpeciesDefinition(record: PokemonRecord): SpeciesDefinition {
 
   return {
     id: record.dexNumber,
+    identifier: record.identifier,
     name: record.names.ko ?? record.names.en,
     types: record.types as ElementType[],
     baseStats,
@@ -170,7 +172,8 @@ function toShortEffect(record: MoveRecord): string | undefined {
     record.meta?.ailmentChance ??
     record.meta?.flinchChance ??
     record.meta?.statChance;
-  const chanceText = effectChance === null || effectChance === undefined ? "" : String(effectChance);
+  const chanceText =
+    effectChance === null || effectChance === undefined ? "" : String(effectChance);
   const effect = record.shortEffect
     .replaceAll("$effect_chance", chanceText)
     .replace(/\[\]\{[^:}]+:([^}]+)\}/g, (_match, identifier: string) => toTitleCase(identifier))
@@ -220,7 +223,10 @@ function toMoveMeta(record: MoveRecord): MoveMeta {
   };
 }
 
-function toMoveStatChange(stat: string, change: number): { stat: BattleStat; change: number } | undefined {
+function toMoveStatChange(
+  stat: string,
+  change: number,
+): { stat: BattleStat; change: number } | undefined {
   switch (stat) {
     case "attack":
     case "defense":

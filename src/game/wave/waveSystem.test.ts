@@ -12,6 +12,45 @@ import {
 } from "./waveSystem";
 
 describe("wave encounter routing", () => {
+  it("attaches the current battle field to generated encounters", () => {
+    expect(
+      createWildEncounter(1, new SeededRng("field-1"), defaultBalance).battleField,
+    ).toMatchObject({
+      id: "forest",
+      element: "grass",
+      timeOfDay: "day",
+    });
+    expect(
+      createWildEncounter(6, new SeededRng("field-6"), defaultBalance).battleField,
+    ).toMatchObject({
+      id: "volcano",
+      element: "fire",
+      timeOfDay: "night",
+    });
+  });
+
+  it("raises the field element's wild encounter weight without locking the type", () => {
+    const boosted = countFieldTypeMatches(defaultBalance.battleFieldTypeWeightMultiplier);
+    const neutral = countFieldTypeMatches(1);
+
+    expect(boosted).toBeGreaterThan(neutral);
+    expect(boosted).toBeLessThan(240);
+  });
+
+  it("keeps purchased type locks stronger than field weighting", () => {
+    for (let index = 0; index < 40; index += 1) {
+      const encounter = createWildEncounter(
+        1,
+        new SeededRng(`locked-field-${index}`),
+        defaultBalance,
+        "normal",
+        { lockedType: "fire" },
+      );
+
+      expect(encounter.enemyTeam[0].types).toContain("fire");
+    }
+  });
+
   it("scales checkpoint trainer team size by checkpoint count", () => {
     expect(
       createTrainerEncounter(5, new SeededRng("trainer-5"), defaultBalance).enemyTeam,
@@ -59,3 +98,20 @@ describe("wave encounter routing", () => {
     expect(encounter.enemyTeam[0].currentHp).toBe(encounter.enemyTeam[0].stats.hp);
   });
 });
+
+function countFieldTypeMatches(multiplier: number): number {
+  const balance = {
+    ...defaultBalance,
+    battleFieldTypeWeightMultiplier: multiplier,
+  };
+  let matches = 0;
+
+  for (let index = 0; index < 240; index += 1) {
+    const encounter = createWildEncounter(6, new SeededRng(`field-weight-${index}`), balance);
+    if (encounter.enemyTeam[0].types.includes("fire")) {
+      matches += 1;
+    }
+  }
+
+  return matches;
+}

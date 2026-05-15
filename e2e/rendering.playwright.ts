@@ -4,6 +4,10 @@ import { CLIENT_SNAPSHOT_STORAGE_KEY } from "../src/browser/clientStorage";
 import { STARTER_SPECIES_CACHE_STORAGE_KEY } from "../src/browser/starterSpeciesCache";
 import { speciesCatalog } from "../src/game/data/catalog";
 import { HeadlessGameClient, type HeadlessClientSnapshot } from "../src/game/headlessClient";
+import {
+  SHEET_TRAINER_ROW_COLUMNS,
+  sheetTrainerRowToValues,
+} from "../src/game/sync/googleSheetsAdapter";
 import { createTrainerSnapshot, serializeTrainerSnapshot } from "../src/game/sync/trainerSnapshot";
 
 const E2E_BATTLE_REPLAY_STEP_MS = 540;
@@ -793,19 +797,7 @@ function buildSheetTrainerCsv(): string {
     teamPower: 1,
     teamJson: JSON.stringify(team),
   };
-  const headers = [
-    "version",
-    "playerId",
-    "trainerName",
-    "wave",
-    "createdAt",
-    "seed",
-    "teamPower",
-    "teamJson",
-    "runSummaryJson",
-  ];
-
-  return [headers, Object.values(weakRow).map(String)]
+  return [[...SHEET_TRAINER_ROW_COLUMNS], sheetTrainerRowToValues(weakRow)]
     .map((cells) => cells.map(csvCell).join(","))
     .join("\n");
 }

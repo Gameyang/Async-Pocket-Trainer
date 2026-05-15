@@ -34,6 +34,7 @@ export const SHEET_TRAINER_ROW_COLUMNS = [
   "teamPower",
   "teamJson",
   "runSummaryJson",
+  "trainerPortraitId",
 ] as const;
 
 export interface GoogleSheetsTrainerAdapterOptions {
@@ -135,9 +136,7 @@ export class GoogleSheetsTrainerAdapter implements TrainerSyncAdapter, TeamRecor
     return rng.pick(snapshots);
   }
 
-  async appendTeamBattleRecord(
-    record: TeamBattleRecord,
-  ): Promise<SheetTeamBattleRecordRow> {
+  async appendTeamBattleRecord(record: TeamBattleRecord): Promise<SheetTeamBattleRecordRow> {
     const row = serializeTeamBattleRecord(record);
     const url = this.createValuesUrl(`${this.encodedTeamRecordRange()}:append`, {
       valueInputOption: "RAW",
@@ -152,9 +151,7 @@ export class GoogleSheetsTrainerAdapter implements TrainerSyncAdapter, TeamRecor
     return { ...row };
   }
 
-  async listTeamBattleRows(
-    query: TeamBattleRecordQuery = {},
-  ): Promise<SheetTeamBattleRecordRow[]> {
+  async listTeamBattleRows(query: TeamBattleRecordQuery = {}): Promise<SheetTeamBattleRecordRow[]> {
     const url = this.createValuesUrl(this.encodedTeamRecordRange(), {
       majorDimension: "ROWS",
     });
@@ -241,6 +238,7 @@ export function sheetTrainerRowToValues(row: SheetTrainerRow): string[] {
     String(row.teamPower),
     row.teamJson,
     row.runSummaryJson,
+    row.trainerPortraitId ?? "",
   ];
 }
 
@@ -255,6 +253,7 @@ export function sheetTrainerRowFromValues(values: readonly unknown[]): SheetTrai
     teamPower: readNumberCell(values, 6, "teamPower"),
     teamJson: readStringCell(values, 7, "teamJson"),
     runSummaryJson: readStringCell(values, 8, "runSummaryJson"),
+    trainerPortraitId: readOptionalStringCell(values, 9, "trainerPortraitId"),
   };
 
   parseSheetTrainerRow(row);
@@ -309,9 +308,7 @@ function isHeaderRow(values: readonly unknown[], index: number): boolean {
 function isTeamBattleHeaderRow(values: readonly unknown[], index: number): boolean {
   return (
     index === 0 &&
-    SHEET_TEAM_BATTLE_RECORD_COLUMNS.every(
-      (column, columnIndex) => values[columnIndex] === column,
-    )
+    SHEET_TEAM_BATTLE_RECORD_COLUMNS.every((column, columnIndex) => values[columnIndex] === column)
   );
 }
 
@@ -323,6 +320,18 @@ function readStringCell(values: readonly unknown[], index: number, field: string
   }
 
   return value;
+}
+
+function readOptionalStringCell(
+  values: readonly unknown[],
+  index: number,
+  field: string,
+): string | undefined {
+  if (values[index] === undefined || values[index] === "") {
+    return undefined;
+  }
+
+  return readStringCell(values, index, field);
 }
 
 function readNumberCell(values: readonly unknown[], index: number, field: string): number {

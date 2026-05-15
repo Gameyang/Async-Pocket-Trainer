@@ -1,6 +1,8 @@
 # Assets
 
-This project does not include original Pokemon NPC portraits, BGM, or SFX.
+This project includes generated assets and selected third-party Pokemon-adjacent assets. Verify the
+target release context has permission to ship Pokemon Showdown-derived sprites and audio before
+public distribution.
 
 ## Data and Pokemon Battle Sprites
 
@@ -19,8 +21,48 @@ This project does not include original Pokemon NPC portraits, BGM, or SFX.
   `src/resources/trainers/*.webp` bundle paths.
 - Used in: trainer encounter badges. Sheet-sourced encounters use `sheet-rival.webp`; generated
   checkpoint trainers use `field-scout.webp` or `checkpoint-captain.webp`.
+- Additional source URL: <https://huggingface.co/sWizad/pokemon-trainer-sprite-pixelart>
+- License: `bespoke-lora-trained-license`; the model card links to
+  <https://multimodal.art/civitai-licenses?allowNoCredit=True&allowCommercialUse=Image&allowDerivatives=True&allowDifferentLicense=True>.
+- Transform: `scripts/build-hf-trainer-assets.mjs` downloads the repository's 16 JPEG sample
+  trainer sprites into `tmp/hf-trainer-sprites/`, flood-fills the simple background to alpha,
+  crops around the opaque sprite, downscales to 96x96 with nearest-neighbor sampling, and writes
+  lossless transparent WebP files to `src/resources/trainers/hf-trainer-*.webp`.
+- Used in: generated trainer encounter portrait rotation.
+- Additional source URL: <https://play.pokemonshowdown.com/sprites/trainers/>
+- Credit and restriction notice from source: many sprites are not from the games, appropriate artist
+  credit is required if used elsewhere, and editing without permission is disallowed.
+- Distribution note: verify the target release context has permission to ship these sprites before
+  public distribution.
+- Transform: `scripts/build-showdown-trainer-assets.mjs` reads the source index, caches the source
+  PNG files in `tmp/showdown-trainer-sprites/`, preserves source transparency, crops transparent
+  padding, resizes to 96x96 with nearest-neighbor sampling, and writes lossless transparent WebP
+  files to `src/resources/trainers/ps-trainer-*.webp`.
+- Metadata: `src/resources/trainers/pokemon-showdown-trainers.json` records source file, output file,
+  source URL, and listed artist where the index provides one.
+- Manifest: `src/resources/trainers/trainerPortraitManifest.json` drives generated trainer portrait
+  rotation, portrait shop offers, selected trainer portraits, and asset tests.
 
-## Audio — SFX from "The Essential Retro Video Game Sound Effects Collection [512 sounds]"
+## Audio - Pokemon Showdown Pack
+
+- Source URL: <https://play.pokemonshowdown.com/audio/>
+- Cry source URL: <https://play.pokemonshowdown.com/audio/cries/>
+- Distribution note: these files are Pokemon Showdown-derived audio assets. They should only be
+  shipped in contexts where the project has permission to redistribute them.
+- Transform: `scripts/build-showdown-audio-assets.mjs` reads both source indexes, selects one source
+  per stem with `.ogg` preferred over `.mp3` over `.wav`, caches originals in
+  `tmp/showdown-audio/`, and re-encodes selected files to AAC/M4A with ffmpeg.
+- Output:
+  - Root audio and `notification.wav`: `src/resources/audio/bgm/showdown/*.m4a`
+  - Pokemon cries: `src/resources/audio/cries/showdown/*.m4a`
+  - Manifest: `src/resources/audio/showdownAudioManifest.json`
+- Used in: all runtime BGM and SFX resolution. Phase music maps to Showdown battle themes; battle,
+  capture, phase, and faint cues resolve to Showdown notification audio or Pokemon cries.
+
+## Audio - Legacy OpenGameArt SFX
+
+Status: retained as legacy local assets, but runtime audio now resolves to the Pokemon Showdown
+audio pack.
 
 - Source URL: <https://opengameart.org/content/512-sound-effects-8-bit-style>
 - Author: Juhani Junkala (file: `The Essential Retro Video Game Sound Effects Collection [512 sounds].zip`)

@@ -18,11 +18,14 @@ import {
   type Stats,
   type TeamRecordSummary,
 } from "../types";
+import { getSelectedTrainerPortraitId, isValidTrainerPortraitId } from "../trainerPortraits";
 
 export const LEGACY_TRAINER_SNAPSHOT_VERSION = 1;
-export const TRAINER_SNAPSHOT_VERSION = 2;
+export const PRE_PORTRAIT_TRAINER_SNAPSHOT_VERSION = 2;
+export const TRAINER_SNAPSHOT_VERSION = 3;
 export type TrainerSnapshotVersion =
   | typeof LEGACY_TRAINER_SNAPSHOT_VERSION
+  | typeof PRE_PORTRAIT_TRAINER_SNAPSHOT_VERSION
   | typeof TRAINER_SNAPSHOT_VERSION;
 
 export interface TrainerSnapshotCreature {
@@ -43,6 +46,7 @@ export interface TrainerSnapshot {
   version: typeof TRAINER_SNAPSHOT_VERSION;
   playerId: string;
   trainerName: string;
+  trainerPortraitId?: string;
   wave: number;
   createdAt: string;
   seed: string;
@@ -62,6 +66,7 @@ export interface SheetTrainerRow {
   teamPower: number;
   teamJson: string;
   runSummaryJson: string;
+  trainerPortraitId?: string;
 }
 
 export interface CreateTrainerSnapshotOptions {
@@ -86,17 +91,22 @@ export function createTrainerSnapshot(
 ): TrainerSnapshot {
   const createdAt = options.createdAt ?? new Date().toISOString();
   assertIsoDate(createdAt, "createdAt");
+  const trainerPortraitId = getSelectedTrainerPortraitId(state.metaCurrency);
 
   return {
     version: TRAINER_SNAPSHOT_VERSION,
     playerId: requireNonEmptyString(options.playerId, "playerId"),
     trainerName: requireNonEmptyString(options.trainerName ?? state.trainerName, "trainerName"),
+    trainerPortraitId,
     wave: options.wave ?? state.currentWave,
     createdAt,
     seed: state.seed,
     teamPower: scoreTeam(state.team),
     team: state.team.map(toSnapshotCreature),
-    runSummary: cloneRunSummary(options.runSummary),
+    runSummary: {
+      ...cloneRunSummary(options.runSummary),
+      trainerPortraitId,
+    },
   };
 }
 
@@ -113,6 +123,7 @@ export function serializeTrainerSnapshot(snapshot: TrainerSnapshot): SheetTraine
     teamPower: snapshot.teamPower,
     teamJson: JSON.stringify(snapshot.team),
     runSummaryJson: JSON.stringify(snapshot.runSummary),
+    trainerPortraitId: snapshot.trainerPortraitId,
   };
 }
 
@@ -120,7 +131,11 @@ export function parseSheetTrainerRow(row: unknown): TrainerSnapshot {
   const source = requireRecord(row, "SheetTrainerRow");
   const version = readRequiredNumber(source, "version");
 
-  if (version !== LEGACY_TRAINER_SNAPSHOT_VERSION && version !== TRAINER_SNAPSHOT_VERSION) {
+  if (
+    version !== LEGACY_TRAINER_SNAPSHOT_VERSION &&
+    version !== PRE_PORTRAIT_TRAINER_SNAPSHOT_VERSION &&
+    version !== TRAINER_SNAPSHOT_VERSION
+  ) {
     throw new Error(`Unsupported trainer row schema version: ${version}`);
   }
 
@@ -139,6 +154,7 @@ export function parseSheetTrainerRow(row: unknown): TrainerSnapshot {
     version: TRAINER_SNAPSHOT_VERSION,
     playerId: readRequiredString(source, "playerId"),
     trainerName: readRequiredString(source, "trainerName"),
+    trainerPortraitId: readOptionalTrainerPortraitId(source, "trainerPortraitId"),
     wave: readPositiveInteger(source, "wave"),
     createdAt,
     seed,
@@ -278,6 +294,7 @@ function parseRunSummary(source: Record<string, unknown>): RunSummary {
   return {
     seed: readRequiredString(source, "seed"),
     trainerName: readRequiredString(source, "trainerName"),
+    trainerPortraitId: readOptionalTrainerPortraitId(source, "trainerPortraitId"),
     finalWave: readPositiveInteger(source, "finalWave"),
     phase,
     money: readNonNegativeNumber(source, "money"),
@@ -299,6 +316,9 @@ function cloneRunSummary(summary: RunSummary): RunSummary {
 function assertTrainerSnapshot(snapshot: TrainerSnapshot): void {
   requireNonEmptyString(snapshot.playerId, "playerId");
   requireNonEmptyString(snapshot.trainerName, "trainerName");
+  if (snapshot.trainerPortraitId !== undefined) {
+    readTrainerPortraitId(snapshot.trainerPortraitId, "trainerPortraitId");
+  }
   requireNonEmptyString(snapshot.seed, "seed");
   assertIsoDate(snapshot.createdAt, "createdAt");
 
@@ -375,6 +395,27 @@ function requireRecord(value: unknown, field: string): Record<string, unknown> {
 
 function readRequiredString(source: Record<string, unknown>, field: string): string {
   return requireNonEmptyString(source[field], field);
+}
+
+function readOptionalTrainerPortraitId(
+  source: Record<string, unknown>,
+  field: string,
+): string | undefined {
+  if (source[field] === undefined || source[field] === "") {
+    return undefined;
+  }
+
+  return readTrainerPortraitId(source[field], field);
+}
+
+function readTrainerPortraitId(value: unknown, field: string): string {
+  const portraitId = requireNonEmptyString(value, field);
+
+  if (!isValidTrainerPortraitId(portraitId)) {
+    throw new Error(`${field} must reference a known trainer portrait.`);
+  }
+
+  return portraitId;
 }
 
 function requireNonEmptyString(value: unknown, field: string): string {

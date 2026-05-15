@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { resolveBattleFieldForWave } from "../battleField";
 import { SeededRng } from "../rng";
 import type { FrameAction, FrameEntity, GameFrame } from "../view/frame";
 import { chooseFrameAction } from "./frameController";
@@ -24,6 +25,8 @@ describe("frame action controller", () => {
 });
 
 function teamDecisionFrame(capturedPower: number): GameFrame {
+  const battleField = resolveBattleFieldForWave(4);
+
   return {
     protocolVersion: 1,
     frameId: 1,
@@ -44,6 +47,7 @@ function teamDecisionFrame(capturedPower: number): GameFrame {
       teamPower: 300,
       teamHpRatio: 1,
       trainerPoints: 0,
+      battleField,
     },
     scene: {
       title: "4웨이브",
@@ -52,6 +56,7 @@ function teamDecisionFrame(capturedPower: number): GameFrame {
       opponentSlots: [],
       pendingCaptureId: "capture",
       starterOptions: [],
+      battleField,
       bgmKey: "bgm.teamDecision",
     },
     entities: [
@@ -106,6 +111,7 @@ function entity(id: string, owner: FrameEntity["owner"], slot: number, power: nu
     speciesId: 1,
     level: 1,
     typeLabels: ["노말"],
+    types: ["normal"],
     hp: {
       current: 100,
       max: 100,
@@ -123,6 +129,7 @@ function entity(id: string, owner: FrameEntity["owner"], slot: number, power: nu
         id: "tackle",
         name: "몸통박치기",
         type: "노말",
+        typeKey: "normal",
         power: 40,
         accuracy: 1,
         accuracyLabel: "100%",

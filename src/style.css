@@ -150,9 +150,490 @@ p {
   border: 4px solid var(--line);
   border-radius: 8px;
   background: #77c7ef;
+  --field-sky-a: var(--sky-a);
+  --field-sky-b: var(--sky-b);
+  --field-ground-a: #75bb68;
+  --field-ground-b: #4c9a5f;
+  --field-ridge: rgba(70, 135, 89, 0.36);
+  --field-detail: rgba(47, 126, 84, 0.22);
+  --field-platform: #70b865;
+  --field-time-sky-pattern: radial-gradient(
+    circle at 84% 16%,
+    rgba(255, 244, 156, 0.88) 0 17px,
+    rgba(255, 202, 94, 0.5) 18px 21px,
+    transparent 22px
+  );
+  --field-sky-pattern:
+    radial-gradient(ellipse at 19% 40%, rgba(58, 126, 72, 0.34) 0 20px, transparent 21px),
+    radial-gradient(ellipse at 33% 34%, rgba(44, 116, 68, 0.28) 0 17px, transparent 18px),
+    radial-gradient(ellipse at 10% 48%, rgba(52, 114, 64, 0.24) 0 18px, transparent 19px);
+  --field-horizon-pattern:
+    radial-gradient(ellipse at 17% 78%, rgba(45, 108, 60, 0.48) 0 24px, transparent 25px),
+    radial-gradient(ellipse at 40% 86%, rgba(35, 98, 58, 0.42) 0 28px, transparent 29px),
+    radial-gradient(ellipse at 66% 80%, rgba(53, 118, 67, 0.42) 0 22px, transparent 23px);
+  --field-ground-pattern:
+    radial-gradient(ellipse at 18% 72%, rgba(225, 246, 117, 0.16) 0 14px, transparent 15px),
+    radial-gradient(ellipse at 84% 42%, rgba(226, 246, 117, 0.12) 0 20px, transparent 21px);
   box-shadow:
     inset 0 0 0 4px rgba(255, 255, 255, 0.14),
     inset 0 -12px 0 rgba(0, 0, 0, 0.14);
+}
+
+.screen[data-battle-field="volcano"] {
+  --field-sky-a: #ffb06d;
+  --field-sky-b: #5e2732;
+  --field-ground-a: #a85238;
+  --field-ground-b: #3b2630;
+  --field-ridge: rgba(190, 82, 44, 0.46);
+  --field-detail: rgba(70, 31, 28, 0.38);
+  --field-platform: #c46b3a;
+  --field-sky-pattern:
+    radial-gradient(ellipse at 28% 20%, rgba(86, 42, 42, 0.42) 0 26px, transparent 27px),
+    radial-gradient(circle at 40% 28%, rgba(255, 108, 52, 0.48) 0 5px, transparent 6px),
+    radial-gradient(circle at 54% 18%, rgba(255, 199, 94, 0.36) 0 4px, transparent 5px);
+  --field-horizon-pattern: conic-gradient(
+    from 44deg at 36% 100%,
+    transparent 0 30%,
+    rgba(64, 38, 43, 0.92) 31% 42%,
+    rgba(246, 96, 42, 0.86) 43% 46%,
+    rgba(64, 38, 43, 0.92) 47% 59%,
+    transparent 60% 100%
+  );
+  --field-ground-pattern:
+    radial-gradient(ellipse at 58% 30%, rgba(255, 96, 38, 0.32) 0 22px, transparent 23px),
+    linear-gradient(115deg, transparent 0 54%, rgba(255, 107, 51, 0.26) 55% 59%, transparent 60%);
+}
+
+.screen[data-battle-field="ocean"] {
+  --field-sky-a: #8fdcff;
+  --field-sky-b: #7be0d5;
+  --field-ground-a: #4ea6c8;
+  --field-ground-b: #21649a;
+  --field-ridge: rgba(61, 147, 184, 0.44);
+  --field-detail: rgba(28, 82, 135, 0.32);
+  --field-platform: #6fc1be;
+  --field-sky-pattern:
+    linear-gradient(178deg, transparent 0 34%, rgba(255, 255, 255, 0.32) 35% 36%, transparent 37%),
+    radial-gradient(ellipse at 23% 38%, rgba(255, 255, 255, 0.34) 0 20px, transparent 21px);
+  --field-horizon-pattern: repeating-radial-gradient(
+    ellipse at 50% 100%,
+    rgba(255, 255, 255, 0.28) 0 3px,
+    transparent 4px 15px
+  );
+  --field-ground-pattern:
+    repeating-linear-gradient(168deg, rgba(255, 255, 255, 0.17) 0 3px, transparent 4px 18px),
+    radial-gradient(ellipse at 78% 24%, rgba(163, 236, 242, 0.3) 0 24px, transparent 25px);
+}
+
+.screen[data-battle-field="city"] {
+  --field-sky-a: #8ec6ff;
+  --field-sky-b: #f8df6a;
+  --field-ground-a: #8793a0;
+  --field-ground-b: #4a5665;
+  --field-ridge: rgba(235, 202, 69, 0.42);
+  --field-detail: rgba(31, 43, 56, 0.3);
+  --field-platform: #d6c24c;
+  --field-sky-pattern:
+    repeating-linear-gradient(
+      90deg,
+      transparent 0 26px,
+      rgba(255, 238, 92, 0.38) 27px 30px,
+      transparent 31px 56px
+    ),
+    linear-gradient(115deg, transparent 0 62%, rgba(255, 239, 83, 0.46) 63% 65%, transparent 66%);
+  --field-horizon-pattern: linear-gradient(
+    90deg,
+    transparent 0 4%,
+    rgba(40, 51, 63, 0.8) 5% 14%,
+    transparent 15% 18%,
+    rgba(51, 61, 74, 0.86) 19% 30%,
+    transparent 31% 34%,
+    rgba(37, 46, 58, 0.82) 35% 48%,
+    transparent 49% 55%,
+    rgba(45, 57, 70, 0.82) 56% 68%,
+    transparent 69% 100%
+  );
+  --field-ground-pattern: repeating-linear-gradient(
+    90deg,
+    rgba(255, 230, 82, 0.16) 0 4px,
+    transparent 5px 24px
+  );
+}
+
+.screen[data-battle-field="swamp"] {
+  --field-sky-a: #a8b9a0;
+  --field-sky-b: #d6c678;
+  --field-ground-a: #667f48;
+  --field-ground-b: #354a36;
+  --field-ridge: rgba(105, 132, 67, 0.5);
+  --field-detail: rgba(63, 35, 73, 0.28);
+  --field-platform: #7e9a50;
+  --field-sky-pattern:
+    radial-gradient(circle at 22% 38%, rgba(190, 222, 113, 0.35) 0 7px, transparent 8px),
+    radial-gradient(circle at 39% 44%, rgba(107, 78, 128, 0.24) 0 11px, transparent 12px),
+    linear-gradient(90deg, transparent 0 18%, rgba(62, 92, 57, 0.28) 19% 21%, transparent 22%);
+  --field-horizon-pattern:
+    repeating-linear-gradient(
+      90deg,
+      transparent 0 26px,
+      rgba(48, 82, 49, 0.52) 27px 30px,
+      transparent 31px 44px
+    ),
+    radial-gradient(ellipse at 60% 88%, rgba(89, 63, 107, 0.3) 0 30px, transparent 31px);
+  --field-ground-pattern:
+    radial-gradient(circle at 34% 28%, rgba(184, 226, 109, 0.28) 0 9px, transparent 10px),
+    radial-gradient(circle at 72% 46%, rgba(184, 226, 109, 0.22) 0 7px, transparent 8px);
+}
+
+.screen[data-battle-field="desert"] {
+  --field-sky-a: #7fcdf3;
+  --field-sky-b: #f4cc74;
+  --field-ground-a: #d4a04c;
+  --field-ground-b: #9b6930;
+  --field-ridge: rgba(172, 104, 42, 0.36);
+  --field-detail: rgba(133, 84, 37, 0.26);
+  --field-platform: #dcb260;
+  --field-sky-pattern:
+    linear-gradient(176deg, transparent 0 44%, rgba(255, 240, 180, 0.34) 45% 46%, transparent 47%),
+    radial-gradient(ellipse at 22% 54%, rgba(211, 145, 65, 0.22) 0 30px, transparent 31px);
+  --field-horizon-pattern:
+    radial-gradient(ellipse at 22% 96%, rgba(205, 145, 62, 0.48) 0 44px, transparent 45px),
+    radial-gradient(ellipse at 78% 102%, rgba(182, 117, 48, 0.42) 0 56px, transparent 57px);
+  --field-ground-pattern: repeating-linear-gradient(
+    170deg,
+    rgba(255, 236, 154, 0.18) 0 2px,
+    transparent 3px 18px
+  );
+}
+
+.screen[data-battle-field="highland"] {
+  --field-sky-a: #9edcff;
+  --field-sky-b: #d5f0ff;
+  --field-ground-a: #91a96f;
+  --field-ground-b: #526f5b;
+  --field-ridge: rgba(93, 118, 92, 0.4);
+  --field-detail: rgba(55, 80, 70, 0.28);
+  --field-platform: #9dbc77;
+  --field-sky-pattern:
+    radial-gradient(ellipse at 28% 26%, rgba(255, 255, 255, 0.42) 0 22px, transparent 23px),
+    radial-gradient(ellipse at 46% 20%, rgba(255, 255, 255, 0.3) 0 18px, transparent 19px);
+  --field-horizon-pattern:
+    conic-gradient(
+      from 42deg at 24% 100%,
+      transparent 0 32%,
+      rgba(77, 109, 94, 0.55) 33% 51%,
+      transparent 52% 100%
+    ),
+    conic-gradient(
+      from 42deg at 68% 100%,
+      transparent 0 32%,
+      rgba(93, 126, 96, 0.55) 33% 51%,
+      transparent 52% 100%
+    );
+  --field-ground-pattern: repeating-linear-gradient(
+    160deg,
+    rgba(255, 255, 255, 0.1) 0 2px,
+    transparent 3px 22px
+  );
+}
+
+.screen[data-battle-field="jungle"] {
+  --field-sky-a: #7ed5b2;
+  --field-sky-b: #d5da76;
+  --field-ground-a: #5da654;
+  --field-ground-b: #244f35;
+  --field-ridge: rgba(43, 120, 66, 0.48);
+  --field-detail: rgba(29, 69, 43, 0.34);
+  --field-platform: #75b454;
+  --field-sky-pattern:
+    radial-gradient(ellipse at 20% 18%, rgba(25, 104, 63, 0.3) 0 18px, transparent 19px),
+    radial-gradient(ellipse at 44% 28%, rgba(45, 129, 68, 0.34) 0 24px, transparent 25px),
+    repeating-linear-gradient(
+      100deg,
+      transparent 0 26px,
+      rgba(31, 96, 52, 0.28) 27px 30px,
+      transparent 31px 54px
+    );
+  --field-horizon-pattern:
+    radial-gradient(ellipse at 18% 82%, rgba(20, 82, 46, 0.56) 0 34px, transparent 35px),
+    radial-gradient(ellipse at 58% 76%, rgba(38, 112, 54, 0.5) 0 38px, transparent 39px);
+  --field-ground-pattern:
+    radial-gradient(ellipse at 78% 36%, rgba(198, 232, 87, 0.14) 0 18px, transparent 19px),
+    repeating-linear-gradient(95deg, transparent 0 20px, rgba(26, 73, 42, 0.2) 21px 23px);
+}
+
+.screen[data-battle-field="dojo"] {
+  --field-sky-a: #ffcf8d;
+  --field-sky-b: #f6e3bd;
+  --field-ground-a: #b36b55;
+  --field-ground-b: #6c4938;
+  --field-ridge: rgba(132, 68, 51, 0.38);
+  --field-detail: rgba(86, 49, 38, 0.28);
+  --field-platform: #c28359;
+  --field-sky-pattern:
+    linear-gradient(
+      90deg,
+      transparent 0 20%,
+      rgba(198, 55, 48, 0.28) 21% 25%,
+      transparent 26% 48%,
+      rgba(40, 80, 142, 0.26) 49% 53%,
+      transparent 54%
+    ),
+    repeating-linear-gradient(0deg, rgba(121, 66, 40, 0.12) 0 4px, transparent 5px 18px);
+  --field-horizon-pattern:
+    linear-gradient(135deg, transparent 0 36%, rgba(88, 47, 38, 0.62) 37% 43%, transparent 44%),
+    linear-gradient(45deg, transparent 0 56%, rgba(88, 47, 38, 0.62) 57% 63%, transparent 64%);
+  --field-ground-pattern: repeating-linear-gradient(
+    90deg,
+    rgba(255, 220, 150, 0.16) 0 8px,
+    rgba(115, 67, 43, 0.12) 9px 18px
+  );
+}
+
+.screen[data-battle-field="ruins"] {
+  --field-sky-a: #d4b9ff;
+  --field-sky-b: #f5cfe9;
+  --field-ground-a: #8f7db0;
+  --field-ground-b: #51466c;
+  --field-ridge: rgba(120, 93, 155, 0.4);
+  --field-detail: rgba(78, 58, 104, 0.32);
+  --field-platform: #b98fce;
+  --field-sky-pattern:
+    radial-gradient(circle at 42% 24%, rgba(255, 244, 255, 0.42) 0 10px, transparent 11px),
+    radial-gradient(circle at 55% 33%, rgba(232, 170, 255, 0.24) 0 7px, transparent 8px);
+  --field-horizon-pattern:
+    repeating-linear-gradient(
+      90deg,
+      transparent 0 28px,
+      rgba(83, 67, 112, 0.58) 29px 38px,
+      transparent 39px 54px
+    ),
+    linear-gradient(180deg, transparent 0 54%, rgba(83, 67, 112, 0.45) 55% 100%);
+  --field-ground-pattern:
+    radial-gradient(circle at 66% 30%, rgba(230, 182, 255, 0.22) 0 8px, transparent 9px),
+    repeating-linear-gradient(90deg, transparent 0 26px, rgba(83, 67, 112, 0.16) 27px 31px);
+}
+
+.screen[data-battle-field="crags"] {
+  --field-sky-a: #97c6dd;
+  --field-sky-b: #ded0aa;
+  --field-ground-a: #93835f;
+  --field-ground-b: #514b3d;
+  --field-ridge: rgba(96, 84, 67, 0.42);
+  --field-detail: rgba(61, 55, 47, 0.3);
+  --field-platform: #a7966a;
+  --field-sky-pattern:
+    radial-gradient(ellipse at 26% 43%, rgba(95, 88, 76, 0.24) 0 20px, transparent 21px),
+    radial-gradient(ellipse at 64% 34%, rgba(104, 94, 78, 0.2) 0 15px, transparent 16px);
+  --field-horizon-pattern:
+    conic-gradient(
+      from 36deg at 28% 100%,
+      transparent 0 30%,
+      rgba(79, 70, 55, 0.72) 31% 52%,
+      transparent 53% 100%
+    ),
+    conic-gradient(
+      from 36deg at 58% 100%,
+      transparent 0 30%,
+      rgba(107, 94, 68, 0.6) 31% 52%,
+      transparent 53% 100%
+    );
+  --field-ground-pattern:
+    radial-gradient(ellipse at 22% 42%, rgba(75, 66, 54, 0.26) 0 18px, transparent 19px),
+    radial-gradient(ellipse at 77% 61%, rgba(75, 66, 54, 0.2) 0 24px, transparent 25px);
+}
+
+.screen[data-battle-field="haunted-ruins"] {
+  --field-sky-a: #8c8db5;
+  --field-sky-b: #b3aac6;
+  --field-ground-a: #5f6078;
+  --field-ground-b: #313245;
+  --field-ridge: rgba(84, 72, 116, 0.48);
+  --field-detail: rgba(43, 38, 66, 0.34);
+  --field-platform: #77708d;
+  --field-sky-pattern:
+    radial-gradient(circle at 28% 25%, rgba(195, 220, 255, 0.22) 0 10px, transparent 11px),
+    radial-gradient(circle at 58% 37%, rgba(170, 150, 220, 0.28) 0 6px, transparent 7px);
+  --field-horizon-pattern:
+    linear-gradient(84deg, transparent 0 18%, rgba(40, 38, 63, 0.7) 19% 25%, transparent 26%),
+    linear-gradient(98deg, transparent 0 54%, rgba(40, 38, 63, 0.68) 55% 62%, transparent 63%);
+  --field-ground-pattern:
+    radial-gradient(circle at 72% 34%, rgba(157, 138, 210, 0.28) 0 5px, transparent 6px),
+    repeating-linear-gradient(110deg, transparent 0 28px, rgba(31, 27, 47, 0.2) 29px 32px);
+}
+
+.screen[data-battle-field="tundra"] {
+  --field-sky-a: #bcecff;
+  --field-sky-b: #f2fbff;
+  --field-ground-a: #a8dde6;
+  --field-ground-b: #5b9eb4;
+  --field-ridge: rgba(110, 172, 196, 0.38);
+  --field-detail: rgba(65, 132, 158, 0.28);
+  --field-platform: #c0edf2;
+  --field-sky-pattern:
+    radial-gradient(circle at 22% 24%, rgba(255, 255, 255, 0.72) 0 2px, transparent 3px),
+    radial-gradient(circle at 38% 38%, rgba(255, 255, 255, 0.62) 0 2px, transparent 3px),
+    radial-gradient(circle at 62% 18%, rgba(255, 255, 255, 0.62) 0 2px, transparent 3px);
+  --field-horizon-pattern:
+    conic-gradient(
+      from 40deg at 30% 100%,
+      transparent 0 32%,
+      rgba(238, 252, 255, 0.78) 33% 50%,
+      transparent 51% 100%
+    ),
+    conic-gradient(
+      from 40deg at 72% 100%,
+      transparent 0 32%,
+      rgba(175, 226, 238, 0.58) 33% 50%,
+      transparent 51% 100%
+    );
+  --field-ground-pattern: repeating-linear-gradient(
+    165deg,
+    rgba(255, 255, 255, 0.34) 0 2px,
+    transparent 3px 22px
+  );
+}
+
+.screen[data-battle-field="dragon-cave"] {
+  --field-sky-a: #565075;
+  --field-sky-b: #ac7e5b;
+  --field-ground-a: #6e4d5e;
+  --field-ground-b: #2f2b44;
+  --field-ridge: rgba(127, 72, 82, 0.45);
+  --field-detail: rgba(38, 31, 62, 0.34);
+  --field-platform: #8a6272;
+  --field-sky-pattern:
+    radial-gradient(circle at 52% 32%, rgba(255, 142, 80, 0.28) 0 14px, transparent 15px),
+    linear-gradient(120deg, rgba(31, 28, 54, 0.34) 0 18%, transparent 19%),
+    linear-gradient(240deg, rgba(31, 28, 54, 0.36) 0 16%, transparent 17%);
+  --field-horizon-pattern:
+    repeating-linear-gradient(
+      105deg,
+      transparent 0 34px,
+      rgba(37, 31, 55, 0.62) 35px 44px,
+      transparent 45px 70px
+    ),
+    radial-gradient(ellipse at 52% 100%, rgba(204, 103, 73, 0.32) 0 50px, transparent 51px);
+  --field-ground-pattern:
+    radial-gradient(circle at 63% 38%, rgba(242, 111, 70, 0.24) 0 10px, transparent 11px),
+    repeating-linear-gradient(90deg, transparent 0 35px, rgba(34, 29, 52, 0.2) 36px 40px);
+}
+
+.screen[data-battle-field="back-alley"] {
+  --field-sky-a: #56606f;
+  --field-sky-b: #8d7d70;
+  --field-ground-a: #454d58;
+  --field-ground-b: #242933;
+  --field-ridge: rgba(75, 72, 69, 0.44);
+  --field-detail: rgba(24, 29, 36, 0.36);
+  --field-platform: #5e6470;
+  --field-sky-pattern:
+    linear-gradient(
+      90deg,
+      transparent 0 18%,
+      rgba(255, 86, 162, 0.34) 19% 24%,
+      transparent 25% 52%,
+      rgba(89, 218, 255, 0.28) 53% 57%,
+      transparent 58%
+    ),
+    repeating-linear-gradient(90deg, transparent 0 22px, rgba(255, 238, 126, 0.2) 23px 25px);
+  --field-horizon-pattern: linear-gradient(
+    90deg,
+    rgba(23, 28, 38, 0.78) 0 13%,
+    transparent 14% 18%,
+    rgba(28, 34, 45, 0.82) 19% 44%,
+    transparent 45% 54%,
+    rgba(30, 35, 45, 0.8) 55% 74%,
+    transparent 75% 100%
+  );
+  --field-ground-pattern: repeating-linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.1) 0 3px,
+    transparent 4px 22px
+  );
+}
+
+.screen[data-battle-field="factory"] {
+  --field-sky-a: #b5c7d6;
+  --field-sky-b: #d4d8cf;
+  --field-ground-a: #8c9aa1;
+  --field-ground-b: #59656d;
+  --field-ridge: rgba(92, 107, 117, 0.42);
+  --field-detail: rgba(58, 67, 74, 0.32);
+  --field-platform: #a5b2b6;
+  --field-sky-pattern:
+    repeating-linear-gradient(
+      90deg,
+      transparent 0 34px,
+      rgba(89, 103, 112, 0.34) 35px 40px,
+      transparent 41px 68px
+    ),
+    radial-gradient(ellipse at 48% 28%, rgba(255, 255, 255, 0.32) 0 24px, transparent 25px);
+  --field-horizon-pattern:
+    linear-gradient(
+      90deg,
+      transparent 0 10%,
+      rgba(68, 79, 88, 0.74) 11% 16%,
+      transparent 17% 30%,
+      rgba(75, 86, 94, 0.7) 31% 38%,
+      transparent 39%
+    ),
+    repeating-linear-gradient(0deg, rgba(78, 91, 99, 0.3) 0 4px, transparent 5px 14px);
+  --field-ground-pattern: repeating-linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.12) 0 3px,
+    transparent 4px 18px
+  );
+}
+
+.screen[data-battle-field="flower-field"] {
+  --field-sky-a: #ffd1ef;
+  --field-sky-b: #fff2a3;
+  --field-ground-a: #82c96c;
+  --field-ground-b: #5d9b69;
+  --field-ridge: rgba(226, 105, 167, 0.32);
+  --field-detail: rgba(89, 128, 78, 0.24);
+  --field-platform: #f2a9c8;
+  --field-sky-pattern:
+    radial-gradient(circle at 20% 33%, rgba(255, 122, 185, 0.28) 0 6px, transparent 7px),
+    radial-gradient(circle at 36% 22%, rgba(255, 255, 255, 0.48) 0 5px, transparent 6px),
+    radial-gradient(circle at 58% 38%, rgba(255, 122, 185, 0.24) 0 7px, transparent 8px);
+  --field-horizon-pattern:
+    radial-gradient(ellipse at 18% 86%, rgba(222, 106, 167, 0.34) 0 28px, transparent 29px),
+    radial-gradient(ellipse at 52% 82%, rgba(255, 210, 92, 0.26) 0 22px, transparent 23px);
+  --field-ground-pattern:
+    radial-gradient(circle at 28% 42%, rgba(255, 122, 185, 0.28) 0 5px, transparent 6px),
+    radial-gradient(circle at 72% 58%, rgba(255, 238, 122, 0.24) 0 6px, transparent 7px);
+}
+
+.screen[data-battle-field="plains"] {
+  --field-sky-a: #9fd8ff;
+  --field-sky-b: #ffe4a6;
+  --field-ground-a: #98b96a;
+  --field-ground-b: #607d48;
+  --field-ridge: rgba(112, 132, 74, 0.36);
+  --field-detail: rgba(76, 104, 60, 0.24);
+  --field-platform: #a8bc6e;
+  --field-sky-pattern:
+    linear-gradient(176deg, transparent 0 32%, rgba(255, 255, 255, 0.28) 33% 34%, transparent 35%),
+    radial-gradient(ellipse at 28% 34%, rgba(255, 255, 255, 0.28) 0 28px, transparent 29px);
+  --field-horizon-pattern:
+    radial-gradient(ellipse at 26% 96%, rgba(116, 143, 76, 0.42) 0 42px, transparent 43px),
+    radial-gradient(ellipse at 72% 94%, rgba(132, 156, 84, 0.38) 0 48px, transparent 49px);
+  --field-ground-pattern: repeating-linear-gradient(
+    170deg,
+    rgba(255, 255, 255, 0.12) 0 2px,
+    transparent 3px 24px
+  );
+}
+
+.screen[data-time-of-day="night"] {
+  --field-time-sky-pattern:
+    radial-gradient(circle at 82% 15%, rgba(250, 247, 211, 0.92) 0 12px, transparent 13px),
+    radial-gradient(circle at 18% 14%, rgba(255, 255, 255, 0.78) 0 1px, transparent 2px),
+    radial-gradient(circle at 31% 25%, rgba(255, 255, 255, 0.66) 0 1px, transparent 2px),
+    radial-gradient(circle at 61% 18%, rgba(255, 255, 255, 0.72) 0 1px, transparent 2px),
+    radial-gradient(circle at 72% 31%, rgba(255, 255, 255, 0.58) 0 1px, transparent 2px);
 }
 
 .screen[data-screen="battle"][data-camera-shake="ally-damage"] {
@@ -173,6 +654,16 @@ p {
     cubic-bezier(0.18, 0.86, 0.22, 1) both;
   transform-origin: center;
   will-change: transform;
+}
+
+.screen[data-time-of-day="night"] .battlefield,
+.ready-screen[data-time-of-day="night"] .camp-sky,
+.ready-screen[data-time-of-day="night"] .camp-ground {
+  filter: saturate(0.86) brightness(0.64);
+}
+
+.screen[data-time-of-day="night"] .platform {
+  filter: saturate(0.82) brightness(0.7);
 }
 
 .screen[data-screen="battle"][data-camera-shake-intensity="light"] {
@@ -217,7 +708,13 @@ p {
   display: grid;
   grid-template-rows: 48% 52%;
   background:
-    linear-gradient(180deg, var(--sky-a) 0 22%, var(--sky-b) 52%, #87ce75 52% 100%),
+    var(--field-time-sky-pattern), var(--field-sky-pattern),
+    linear-gradient(
+      180deg,
+      var(--field-sky-a) 0 22%,
+      var(--field-sky-b) 52%,
+      var(--field-ground-a) 52% 100%
+    ),
     repeating-linear-gradient(90deg, transparent 0 24px, rgba(255, 255, 255, 0.12) 24px 25px);
 }
 
@@ -227,8 +724,9 @@ p {
   inset: auto -12% 30% -12%;
   height: 26%;
   background:
-    linear-gradient(135deg, transparent 0 22%, rgba(70, 135, 89, 0.36) 22% 34%, transparent 34%) 0
-      0 / 54px 38px,
+    var(--field-horizon-pattern),
+    linear-gradient(135deg, transparent 0 22%, var(--field-ridge) 22% 34%, transparent 34%) 0 0 /
+      54px 38px,
     linear-gradient(180deg, rgba(255, 255, 255, 0.36), rgba(255, 255, 255, 0));
 }
 
@@ -237,10 +735,11 @@ p {
   position: absolute;
   inset: 49% 0 0;
   background:
-    radial-gradient(ellipse at 75% 28%, #79c06b 0 22%, transparent 23%),
-    radial-gradient(ellipse at 22% 72%, #5ba060 0 27%, transparent 28%),
-    repeating-linear-gradient(0deg, rgba(47, 126, 84, 0.22) 0 2px, transparent 2px 9px),
-    linear-gradient(180deg, #75bb68, #4c9a5f);
+    var(--field-ground-pattern),
+    radial-gradient(ellipse at 75% 28%, var(--field-platform) 0 22%, transparent 23%),
+    radial-gradient(ellipse at 22% 72%, var(--field-ground-b) 0 27%, transparent 28%),
+    repeating-linear-gradient(0deg, var(--field-detail) 0 2px, transparent 2px 9px),
+    linear-gradient(180deg, var(--field-ground-a), var(--field-ground-b));
 }
 
 .platform {
@@ -251,7 +750,8 @@ p {
   border-radius: 50%;
   background:
     radial-gradient(ellipse at center, rgba(255, 255, 255, 0.26), transparent 56%),
-    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.13) 0 2px, transparent 2px 7px), #70b865;
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.13) 0 2px, transparent 2px 7px),
+    var(--field-platform);
   box-shadow: 0 10px 0 rgba(30, 57, 39, 0.18);
 }
 
@@ -441,6 +941,235 @@ p {
   bottom: 20%;
   left: 11%;
   width: min(42%, 166px);
+}
+
+.trainer-ceremony {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+}
+
+.encounter-panel[data-battle-ceremony] .trainer-badge {
+  opacity: 0;
+}
+
+.encounter-panel[data-battle-ceremony="intro"] .screen-monster,
+.encounter-panel[data-battle-ceremony="throw"] .screen-monster {
+  opacity: 0;
+  transform: translateY(16px) scale(0.72);
+}
+
+.encounter-panel[data-battle-ceremony="outro"] .screen-monster {
+  opacity: 0.18;
+  filter: grayscale(0.4) drop-shadow(0 7px 0 rgba(25, 38, 36, 0.16));
+}
+
+.encounter-panel[data-battle-ceremony="intro"] .battle-card,
+.encounter-panel[data-battle-ceremony="throw"] .battle-card,
+.encounter-panel[data-battle-ceremony="outro"] .battle-card {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+.encounter-panel[data-battle-ceremony="summon"] .screen-monster {
+  animation: creature-summon-pop 860ms cubic-bezier(0.14, 0.88, 0.2, 1) both;
+}
+
+.ceremony-trainer {
+  position: absolute;
+  display: grid;
+  align-items: end;
+  gap: 7px;
+  max-width: 78%;
+  filter: drop-shadow(0 8px 0 rgba(25, 38, 36, 0.2));
+}
+
+.ceremony-trainer img {
+  width: min(25vw, 94px);
+  max-height: 154px;
+  object-fit: contain;
+  image-rendering: pixelated;
+  transform-origin: center bottom;
+}
+
+.ceremony-trainer.hero {
+  bottom: 32%;
+  left: 5%;
+  grid-template-columns: minmax(58px, 82px) minmax(0, 168px);
+}
+
+.ceremony-trainer.enemy {
+  top: 13%;
+  right: 5%;
+  grid-template-columns: minmax(0, 168px) minmax(56px, 82px);
+}
+
+.ceremony-trainer.enemy img {
+  order: 2;
+}
+
+.ceremony-trainer.enemy .ceremony-speech {
+  order: 1;
+}
+
+.ceremony-speech {
+  position: relative;
+  align-self: center;
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+  border: 3px solid var(--line);
+  border-radius: 7px;
+  padding: 6px 8px;
+  background: linear-gradient(180deg, #fffef4, #e6d493);
+  box-shadow: 3px 4px 0 rgba(0, 0, 0, 0.18);
+  color: var(--ink);
+  font-weight: 900;
+}
+
+.ceremony-speech::after {
+  content: "";
+  position: absolute;
+  bottom: 10px;
+  width: 12px;
+  height: 12px;
+  border-right: 3px solid var(--line);
+  border-bottom: 3px solid var(--line);
+  background: #eadb9e;
+  transform: rotate(45deg);
+}
+
+.ceremony-trainer.hero .ceremony-speech::after {
+  left: -8px;
+}
+
+.ceremony-trainer.enemy .ceremony-speech::after {
+  right: -8px;
+}
+
+.ceremony-speech span {
+  overflow: hidden;
+  color: #6b5b43;
+  font-size: 0.5rem;
+  line-height: 1;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.ceremony-speech strong {
+  overflow: hidden;
+  font-size: 0.66rem;
+  line-height: 1.05;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ceremony-speech p {
+  display: -webkit-box;
+  overflow: hidden;
+  margin: 0;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  font-size: 0.58rem;
+  line-height: 1.16;
+}
+
+.trainer-ceremony[data-stage="intro"] .ceremony-trainer.hero,
+.trainer-ceremony[data-stage="throw"] .ceremony-trainer.hero {
+  animation: trainer-enter-hero 760ms cubic-bezier(0.14, 0.9, 0.2, 1) both;
+}
+
+.trainer-ceremony[data-stage="intro"] .ceremony-trainer.enemy,
+.trainer-ceremony[data-stage="throw"] .ceremony-trainer.enemy {
+  animation: trainer-enter-enemy 760ms cubic-bezier(0.14, 0.9, 0.2, 1) both;
+}
+
+.trainer-ceremony[data-stage="throw"] .ceremony-trainer img {
+  animation: trainer-throw-pose 820ms steps(3, end) both;
+}
+
+.trainer-ceremony[data-stage="summon"] .ceremony-trainer {
+  animation: trainer-step-back 840ms ease both;
+}
+
+.trainer-ceremony[data-stage="outro"] .ceremony-trainer.hero {
+  animation: trainer-result-hero 760ms cubic-bezier(0.14, 0.9, 0.2, 1) both;
+}
+
+.trainer-ceremony[data-stage="outro"] .ceremony-trainer.enemy {
+  animation: trainer-result-enemy 760ms cubic-bezier(0.14, 0.9, 0.2, 1) both;
+}
+
+.ceremony-ball {
+  position: absolute;
+  width: 24px;
+  aspect-ratio: 1;
+  border: 3px solid var(--line);
+  border-radius: 50%;
+  opacity: 0;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 50% 50%, #fff 0 4px, var(--line) 5px 7px, transparent 8px),
+    linear-gradient(180deg, #f14848 0 48%, var(--line) 49% 56%, #fffef4 57% 100%);
+  box-shadow:
+    0 0 0 2px rgba(255, 255, 255, 0.36),
+    0 5px 0 rgba(25, 38, 36, 0.18);
+}
+
+.trainer-ceremony[data-stage="throw"] .ceremony-ball.hero {
+  left: 25%;
+  bottom: 42%;
+  animation: ceremony-ball-hero 880ms cubic-bezier(0.22, 0.78, 0.18, 1) both;
+}
+
+.trainer-ceremony[data-stage="throw"] .ceremony-ball.enemy {
+  right: 25%;
+  top: 32%;
+  animation: ceremony-ball-enemy 880ms cubic-bezier(0.22, 0.78, 0.18, 1) both;
+}
+
+.summon-burst {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  width: 112px;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  opacity: 0;
+  color: transparent;
+  background:
+    radial-gradient(
+      circle,
+      rgba(255, 255, 255, 0.96) 0 16%,
+      rgba(255, 236, 124, 0.68) 17% 32%,
+      transparent 58%
+    ),
+    conic-gradient(
+      from 16deg,
+      transparent 0 10%,
+      rgba(255, 255, 255, 0.86) 11% 14%,
+      transparent 15% 34%,
+      rgba(255, 255, 255, 0.78) 35% 39%,
+      transparent 40% 100%
+    );
+  mix-blend-mode: screen;
+  filter: drop-shadow(0 0 16px rgba(255, 244, 168, 0.72));
+}
+
+.summon-burst.hero {
+  left: 14%;
+  bottom: 24%;
+}
+
+.summon-burst.enemy {
+  top: 13%;
+  right: 13%;
+}
+
+.trainer-ceremony[data-stage="summon"] .summon-burst {
+  animation: summon-burst-flash 900ms cubic-bezier(0.12, 0.9, 0.2, 1) both;
 }
 
 .battle-card {
@@ -1680,7 +2409,6 @@ p {
 }
 
 .starter-option h2,
-.candidate-card h2,
 .camp-lead h2,
 .result-board h2 {
   margin-bottom: 0;
@@ -1693,7 +2421,6 @@ p {
 .starter-option span,
 .camp-board,
 .camp-inventory span,
-.candidate-card p,
 .result-board p,
 .result-matchup {
   margin-bottom: 0;
@@ -1820,7 +2547,7 @@ p {
   grid-template-rows: minmax(250px, 42%) minmax(62px, auto) minmax(0, 1fr);
   gap: 5px;
   padding: 8px;
-  background: linear-gradient(180deg, #8bd8ff 0 46%, #68aa72 46% 100%);
+  background: linear-gradient(180deg, var(--field-sky-a) 0 46%, var(--field-ground-a) 46% 100%);
 }
 
 .camp-sky,
@@ -1833,14 +2560,14 @@ p {
   background:
     linear-gradient(135deg, transparent 0 28%, rgba(255, 255, 255, 0.2) 28% 32%, transparent 32%) 0
       0 / 70px 48px,
-    linear-gradient(180deg, #8bd8ff, #ffe189 62%, transparent 63%);
+    linear-gradient(180deg, var(--field-sky-a), var(--field-sky-b) 62%, transparent 63%);
 }
 
 .camp-ground {
   top: 48%;
   background:
-    repeating-linear-gradient(0deg, rgba(47, 126, 84, 0.22) 0 2px, transparent 2px 9px),
-    linear-gradient(180deg, #75bb68, #4c9a5f);
+    repeating-linear-gradient(0deg, var(--field-detail) 0 2px, transparent 2px 9px),
+    linear-gradient(180deg, var(--field-ground-a), var(--field-ground-b));
 }
 
 .camp-board,
@@ -1863,7 +2590,6 @@ p {
 .camp-board,
 .camp-inventory,
 .shop-board,
-.candidate-card,
 .reward-board,
 .result-board,
 .result-matchup > div {
@@ -1949,6 +2675,25 @@ p {
   font-weight: 900;
   line-height: 1;
   letter-spacing: -0.01em;
+}
+
+.shop-current-portrait {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  overflow: hidden;
+  border: 2px solid rgba(23, 32, 42, 0.72);
+  border-radius: 5px;
+  background: #eaf4ff;
+}
+
+.shop-current-portrait img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  image-rendering: pixelated;
 }
 
 .shop-start-row {
@@ -2124,6 +2869,16 @@ p {
 .encounter-badge[data-badge-kind="type"] {
   background: linear-gradient(180deg, #e6ffe2, #6fc680);
   color: #154a1f;
+}
+
+.encounter-badge[data-badge-kind="field"] {
+  background: linear-gradient(180deg, #fffef4, var(--field-platform));
+  color: #17202a;
+}
+
+.encounter-badge[data-badge-kind="field"][data-time-of-day="night"] {
+  background: linear-gradient(180deg, #dde4ff, #515e8c);
+  color: #101722;
 }
 
 .shop-target-cancel {
@@ -2815,6 +3570,28 @@ button.move-detail-content:hover {
   --shop-kind-deep: #244f91;
 }
 
+.shop-card[data-shop-kind="portrait"] {
+  --shop-kind-color: #9ad7ff;
+  --shop-kind-deep: #22618f;
+}
+
+.shop-card[data-portrait-card="true"] .shop-portrait-icon {
+  overflow: hidden;
+  background: #eaf4ff;
+}
+
+.shop-card[data-portrait-card="true"] .shop-portrait-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
+.shop-card[data-portrait-owned="true"] {
+  outline: 2px solid rgba(47, 126, 84, 0.58);
+  outline-offset: -3px;
+}
+
 .shop-card[data-on-sale="true"] {
   outline: 2px solid rgba(232, 73, 73, 0.6);
   outline-offset: -3px;
@@ -3044,84 +3821,404 @@ button.move-detail-content:hover {
 }
 
 .candidate-card {
+  --card-type-primary: var(--line);
+  --card-type-secondary: #f6c453;
+  --card-type-accent: #fffce4;
+  position: relative;
+  overflow: hidden;
   display: grid;
-  grid-template-columns: 64px minmax(0, 1fr);
-  align-items: center;
-  gap: 8px 10px;
+  gap: 9px;
+  border: 4px solid var(--card-type-primary);
+  border-radius: 8px;
+  padding: 10px;
+  background: linear-gradient(180deg, var(--card-type-accent) 0%, #fffef4 65%);
+  box-shadow:
+    inset 0 -3px 0 rgba(0, 0, 0, 0.08),
+    5px 6px 0 rgba(0, 0, 0, 0.22);
+  animation: candidate-card-in 0.32s ease-out both;
 }
 
-.candidate-card img {
+.candidate-card__glow {
+  position: absolute;
+  inset: -30% -10% auto -10%;
+  height: 130%;
+  pointer-events: none;
+  background: radial-gradient(ellipse at 22% 28%, var(--card-type-secondary) 0%, transparent 55%);
+  opacity: 0.38;
+  animation: candidate-glow-breath 4s ease-in-out infinite;
+}
+
+.candidate-card__head {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.candidate-card__sprite {
   width: 64px;
   height: 64px;
-  grid-row: span 2;
   object-fit: contain;
   image-rendering: pixelated;
+  filter: drop-shadow(0 2px 0 rgba(0, 0, 0, 0.18));
 }
 
-.candidate-heading {
+.candidate-card__title {
   display: grid;
-  gap: 2px;
+  gap: 4px;
+  min-width: 0;
 }
 
-.candidate-heading h2 {
+.candidate-card__title h2 {
   margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 1rem;
+  line-height: 1.05;
 }
 
-.candidate-heading p {
-  margin: 0;
-  color: #34413c;
-  font-size: 0.68rem;
+.candidate-card__types {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.type-chip {
+  border: 2px solid rgba(16, 23, 34, 0.45);
+  border-radius: 999px;
+  padding: 1px 7px;
+  background: #fff;
+  color: #17202a;
+  font-size: 0.58rem;
   font-weight: 900;
-  line-height: 1.2;
+  line-height: 1.4;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
 }
 
-.candidate-delta {
-  justify-self: start;
-  min-height: 18px;
-  border: 2px solid var(--line);
-  border-radius: 5px;
-  padding: 1px 6px;
-  background: #e9ffd8;
+.type-chip[data-type="normal"] {
+  background: #e3d9c8;
+}
+.type-chip[data-type="fire"] {
+  background: #ffba4a;
+  color: #5a2410;
+}
+.type-chip[data-type="water"] {
+  background: #6fd8ff;
+  color: #0d3c5d;
+}
+.type-chip[data-type="grass"] {
+  background: #b6e07a;
+  color: #1f4814;
+}
+.type-chip[data-type="electric"] {
+  background: #fff48a;
+  color: #4a3a00;
+}
+.type-chip[data-type="poison"] {
+  background: #c290da;
+  color: #34104a;
+}
+.type-chip[data-type="ground"] {
+  background: #e2c089;
+  color: #432a08;
+}
+.type-chip[data-type="flying"] {
+  background: #c0d6f3;
+  color: #1f3258;
+}
+.type-chip[data-type="bug"] {
+  background: #c8db70;
+  color: #2e3d0c;
+}
+.type-chip[data-type="fighting"] {
+  background: #e08080;
+  color: #3e0a0a;
+}
+.type-chip[data-type="psychic"] {
+  background: #ffa5c8;
+  color: #4a0e2c;
+}
+.type-chip[data-type="rock"] {
+  background: #cdb88e;
+  color: #3a2c0e;
+}
+.type-chip[data-type="ghost"] {
+  background: #b59cff;
+  color: #2a1466;
+}
+.type-chip[data-type="ice"] {
+  background: #a8e8ee;
+  color: #0c4046;
+}
+.type-chip[data-type="dragon"] {
+  background: #7e9bff;
+  color: #0e1c66;
+}
+.type-chip[data-type="dark"] {
+  background: #8c7a98;
+  color: #f0e8f8;
+}
+.type-chip[data-type="steel"] {
+  background: #b8c9d4;
+  color: #1e2e3a;
+}
+.type-chip[data-type="fairy"] {
+  background: #ffb8dc;
+  color: #5a1240;
+}
+
+.candidate-card__power {
+  align-self: stretch;
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: 1px;
+  min-width: 66px;
+  border: 3px solid #2c4f1d;
+  border-radius: 7px;
+  padding: 4px 8px;
+  background: #fffce4;
+  box-shadow: 2px 3px 0 rgba(0, 0, 0, 0.18);
+  text-align: center;
+}
+
+.candidate-card__power[data-delta="down"] {
+  border-color: #7f2720;
+  background: #ffe9e2;
+}
+
+.candidate-card__power[data-delta="equal"] {
+  border-color: #275768;
+  background: #eef7ff;
+}
+
+.candidate-card__power-label {
+  color: #536170;
+  font-size: 0.55rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.candidate-card__power-value {
+  color: #17202a;
+  font-size: 1.25rem;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.candidate-card__delta {
+  margin-top: 1px;
   color: #2c4f1d;
-  font-size: 0.6rem;
+  font-size: 0.58rem;
   font-weight: 900;
 }
 
-.candidate-delta[data-delta="down"] {
-  background: #ffe2de;
+.candidate-card__power[data-delta="down"] .candidate-card__delta {
   color: #7f2720;
 }
 
-.candidate-delta[data-delta="equal"] {
-  background: #eef7ff;
+.candidate-card__power[data-delta="equal"] .candidate-card__delta {
   color: #275768;
 }
 
-.candidate-card dl {
-  grid-column: 1 / -1;
+.candidate-card__stats {
+  position: relative;
+  z-index: 1;
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 4px 7px;
+  gap: 4px;
   margin: 0;
-  padding-top: 4px;
+  padding: 6px 2px 0;
   border-top: 2px solid rgba(23, 32, 42, 0.18);
+}
+
+.candidate-card__stats .stat-row {
+  display: grid;
+  grid-template-columns: 36px 32px minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
   font-size: 0.62rem;
   font-weight: 900;
 }
 
-.candidate-card dl div {
-  display: grid;
-  grid-template-columns: auto auto;
-  align-items: center;
-  gap: 3px;
-}
-
-.candidate-card dt {
+.candidate-card__stats dt {
+  margin: 0;
   color: var(--muted);
 }
 
-.candidate-card dd {
+.candidate-card__stats dd {
   margin: 0;
+  color: #17202a;
+  text-align: right;
+}
+
+.stat-row__bar {
+  position: relative;
+  display: block;
+  height: 7px;
+  border-radius: 4px;
+  background: rgba(23, 32, 42, 0.14);
+  overflow: hidden;
+}
+
+.stat-row__bar i {
+  position: absolute;
+  inset: 0;
+  width: calc(var(--stat-fill, 0) * 100%);
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--card-type-secondary) 0%, var(--card-type-primary) 100%);
+  transform-origin: left center;
+  animation: stat-bar-fill 0.42s ease-out both;
+}
+
+.candidate-card__stats .stat-row:nth-child(1) .stat-row__bar i {
+  animation-delay: 0.04s;
+}
+.candidate-card__stats .stat-row:nth-child(2) .stat-row__bar i {
+  animation-delay: 0.1s;
+}
+.candidate-card__stats .stat-row:nth-child(3) .stat-row__bar i {
+  animation-delay: 0.16s;
+}
+.candidate-card__stats .stat-row:nth-child(4) .stat-row__bar i {
+  animation-delay: 0.22s;
+}
+.candidate-card__stats .stat-row:nth-child(5) .stat-row__bar i {
+  animation-delay: 0.28s;
+}
+
+.candidate-card__skills {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0;
+  padding: 6px 0 0;
+  list-style: none;
+  border-top: 2px solid rgba(23, 32, 42, 0.18);
+}
+
+.skill-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 7px;
+  border: 2px solid rgba(16, 23, 34, 0.32);
+  border-radius: 6px;
+  background: #fffef4;
+  color: #17202a;
+  font-size: 0.6rem;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.skill-chip__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--card-type-primary);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.2);
+}
+
+.skill-chip[data-type="normal"] .skill-chip__dot {
+  background: #bfb3a4;
+}
+.skill-chip[data-type="fire"] .skill-chip__dot {
+  background: #ff7044;
+}
+.skill-chip[data-type="water"] .skill-chip__dot {
+  background: #3aa6ff;
+}
+.skill-chip[data-type="grass"] .skill-chip__dot {
+  background: #6fc24a;
+}
+.skill-chip[data-type="electric"] .skill-chip__dot {
+  background: #ffd83a;
+}
+.skill-chip[data-type="poison"] .skill-chip__dot {
+  background: #9c5cc4;
+}
+.skill-chip[data-type="ground"] .skill-chip__dot {
+  background: #c69a5b;
+}
+.skill-chip[data-type="flying"] .skill-chip__dot {
+  background: #8fb6e8;
+}
+.skill-chip[data-type="bug"] .skill-chip__dot {
+  background: #9ec23a;
+}
+.skill-chip[data-type="fighting"] .skill-chip__dot {
+  background: #c64a4a;
+}
+.skill-chip[data-type="psychic"] .skill-chip__dot {
+  background: #ff5c9a;
+}
+.skill-chip[data-type="rock"] .skill-chip__dot {
+  background: #a8946a;
+}
+.skill-chip[data-type="ghost"] .skill-chip__dot {
+  background: #7a5cff;
+}
+.skill-chip[data-type="ice"] .skill-chip__dot {
+  background: #6fd5e0;
+}
+.skill-chip[data-type="dragon"] .skill-chip__dot {
+  background: #4a6cff;
+}
+.skill-chip[data-type="dark"] .skill-chip__dot {
+  background: #5a4a66;
+}
+.skill-chip[data-type="steel"] .skill-chip__dot {
+  background: #8fa8b8;
+}
+.skill-chip[data-type="fairy"] .skill-chip__dot {
+  background: #ff8fc8;
+}
+
+.skill-chip__name {
+  white-space: nowrap;
+}
+
+.skill-chip__power {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 0.55rem;
+}
+
+@keyframes candidate-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes candidate-glow-breath {
+  0%,
+  100% {
+    opacity: 0.32;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.55;
+    transform: scale(1.04);
+  }
+}
+
+@keyframes stat-bar-fill {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
 }
 
 .team-compare-panel {
@@ -4366,12 +5463,47 @@ button.move-detail-content:hover {
   }
 
   .candidate-card {
-    grid-template-columns: 52px minmax(0, 1fr);
+    gap: 7px;
+    padding: 8px;
   }
 
-  .candidate-card dl {
+  .candidate-card__head {
+    grid-template-columns: 52px minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    row-gap: 6px;
+  }
+
+  .candidate-card__sprite {
+    width: 52px;
+    height: 52px;
+  }
+
+  .candidate-card__power {
     grid-column: 1 / -1;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-row: 2;
+    flex-direction: row;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    justify-items: stretch;
+    padding: 4px 8px;
+  }
+
+  .candidate-card__power-label {
+    justify-self: start;
+  }
+
+  .candidate-card__power-value {
+    justify-self: center;
+    font-size: 1.1rem;
+  }
+
+  .candidate-card__delta {
+    justify-self: end;
+    margin-top: 0;
+  }
+
+  .candidate-card__stats .stat-row {
+    grid-template-columns: 32px 28px minmax(0, 1fr);
   }
 
   .slot-compare-grid,
@@ -5211,5 +6343,146 @@ button.move-detail-content:hover {
     opacity: 0;
     transform: translate3d(var(--petal-drift), 118vh, 0)
       rotate(calc(220deg + var(--petal-index) * 18deg));
+  }
+}
+
+@keyframes trainer-enter-hero {
+  0% {
+    opacity: 0;
+    transform: translateX(-34px) translateY(10px);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateX(0) translateY(0);
+  }
+}
+
+@keyframes trainer-enter-enemy {
+  0% {
+    opacity: 0;
+    transform: translateX(34px) translateY(-8px);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateX(0) translateY(0);
+  }
+}
+
+@keyframes trainer-throw-pose {
+  0% {
+    transform: translateY(0) rotate(0deg);
+  }
+
+  42% {
+    transform: translateY(-5px) rotate(-4deg);
+  }
+
+  100% {
+    transform: translateY(0) rotate(3deg);
+  }
+}
+
+@keyframes trainer-step-back {
+  0% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateY(10px) scale(0.94);
+  }
+}
+
+@keyframes trainer-result-hero {
+  0% {
+    opacity: 0;
+    transform: translateX(-24px) translateY(8px);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateX(0) translateY(0);
+  }
+}
+
+@keyframes trainer-result-enemy {
+  0% {
+    opacity: 0;
+    transform: translateX(24px) translateY(-8px);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateX(0) translateY(0);
+  }
+}
+
+@keyframes ceremony-ball-hero {
+  0% {
+    opacity: 0;
+    transform: translate(-18px, 22px) rotate(-45deg) scale(0.72);
+  }
+
+  28% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate(128px, -78px) rotate(360deg) scale(0.88);
+  }
+}
+
+@keyframes ceremony-ball-enemy {
+  0% {
+    opacity: 0;
+    transform: translate(18px, -18px) rotate(42deg) scale(0.72);
+  }
+
+  28% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate(-118px, 74px) rotate(-360deg) scale(0.88);
+  }
+}
+
+@keyframes summon-burst-flash {
+  0% {
+    opacity: 0;
+    transform: scale(0.35) rotate(-20deg);
+  }
+
+  28% {
+    opacity: 1;
+    transform: scale(1.08) rotate(12deg);
+  }
+
+  100% {
+    opacity: 0;
+    transform: scale(1.42) rotate(36deg);
+  }
+}
+
+@keyframes creature-summon-pop {
+  0% {
+    opacity: 0;
+    transform: translateY(18px) scale(0.48);
+    filter: brightness(2.2) drop-shadow(0 0 18px rgba(255, 244, 168, 0.9));
+  }
+
+  46% {
+    opacity: 1;
+    transform: translateY(-4px) scale(1.08);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
   }
 }

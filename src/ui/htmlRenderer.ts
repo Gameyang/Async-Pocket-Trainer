@@ -26,6 +26,7 @@ import {
   localizeBattleStatus,
   localizeType,
 } from "../game/localization";
+import { formatBattleFieldLabel } from "../game/battleField";
 import {
   createBattleCueText,
   createBattleEventSummary,
@@ -75,16 +76,83 @@ const trainerAssetUrls = import.meta.glob<string>("../resources/trainers/*.webp"
   import: "default",
   query: "?url",
 });
-const sfxAssetUrls = import.meta.glob<string>("../resources/audio/sfx/*.m4a", {
+const showdownBgmAssetUrls = import.meta.glob<string>("../resources/audio/bgm/showdown/*.m4a", {
   eager: true,
   import: "default",
   query: "?url",
 });
-const bgmAssetUrls = import.meta.glob<string>("../resources/audio/bgm/*.m4a", {
+const showdownCryAssetUrls = import.meta.glob<string>("../resources/audio/cries/showdown/*.m4a", {
   eager: true,
   import: "default",
   query: "?url",
 });
+
+const SHOWDOWN_BGM_BY_KEY: Record<FrameBgmKey, string> = {
+  "bgm.starterReady": "xy-rival",
+  "bgm.battleCapture": "bw-trainer",
+  "bgm.teamDecision": "bw-subway-trainer",
+  "bgm.gameOver": "spl-elite4",
+};
+
+const SHOWDOWN_CRY_BY_ELEMENT: Record<ElementType, string> = {
+  normal: "snorlax",
+  fire: "charizard",
+  water: "blastoise",
+  grass: "venusaur",
+  electric: "pikachu",
+  poison: "arbok",
+  ground: "rhydon",
+  flying: "pidgeot",
+  bug: "scyther",
+  fighting: "machamp",
+  psychic: "alakazam",
+  rock: "onix",
+  ghost: "gengar",
+  ice: "lapras",
+  dragon: "dragonite",
+  dark: "umbreon",
+  steel: "steelix",
+  fairy: "clefairy",
+};
+
+const SHOWDOWN_CRY_BY_SFX_KEY: Record<string, string> = {
+  "sfx.battle.hit": "rhyhorn",
+  "sfx.battle.critical.hit": "mewtwo",
+  "sfx.battle.miss": "psyduck",
+  "sfx.creature.faint": "ditto",
+  "sfx.capture.success": "mew",
+  "sfx.capture.fail": "magikarp",
+};
+
+const SHOWDOWN_CRY_STEM_OVERRIDES: Record<string, string> = {
+  "nidoran-f": "nidoranf",
+  "nidoran-m": "nidoranm",
+  "mr-mime": "mrmime",
+};
+
+const showdownNotificationAssetUrls = import.meta.glob<string>(
+  "../resources/audio/bgm/showdown/notification.m4a",
+  {
+    eager: true,
+    import: "default",
+    query: "?url",
+  },
+);
+
+const showdownNotificationUrl =
+  showdownNotificationAssetUrls["../resources/audio/bgm/showdown/notification.m4a"];
+
+const showdownBgmUrl = (stem: string): string | undefined =>
+  showdownBgmAssetUrls[`../resources/audio/bgm/showdown/${stem}.m4a`];
+
+const showdownCryUrl = (stem: string): string | undefined =>
+  showdownCryAssetUrls[`../resources/audio/cries/showdown/${resolveShowdownCryStem(stem)}.m4a`];
+
+const resolveShowdownCryStem = (stem: string): string => SHOWDOWN_CRY_STEM_OVERRIDES[stem] ?? stem;
+
+const showdownElementSfxPattern = /^sfx\.battle\.(?:support\.)?type\.([a-z-]+)(?:\.critical)?$/;
+
+const showdownCryKeyPattern = /^sfx\.cry\.([a-z0-9-]+)$/;
 
 export interface FrameClient {
   getFrame(): GameFrame;
@@ -244,7 +312,8 @@ export function mountHtmlRenderer(
       bgmKey: frame.scene.bgmKey,
       visualCues: frame.visualCues,
       battleReplayKey: playbackView.replayKey,
-      activeReplaySequence: playbackView.activeEvent?.sequence,
+      activeReplaySequence:
+        playbackView.activeEvent?.sourceSequence ?? playbackView.activeEvent?.sequence,
       isReplayPlaying: playbackView.isPlaying,
       hasOngoingReplay: Boolean(playbackView.replayKey),
     });
@@ -656,7 +725,7 @@ function renderFrame(
   });
   const feedbackToasts = renderFeedbackToastStack(frame, playback, transientFeedback);
   return `
-    <main class="app-shell" data-frame-id="${frame.frameId}" data-protocol="${frame.protocolVersion}" data-phase="${frame.phase}" data-wave="${frame.hud.wave}" data-money="${frame.hud.money}" data-trainer-points="${frame.hud.trainerPoints}" ${renderBallDataAttributes(frame)} data-team-size="${playerEntities.length}" data-team-hp-ratio="${frame.hud.teamHpRatio}" data-timeline-count="${frame.timeline.length}" data-battle-playback="${playback.isPlaying ? "playing" : "idle"}" data-battle-sequence="${playback.activeEvent?.sequence ?? 0}" data-battle-event-type="${escapeHtml(playback.activeEvent?.type ?? "")}">
+    <main class="app-shell" data-frame-id="${frame.frameId}" data-protocol="${frame.protocolVersion}" data-phase="${frame.phase}" data-wave="${frame.hud.wave}" data-money="${frame.hud.money}" data-trainer-points="${frame.hud.trainerPoints}" data-battle-field="${escapeHtml(frame.hud.battleField.id)}" data-time-of-day="${frame.hud.battleField.timeOfDay}" ${renderBallDataAttributes(frame)} data-team-size="${playerEntities.length}" data-team-hp-ratio="${frame.hud.teamHpRatio}" data-timeline-count="${frame.timeline.length}" data-battle-playback="${playback.isPlaying ? "playing" : "idle"}" data-battle-sequence="${playback.activeEvent?.sequence ?? 0}" data-battle-event-type="${escapeHtml(playback.activeEvent?.type ?? "")}">
       ${screen}
       ${feedbackToasts}
 
@@ -1202,18 +1271,22 @@ function renderBattleScreen({
     : undefined;
   const activeCueAttribute = [
     activeCue ? ` data-active-cue="${escapeHtml(activeCue.effectKey)}"` : "",
+    playback.activeEvent?.ceremonyStage
+      ? ` data-battle-ceremony="${escapeHtml(playback.activeEvent.ceremonyStage)}"`
+      : "",
     cameraShake
       ? ` data-camera-shake="ally-damage" data-camera-shake-intensity="${cameraShake}"`
       : "",
   ].join("");
 
   return `
-    <section class="screen encounter-panel" data-screen="battle"${activeCueAttribute} aria-label="전투 화면">
+    <section class="screen encounter-panel" data-screen="battle" data-battle-field="${escapeHtml(frame.scene.battleField.id)}" data-time-of-day="${frame.scene.battleField.timeOfDay}"${activeCueAttribute} aria-label="전투 화면">
       <div class="battlefield" aria-hidden="true"></div>
       <div class="platform enemy" aria-hidden="true"></div>
       <div class="platform hero" aria-hidden="true"></div>
       <div class="fx-overlay" aria-hidden="true"></div>
       ${renderTrainerBadge(frame.scene.trainer)}
+      ${renderTrainerBattleCeremony(frame, playback.activeEvent, activePlayer, activeOpponent)}
       ${renderBattleMonster(activeOpponent, "enemy-mon", playback.activeEvent, activeCue)}
       ${renderBattleMonster(activePlayer, "hero-mon", playback.activeEvent, activeCue)}
       ${renderMoveVfx(playback.activeEvent, activeCue, battleEntities)}
@@ -1356,14 +1429,22 @@ function renderReadyScreen({
   const captureFeedback = shouldRenderReadyCaptureFeedback(frame, transientFeedback)
     ? frame.scene.capture
     : undefined;
+  const trainerPortrait = frame.hud.trainerPortrait;
 
   return `
-    <section class="screen ready-screen shop-screen" data-screen="ready" data-shop-actions="${shopActions.length}" data-shop-targeting="${shopTargetAction ? "true" : "false"}" aria-label="관리 단계">
+    <section class="screen ready-screen shop-screen" data-screen="ready" data-battle-field="${escapeHtml(frame.hud.battleField.id)}" data-time-of-day="${frame.hud.battleField.timeOfDay}" data-shop-actions="${shopActions.length}" data-shop-targeting="${shopTargetAction ? "true" : "false"}" aria-label="관리 단계">
       <div class="camp-sky" aria-hidden="true"></div>
       <div class="camp-ground" aria-hidden="true"></div>
       ${renderTeamRecordShift(frame.scene.trainer, "toast")}
       <div class="shop-top-panel">
         <div class="shop-board">
+          ${
+            trainerPortrait
+              ? `<span class="shop-current-portrait" aria-label="Trainer portrait">
+                  <img src="${resolveTrainerAssetPath(trainerPortrait.assetPath)}" alt="${escapeHtml(`${frame.hud.trainerName} trainer portrait`)}" />
+                </span>`
+              : ""
+          }
           <span class="shop-money">${formatMoney(frame.hud.money)}</span>
           <span class="shop-trainer-points" aria-label="보석">${formatTrainerPoints(frame.hud.trainerPoints)}</span>
           ${
@@ -1665,10 +1746,16 @@ function renderShopActionCard(action: FrameAction, frame: GameFrame): string {
   const soldOut = !action.enabled && action.reason === "재고가 없습니다";
   const soldOutAttribute = soldOut ? ' data-sold-out="true"' : "";
   const soldOutBadge = soldOut ? '<span class="shop-soldout-badge">SOLD OUT</span>' : "";
+  const portraitAttribute = action.portrait ? ' data-portrait-card="true"' : "";
+  const ownedAttribute = action.portrait?.owned ? ' data-portrait-owned="true"' : "";
+  const selectedAttribute = action.portrait?.selected ? ' data-portrait-selected="true"' : "";
+  const visual = action.portrait
+    ? renderShopPortraitIcon(action.portrait.assetPath, action.portrait.label)
+    : renderActionIcon(action);
 
   return `
-    <button type="button" class="shop-card" data-action-id="${escapeHtml(action.id)}" data-shop-kind="${profile.kind}" data-role="${action.role}"${gradeAttribute}${featuredAttribute}${saleAttribute}${premiumAttribute}${soldOutAttribute} aria-label="${escapeHtml(ariaLabel)}"${disabled}${reason}>
-      ${renderActionIcon(action)}
+    <button type="button" class="shop-card" data-action-id="${escapeHtml(action.id)}" data-shop-kind="${profile.kind}" data-role="${action.role}"${gradeAttribute}${featuredAttribute}${saleAttribute}${premiumAttribute}${portraitAttribute}${ownedAttribute}${selectedAttribute}${soldOutAttribute} aria-label="${escapeHtml(ariaLabel)}"${disabled}${reason}>
+      ${visual}
       <small>${escapeHtml(compactMeta)}</small>
       <p class="shop-card-body"><strong>${escapeHtml(profile.title)}</strong>${escapeHtml(detailText)}</p>
       ${saleBadge}
@@ -1680,25 +1767,33 @@ function renderShopActionCard(action: FrameAction, frame: GameFrame): string {
   `;
 }
 
+function renderShopPortraitIcon(assetPath: string, label: string): string {
+  return `<span class="button-icon shop-portrait-icon" aria-hidden="true"><img src="${resolveTrainerAssetPath(assetPath)}" alt="${escapeHtml(label)}" /></span>`;
+}
+
 function renderEncounterBoostBadges(frame: GameFrame): string {
   const boost = frame.hud.encounterBoost;
-  if (!boost) return "";
-  const badges: string[] = [];
-  if (boost.rarityBonus && boost.rarityBonus > 0) {
+  const field = frame.hud.battleField;
+  const fieldLabel = formatBattleFieldLabel(field);
+  const elementLabel = ELEMENT_KO[field.element] ?? field.element;
+  const badges: string[] = [
+    `<span class="encounter-badge" data-badge-kind="field" data-field-type="${field.element}" data-time-of-day="${field.timeOfDay}">${escapeHtml(fieldLabel)} · ${escapeHtml(elementLabel)}↑</span>`,
+  ];
+  if (boost?.rarityBonus && boost.rarityBonus > 0) {
     badges.push(
       `<span class="encounter-badge" data-badge-kind="rarity">⭐ 희귀 +${Math.round(boost.rarityBonus * 100)}%</span>`,
     );
   }
-  if (boost.levelMax && boost.levelMax > 0) {
+  if (boost?.levelMax && boost.levelMax > 0) {
     const min = boost.levelMin ?? boost.levelMax;
     const range = min === boost.levelMax ? `+${boost.levelMax}` : `+${min}~${boost.levelMax}`;
     badges.push(`<span class="encounter-badge" data-badge-kind="level">📈 LV ${range}</span>`);
   }
-  if (boost.lockedType) {
-    const elementLabel = ELEMENT_KO[boost.lockedType] ?? boost.lockedType;
+  if (boost?.lockedType) {
+    const lockedElementLabel = ELEMENT_KO[boost.lockedType] ?? boost.lockedType;
     const emoji = ELEMENT_EMOJI[boost.lockedType] ?? "🔒";
     badges.push(
-      `<span class="encounter-badge" data-badge-kind="type">${emoji} ${escapeHtml(elementLabel)} 고정</span>`,
+      `<span class="encounter-badge" data-badge-kind="type">${emoji} ${escapeHtml(lockedElementLabel)} 고정</span>`,
     );
   }
   if (badges.length === 0) return "";
@@ -1718,6 +1813,10 @@ type ShopCardGrade = "common" | "uncommon" | "rare" | "epic" | "legendary";
 function resolveShopCardGrade(action: FrameAction): ShopCardGrade | undefined {
   if (action.tpCost !== undefined) {
     return "legendary";
+  }
+
+  if (action.action.type === "BUY_TRAINER_PORTRAIT") {
+    return "epic";
   }
 
   if (action.id === "encounter:next") {
@@ -1928,31 +2027,87 @@ function renderTeamCompareSlots(
   }).join("");
 }
 
+const CANDIDATE_STAT_CAP = 180;
+
+function candidateStatFill(value: number): number {
+  if (!Number.isFinite(value) || value <= 0) return 0;
+  return Math.min(1, value / CANDIDATE_STAT_CAP);
+}
+
+function renderCandidateStatRow(label: string, value: number, statKey: string): string {
+  const fill = candidateStatFill(value).toFixed(3);
+  return `
+    <div class="stat-row" data-stat="${statKey}" style="--stat-fill: ${fill}">
+      <dt>${escapeHtml(label)}</dt>
+      <dd>${value}</dd>
+      <span class="stat-row__bar" aria-hidden="true"><i></i></span>
+    </div>
+  `;
+}
+
+function renderCandidateSkillChip(move: FrameEntity["moves"][number]): string {
+  const power = formatMovePower(move);
+  return `
+    <li class="skill-chip" data-type="${escapeHtml(move.typeKey)}">
+      <span class="skill-chip__dot" aria-hidden="true"></span>
+      <span class="skill-chip__name">${escapeHtml(move.name)}</span>
+      <span class="skill-chip__power" aria-label="위력">${escapeHtml(power)}</span>
+    </li>
+  `;
+}
+
 function renderCandidateCard(entity: FrameEntity, weakestPower: number): string {
   const delta = entity.scores.power - weakestPower;
   const deltaTone = delta > 0 ? "up" : delta < 0 ? "down" : "equal";
+  const primaryType: ElementType = entity.types[0] ?? "normal";
+  const palette = getElementPalette(primaryType);
+  const paletteVars =
+    `--card-type-primary:${palette.primary};` +
+    `--card-type-secondary:${palette.secondary};` +
+    `--card-type-accent:${palette.accent};`;
+
+  const typeChips = entity.types
+    .slice(0, 2)
+    .map(
+      (type, idx) =>
+        `<span class="type-chip" data-type="${escapeHtml(type)}">${escapeHtml(
+          entity.typeLabels[idx] ?? type,
+        )}</span>`,
+    )
+    .join("");
+
+  const skills = entity.moves.slice(0, 4).map(renderCandidateSkillChip).join("");
 
   return `
-    <article class="candidate-card">
-      <img src="${resolveAssetPath(entity.assetPath)}" alt="${escapeHtml(`${entity.name} 포켓몬`)}" />
-      <div class="candidate-heading">
-        <div class="pokemon-title-line">
-          <h2>${escapeHtml(entity.name)}</h2>
-          ${renderPokemonLevelBadge(entity.level)}
+    <article class="candidate-card" data-primary-type="${escapeHtml(primaryType)}" style="${paletteVars}">
+      <div class="candidate-card__glow" aria-hidden="true"></div>
+      <header class="candidate-card__head">
+        <img class="candidate-card__sprite" src="${resolveAssetPath(entity.assetPath)}" alt="${escapeHtml(`${entity.name} 포켓몬`)}" />
+        <div class="candidate-card__title">
+          <div class="pokemon-title-line">
+            <h2>${escapeHtml(entity.name)}</h2>
+            ${renderPokemonLevelBadge(entity.level)}
+          </div>
+          <div class="candidate-card__types">${typeChips}</div>
         </div>
-        <p>${escapeHtml(entity.typeLabels.join(" / "))}</p>
-        ${
-          weakestPower > 0
-            ? `<span class="candidate-delta" data-delta="${deltaTone}">팀 최약체 대비 ${delta > 0 ? "+" : ""}${delta}</span>`
-            : ""
-        }
-      </div>
-      <dl>
-        <div><dt>HP</dt><dd>${entity.hp.max}</dd></div>
-        <div><dt>공격</dt><dd>${entity.stats.attack}</dd></div>
-        <div><dt>방어</dt><dd>${entity.stats.defense}</dd></div>
-        <div><dt>전투력</dt><dd>${entity.scores.power}</dd></div>
+        <div class="candidate-card__power" data-delta="${deltaTone}">
+          <span class="candidate-card__power-label">전투력</span>
+          <strong class="candidate-card__power-value">${entity.scores.power}</strong>
+          ${
+            weakestPower > 0
+              ? `<span class="candidate-card__delta">팀 최약 ${delta > 0 ? "+" : ""}${delta}</span>`
+              : ""
+          }
+        </div>
+      </header>
+      <dl class="candidate-card__stats">
+        ${renderCandidateStatRow("HP", entity.stats.hp, "hp")}
+        ${renderCandidateStatRow("공격", entity.stats.attack, "attack")}
+        ${renderCandidateStatRow("방어", entity.stats.defense, "defense")}
+        ${renderCandidateStatRow("특수", entity.stats.special, "special")}
+        ${renderCandidateStatRow("스피드", entity.stats.speed, "speed")}
       </dl>
+      ${skills ? `<ul class="candidate-card__skills" aria-label="보유 스킬">${skills}</ul>` : ""}
     </article>
   `;
 }
@@ -2078,6 +2233,68 @@ function renderTrainerBadge(trainer: FrameTrainerScene | undefined): string {
       <div>
         <span>${escapeHtml(trainer.label)}</span>
         <strong>${escapeHtml(trainer.trainerName)}</strong>
+      </div>
+    </div>
+  `;
+}
+
+function renderTrainerBattleCeremony(
+  frame: GameFrame,
+  activeEvent: FrameBattleReplayEvent | undefined,
+  activePlayer: FrameEntity | undefined,
+  activeOpponent: FrameEntity | undefined,
+): string {
+  const stage = activeEvent?.ceremonyStage;
+  const playerPortrait = frame.hud.trainerPortrait;
+  const opponentTrainer = frame.scene.trainer;
+
+  if (!stage || !playerPortrait || !opponentTrainer) {
+    return "";
+  }
+
+  const winner =
+    activeEvent.winner === "player" ? "player" : activeEvent.winner === "enemy" ? "enemy" : "";
+  const playerLine = activeEvent.playerLine ?? "가자!";
+  const opponentLine = activeEvent.opponentLine ?? "승부다!";
+
+  return `
+    <div class="trainer-ceremony" data-stage="${stage}" data-winner="${winner}" aria-hidden="true">
+      ${renderCeremonyTrainer({
+        lane: "hero",
+        name: frame.hud.trainerName,
+        label: "플레이어",
+        portraitPath: playerPortrait.assetPath,
+        line: playerLine,
+      })}
+      ${renderCeremonyTrainer({
+        lane: "enemy",
+        name: opponentTrainer.trainerName,
+        label: opponentTrainer.label,
+        portraitPath: opponentTrainer.portraitPath,
+        line: opponentLine,
+      })}
+      <span class="ceremony-ball hero" data-ball-lane="hero"><span></span></span>
+      <span class="ceremony-ball enemy" data-ball-lane="enemy"><span></span></span>
+      <span class="summon-burst hero" data-summon-lane="hero">${escapeHtml(activePlayer?.name ?? "")}</span>
+      <span class="summon-burst enemy" data-summon-lane="enemy">${escapeHtml(activeOpponent?.name ?? "")}</span>
+    </div>
+  `;
+}
+
+function renderCeremonyTrainer(options: {
+  lane: "hero" | "enemy";
+  name: string;
+  label: string;
+  portraitPath: string;
+  line: string;
+}): string {
+  return `
+    <div class="ceremony-trainer ${options.lane}" data-ceremony-lane="${options.lane}">
+      <img src="${resolveTrainerAssetPath(options.portraitPath)}" alt="" />
+      <div class="ceremony-speech">
+        <span>${escapeHtml(options.label)}</span>
+        <strong>${escapeHtml(options.name)}</strong>
+        <p>${escapeHtml(options.line)}</p>
       </div>
     </div>
   `;
@@ -2320,6 +2537,8 @@ function actionEmoji(action: FrameAction): string {
       return "🎴";
     case "BUY_PREMIUM_DEX_UNLOCK":
       return "📜";
+    case "BUY_TRAINER_PORTRAIT":
+      return "P";
     case "REROLL_SHOP_INVENTORY":
       return "🔄";
     case "SET_TRAINER_NAME":
@@ -2376,10 +2595,13 @@ function renderBattleMonster(
     activeCue && visualCueReferencesEntity(activeCue, entity.id)
       ? ` data-battle-effect-key="${escapeHtml(activeCue.effectKey)}"`
       : "";
+  const ceremonyAttribute = activeEvent?.ceremonyStage
+    ? ` data-ceremony-stage="${escapeHtml(activeEvent.ceremonyStage)}"`
+    : "";
   const faintedAttribute = entity.flags.includes("fainted") ? ' data-fainted="true"' : "";
 
   return `
-    <div class="screen-monster ${className}" data-entity-id="${escapeHtml(entity.id)}"${effectAttribute}${motionAttribute}${moveTypeAttribute}${cueAttribute}${faintedAttribute}>
+    <div class="screen-monster ${className}" data-entity-id="${escapeHtml(entity.id)}"${effectAttribute}${motionAttribute}${moveTypeAttribute}${cueAttribute}${ceremonyAttribute}${faintedAttribute}>
       <img src="${resolveAssetPath(entity.assetPath)}" alt="${escapeHtml(`${entity.name} 포켓몬`)}" />
     </div>
   `;
@@ -2950,7 +3172,7 @@ function scheduleBattlePlayback(
     }
     playback.cursor = Math.min(playback.cursor + 1, frame.battleReplay.events.length - 1);
     render();
-  }, BATTLE_REPLAY_STEP_MS);
+  }, resolveBattleReplayStepMs(frame.battleReplay.events[playback.cursor]));
 }
 
 function clearBattlePlaybackTimer(playback: BattlePlaybackState): void {
@@ -2960,6 +3182,25 @@ function clearBattlePlaybackTimer(playback: BattlePlaybackState): void {
 
   window.clearTimeout(playback.timerId);
   playback.timerId = undefined;
+}
+
+function resolveBattleReplayStepMs(activeEvent: FrameBattleReplayEvent | undefined): number {
+  if (!activeEvent?.ceremonyStage) {
+    return BATTLE_REPLAY_STEP_MS;
+  }
+
+  switch (activeEvent.ceremonyStage) {
+    case "intro":
+      return 1180;
+    case "throw":
+      return 920;
+    case "summon":
+      return 1080;
+    case "outro":
+      return 1420;
+  }
+
+  return BATTLE_REPLAY_STEP_MS;
 }
 
 function createBattleReplayKey(frame: GameFrame): string {
@@ -3008,14 +3249,24 @@ function resolveTrainerAssetPath(assetPath: string): string {
 }
 
 function resolveSfxUrl(soundKey: string): string | undefined {
-  const fileName = `${soundKey.replace("sfx.", "").replaceAll(".", "-")}.m4a`;
-  return sfxAssetUrls[`../resources/audio/sfx/${fileName}`];
+  if (soundKey === "sfx.phase.change") {
+    return showdownNotificationUrl;
+  }
+
+  const cryMatch = showdownCryKeyPattern.exec(soundKey);
+  if (cryMatch) {
+    return showdownCryUrl(cryMatch[1]);
+  }
+
+  const elementMatch = showdownElementSfxPattern.exec(soundKey);
+  if (elementMatch) {
+    return showdownCryUrl(SHOWDOWN_CRY_BY_ELEMENT[elementMatch[1] as ElementType]);
+  }
+
+  const mappedCry = SHOWDOWN_CRY_BY_SFX_KEY[soundKey];
+  return mappedCry ? showdownCryUrl(mappedCry) : undefined;
 }
 
 function resolveBgmUrl(bgmKey: FrameBgmKey): string | undefined {
-  const fileName = `${bgmKey
-    .replace("bgm.", "")
-    .replaceAll(/([A-Z])/g, "-$1")
-    .toLowerCase()}.m4a`;
-  return bgmAssetUrls[`../resources/audio/bgm/${fileName}`];
+  return showdownBgmUrl(SHOWDOWN_BGM_BY_KEY[bgmKey]);
 }
