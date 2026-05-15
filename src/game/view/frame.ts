@@ -146,7 +146,7 @@ export interface FrameScene {
 }
 
 export type FrameBattleFieldMapMode = "start" | "transition" | "travel";
-export type FrameBattleFieldMapNodeStatus = "completed" | "active" | "next" | "upcoming";
+export type FrameBattleFieldMapNodeStatus = "previous" | "active" | "next";
 
 export interface FrameBattleFieldMap {
   mode: FrameBattleFieldMapMode;
@@ -565,12 +565,19 @@ function createBattleFieldWorldMap(state: GameState): FrameBattleFieldMap {
   const normalizedWave = Math.max(1, Math.floor(state.currentWave));
   const activeBlock = Math.floor((normalizedWave - 1) / BATTLE_FIELD_WAVE_SPAN);
   const cycleIndex = Math.floor(activeBlock / order.length);
-  const cycleStartBlock = cycleIndex * order.length;
   const activeIndex = activeBlock % order.length;
   const nextIndex = (activeIndex + 1) % order.length;
+  const previousIndex = (activeIndex + order.length - 1) % order.length;
   const progressInField = ((normalizedWave - 1) % BATTLE_FIELD_WAVE_SPAN) + 1;
   const mode: FrameBattleFieldMapMode =
     normalizedWave === 1 ? "start" : progressInField === 1 ? "transition" : "travel";
+  const previousBlock =
+    activeBlock === 0 ? cycleIndex * order.length + previousIndex : activeBlock - 1;
+  const nodeBlocks = [
+    { index: previousIndex, block: previousBlock, status: "previous" as const },
+    { index: activeIndex, block: activeBlock, status: "active" as const },
+    { index: nextIndex, block: activeBlock + 1, status: "next" as const },
+  ];
 
   return {
     mode,
@@ -579,11 +586,11 @@ function createBattleFieldWorldMap(state: GameState): FrameBattleFieldMap {
     cycle: cycleIndex + 1,
     progressInField,
     progressTotal: BATTLE_FIELD_WAVE_SPAN,
-    nodes: order.map((_, index) => {
-      const nodeWave = (cycleStartBlock + index) * BATTLE_FIELD_WAVE_SPAN + 1;
+    nodes: nodeBlocks.map((node) => {
+      const nodeWave = node.block * BATTLE_FIELD_WAVE_SPAN + 1;
       const field = resolveBattleFieldForWave(nodeWave, order);
       return {
-        index,
+        index: node.index,
         id: field.id,
         label: field.label,
         element: field.element,
@@ -593,14 +600,7 @@ function createBattleFieldWorldMap(state: GameState): FrameBattleFieldMap {
         waveStart: field.waveStart,
         waveEnd: field.waveEnd,
         levelLabel: `Lv. ${field.waveStart}-${field.waveEnd}`,
-        status:
-          index === activeIndex
-            ? "active"
-            : index === nextIndex
-              ? "next"
-              : index < activeIndex
-                ? "completed"
-                : "upcoming",
+        status: node.status,
       };
     }),
   };
@@ -2092,6 +2092,7 @@ function createBattleCeremonyReplay(
   }
 
   const playerLeadId = battle.playerTeam[0]?.instanceId;
+  const playerLeadName = battle.playerTeam[0]?.speciesName ?? "파트너";
   const opponentLeadId = battle.enemyTeam[0]?.instanceId;
   const opponentName =
     state.pendingEncounter?.opponentName ??
@@ -2102,6 +2103,8 @@ function createBattleCeremonyReplay(
     battle.kind,
     state.trainerName,
     opponentName,
+    playerLeadName,
+    `${state.seed}:${state.currentWave}:${battle.kind}:${playerLeadId ?? ""}`,
     playerLeadId,
     opponentLeadId,
   );
@@ -2145,10 +2148,15 @@ function createBattleIntroEvents(
   kind: "wild" | "trainer",
   playerName: string,
   opponentName: string,
+  playerLeadName: string,
+  lineSeed: string,
   playerLeadId: string | undefined,
   opponentLeadId: string | undefined,
 ): FrameBattleReplayEvent[] {
   const isTrainer = kind === "trainer";
+  const readyLine = createTrainerPokemonLine(playerLeadName, `${lineSeed}:ready`);
+  const throwLine = createTrainerPokemonLine(playerLeadName, `${lineSeed}:throw`);
+  const summonLine = createTrainerPokemonLine(playerLeadName, `${lineSeed}:summon`);
 
   return [
     {
@@ -2159,7 +2167,7 @@ function createBattleIntroEvents(
       label: isTrainer
         ? `${playerName}와 ${opponentName}이 전투 필드에 등장했습니다.`
         : `${playerName}이 야생 ${opponentName}과의 전투를 준비합니다.`,
-      playerLine: isTrainer ? "가자! 준비는 끝났어." : "가자, 앞으로!",
+      playerLine: readyLine,
       opponentLine: isTrainer ? "좋아, 승부를 시작하지." : undefined,
       activePlayerId: playerLeadId,
       activeEnemyId: opponentLeadId,
@@ -2172,7 +2180,7 @@ function createBattleIntroEvents(
       label: isTrainer
         ? "두 트레이너가 몬스터볼을 던졌습니다."
         : `${playerName}이 몬스터볼을 던졌습니다.`,
-      playerLine: "나와줘!",
+      playerLine: throwLine,
       opponentLine: isTrainer ? "앞으로!" : undefined,
       activePlayerId: playerLeadId,
       activeEnemyId: opponentLeadId,
@@ -2185,12 +2193,33 @@ function createBattleIntroEvents(
       label: isTrainer
         ? "첫 포켓몬이 전투 필드에 소환되었습니다."
         : `첫 포켓몬이 나오고 야생 ${opponentName}이 모습을 드러냅니다.`,
-      playerLine: "첫 수는 맡긴다!",
+      playerLine: summonLine,
       opponentLine: isTrainer ? "전력을 보여줘." : undefined,
       activePlayerId: playerLeadId,
       activeEnemyId: opponentLeadId,
     },
   ];
+}
+
+const trainerPokemonLineTemplates = [
+  "가라, {pokemon}~!",
+  "나와라, {pokemon}!",
+  "{pokemon}, 너로 정했다!",
+  "{pokemon}, 부탁해!",
+  "출전이다, {pokemon}!",
+  "보여줘, {pokemon}!",
+  "준비됐지, {pokemon}?",
+  "{pokemon}, 첫 수는 맡긴다!",
+] as const;
+
+function createTrainerPokemonLine(pokemonName: string, seed: string): string {
+  const name = pokemonName.trim() || "파트너";
+  const template =
+    trainerPokemonLineTemplates[
+      positiveHash(`${seed}:${name}`) % trainerPokemonLineTemplates.length
+    ];
+
+  return template.replace("{pokemon}", name);
 }
 
 function createTrainerBattleOutroEvent(options: {

@@ -46,6 +46,8 @@ describe("game frame contract", () => {
       "battle.start",
     ]);
     expect(replay[3]).toMatchObject({ sequence: 4, sourceSequence: 1, type: "battle.start" });
+    expect(replay[1].playerLine).toMatch(/이상해씨/);
+    expect(replay[2].playerLine).toMatch(/이상해씨/);
     expect(replay.at(-1)?.type).toBe("battle.end");
     expect(
       replay.some((event) => event.type === "damage.apply" || event.type === "move.miss"),
@@ -112,15 +114,23 @@ describe("game frame contract", () => {
 
     expect(frame.scene.worldMap?.mode).toBe("start");
     expect(frame.scene.worldMap?.activeIndex).toBe(0);
-    expect(frame.scene.worldMap?.nodes.map((node) => node.id)).toEqual(order);
-    expect(frame.scene.worldMap?.nodes).toHaveLength(18);
+    expect(frame.scene.worldMap?.nodes.map((node) => node.id)).toEqual([
+      order[17],
+      order[0],
+      order[1],
+    ]);
+    expect(frame.scene.worldMap?.nodes).toHaveLength(3);
     expect(frame.scene.worldMap?.nodes[0]).toMatchObject({
+      id: order[17],
+      status: "previous",
+    });
+    expect(frame.scene.worldMap?.nodes[1]).toMatchObject({
       id: order[0],
       status: "active",
       waveStart: 1,
       waveEnd: 5,
     });
-    expect(frame.scene.worldMap?.nodes[1]).toMatchObject({
+    expect(frame.scene.worldMap?.nodes[2]).toMatchObject({
       id: order[1],
       status: "next",
       waveStart: 6,

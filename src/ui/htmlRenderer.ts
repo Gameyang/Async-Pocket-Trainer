@@ -16,6 +16,7 @@ import type {
   FrameEntity,
   FrameStarterOption,
   FrameTimelineEntry,
+  FrameTrainerPortrait,
   FrameTrainerScene,
   FrameVisualCue,
   GameFrame,
@@ -49,6 +50,7 @@ import { effectEngine } from "./effects/engine";
 import { resolveEffectDescriptor, resolveEffectShape } from "./effects/mapping";
 import { getElementPalette } from "./effects/palette";
 import { AudioMixer } from "./audio/audioMixer";
+import { ScreenWakeLock } from "./screenWakeLock";
 
 const BATTLE_REPLAY_STEP_MS = 540;
 const FEEDBACK_TOAST_DURATION_MS = 3600;
@@ -292,6 +294,11 @@ export function mountHtmlRenderer(
       console.warn(`[audio] ${message}`, error ?? "");
     },
   });
+  const screenWakeLock = new ScreenWakeLock({
+    warn: (message, error) => {
+      console.warn(`[wake-lock] ${message}`, error ?? "");
+    },
+  });
   const lifecycle: AppLifecycleState = {
     suspended: isPageSuspended(),
   };
@@ -305,6 +312,7 @@ export function mountHtmlRenderer(
 
   const render = () => {
     const frame = client.getFrame();
+    screenWakeLock.setEnabled(shouldKeepScreenAwake(frame));
     if (frame.phase !== "ready") {
       shopTarget.action = undefined;
       shopTarget.currencyBurstOrigin = undefined;
@@ -325,7 +333,7 @@ export function mountHtmlRenderer(
       playbackView.activeEvent,
       findActiveVisualCue(frame, playbackView.activeEvent),
     );
-    bindActions(root, client, frame, playbackView, audioMixer, shopTarget, render);
+    bindActions(root, client, frame, playbackView, audioMixer, screenWakeLock, shopTarget, render);
     bindShopTargetSelection(root, client, shopTarget, render);
     bindTeamDetailPopup(root);
     bindTeamRecord(root, options, render);
@@ -388,12 +396,29 @@ function isPageSuspended(): boolean {
   return document.hidden || document.visibilityState === "hidden";
 }
 
+function shouldKeepScreenAwake(frame: GameFrame): boolean {
+  return frame.phase !== "starterChoice" && frame.phase !== "gameOver";
+}
+
+function shouldKeepScreenAwakeAfterAction(frame: GameFrame, action: GameAction): boolean {
+  if (action.type === "START_RUN") {
+    return true;
+  }
+
+  if (action.type === "RETURN_TO_STARTER_CHOICE") {
+    return false;
+  }
+
+  return shouldKeepScreenAwake(frame);
+}
+
 function bindActions(
   root: HTMLElement,
   client: FrameClient,
   frame: GameFrame,
   playback: BattlePlaybackView,
   audioMixer: AudioMixer,
+  screenWakeLock: ScreenWakeLock,
   shopTarget: ShopTargetState,
   render: () => void,
 ): void {
@@ -416,6 +441,9 @@ function bindActions(
         }
 
         const currencyBurstOrigin = captureCurrencyBurstOrigin(action, button);
+        screenWakeLock.requestFromUserGesture(
+          shouldKeepScreenAwakeAfterAction(frame, action.action),
+        );
         audioMixer.unlock();
         busy = true;
         root.dataset.busy = "true";
@@ -1292,6 +1320,7 @@ function renderBattleScreen({
   activeCue,
 }: ScreenRenderContext): string {
   const battleEntities = playerEntities.concat(opponentEntities);
+  const showWorldMapIntro = shouldShowBattleWorldMapIntro(frame, playback);
   const cameraShake = shouldShakeBattleCamera(playback.activeEvent, playerEntities)
     ? resolveBattleCameraShake(playback.activeEvent, playerEntities)
     : undefined;
@@ -1303,11 +1332,13 @@ function renderBattleScreen({
     cameraShake
       ? ` data-camera-shake="ally-damage" data-camera-shake-intensity="${cameraShake}"`
       : "",
+    showWorldMapIntro ? ' data-map-intro="true"' : "",
   ].join("");
 
   return `
     <section class="screen encounter-panel" data-screen="battle" data-battle-field="${escapeHtml(frame.scene.battleField.id)}" data-time-of-day="${frame.scene.battleField.timeOfDay}"${activeCueAttribute} aria-label="전투 화면">
       <div class="battlefield" aria-hidden="true"></div>
+      ${showWorldMapIntro && frame.scene.worldMap ? renderWorldMap(frame.scene.worldMap, frame.hud.trainerPortrait) : ""}
       <div class="platform enemy" aria-hidden="true"></div>
       <div class="platform hero" aria-hidden="true"></div>
       <div class="fx-overlay" aria-hidden="true"></div>
@@ -1330,6 +1361,14 @@ function renderBattleScreen({
       </div>
     </section>
   `;
+}
+
+function shouldShowBattleWorldMapIntro(frame: GameFrame, playback: BattlePlaybackView): boolean {
+  return (
+    playback.isPlaying &&
+    playback.activeEvent?.type === "battle.start" &&
+    Boolean(frame.scene.worldMap)
+  );
 }
 
 function shouldShakeBattleCamera(
@@ -1481,7 +1520,6 @@ function renderReadyScreen({
         </div>
         ${renderShopTeamGrid(playerEntities, shopTargetAction, frame.scene.teamEffect)}
       </div>
-      ${frame.scene.worldMap ? renderWorldMap(frame.scene.worldMap) : ""}
       ${nextAction ? `<div class="shop-start-row">${renderShopStartAction(nextAction, frame)}</div>` : ""}
       <div class="shop-card-grid" data-shop-card-count="${shopActions.length}">
         ${shopActions.map((action) => renderShopActionCard(action, frame)).join("")}
@@ -1492,20 +1530,28 @@ function renderReadyScreen({
   `;
 }
 
-function renderWorldMap(map: FrameBattleFieldMap): string {
+function renderWorldMap(
+  map: FrameBattleFieldMap,
+  trainerPortrait: FrameTrainerPortrait | undefined,
+): string {
   const positions = map.nodes.map((_, index) => createWorldMapNodePosition(index));
   const linePoints = positions.map((position) => `${position.x},${position.y}`).join(" ");
+  const activeNodeIndex = Math.max(
+    0,
+    map.nodes.findIndex((node) => node.status === "active"),
+  );
   const progressPoints = positions
-    .slice(0, Math.max(1, map.activeIndex + 1))
+    .slice(0, activeNodeIndex + 1)
     .map((position) => `${position.x},${position.y}`)
     .join(" ");
-  const activeNode = map.nodes[map.activeIndex];
-  const nextNode = map.nodes[map.nextIndex];
+  const activeNode = map.nodes[activeNodeIndex];
+  const nextNode = map.nodes.find((node) => node.status === "next");
   const modeLabel =
     map.mode === "start" ? "모험 시작" : map.mode === "transition" ? "새 필드 이동" : "진행 중";
   const statusLabel = activeNode
     ? `${activeNode.label} ${activeNode.timeLabel} · ${activeNode.elementLabel} · ${activeNode.levelLabel}`
     : modeLabel;
+  const activePosition = positions.find((_, index) => map.nodes[index]?.status === "active");
 
   return `
     <section class="journey-map" data-map-mode="${map.mode}" data-active-index="${map.activeIndex}" aria-label="모험 월드맵">
@@ -1515,11 +1561,18 @@ function renderWorldMap(map: FrameBattleFieldMap): string {
         <em>${escapeHtml(modeLabel)} ${map.progressInField}/${map.progressTotal}${nextNode ? ` · 다음 ${escapeHtml(nextNode.label)}` : ""}</em>
       </div>
       <div class="journey-map-graph">
-        <svg class="journey-map-lines" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-          <polyline class="journey-map-line" points="${linePoints}" />
-          ${progressPoints.includes(" ") ? `<polyline class="journey-map-line journey-map-line-progress" points="${progressPoints}" />` : ""}
-        </svg>
-        ${map.nodes.map((node, index) => renderWorldMapNode(node, positions[index])).join("")}
+        <div class="journey-map-track">
+          <svg class="journey-map-lines" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+            <polyline class="journey-map-line" points="${linePoints}" />
+            ${progressPoints.includes(" ") ? `<polyline class="journey-map-line journey-map-line-progress" points="${progressPoints}" />` : ""}
+          </svg>
+          ${map.nodes.map((node, index) => renderWorldMapNode(node, positions[index])).join("")}
+        </div>
+        ${
+          trainerPortrait && activePosition
+            ? `<span class="journey-trainer" style="left: ${activePosition.x}%; top: ${activePosition.y}%;" aria-hidden="true"><img src="${resolveTrainerAssetPath(trainerPortrait.assetPath)}" alt="" /></span>`
+            : ""
+        }
       </div>
     </section>
   `;
@@ -1533,6 +1586,7 @@ function renderWorldMapNode(
     <article class="journey-node" data-node-status="${node.status}" data-node-type="${node.element}" data-battle-field="${escapeHtml(node.id)}" data-time-of-day="${node.timeOfDay}" style="left: ${position.x}%; top: ${position.y}%;">
       <span class="journey-node-index">${node.index + 1}</span>
       <strong>${escapeHtml(node.label)}</strong>
+      <span class="journey-node-role">${escapeHtml(worldMapNodeRoleLabel(node.status))}</span>
       <span class="journey-node-meta">
         <em>${escapeHtml(node.elementLabel)}</em>
         <small>${escapeHtml(node.levelLabel)}</small>
@@ -1541,15 +1595,21 @@ function renderWorldMapNode(
   `;
 }
 
-function createWorldMapNodePosition(index: number): { x: number; y: number } {
-  const columns = 6;
-  const row = Math.floor(index / columns);
-  const colInRow = index % columns;
-  const col = row % 2 === 0 ? colInRow : columns - 1 - colInRow;
+function worldMapNodeRoleLabel(status: FrameBattleFieldMapNode["status"]): string {
+  switch (status) {
+    case "previous":
+      return "이전";
+    case "active":
+      return "현재";
+    case "next":
+      return "다음";
+  }
+}
 
+function createWorldMapNodePosition(index: number): { x: number; y: number } {
   return {
-    x: 8 + col * 16.8,
-    y: 18 + row * 32,
+    x: [18, 50, 82][index] ?? 50,
+    y: 60,
   };
 }
 
@@ -3282,6 +3342,10 @@ function clearBattlePlaybackTimer(playback: BattlePlaybackState): void {
 }
 
 function resolveBattleReplayStepMs(activeEvent: FrameBattleReplayEvent | undefined): number {
+  if (activeEvent?.type === "battle.start") {
+    return 1480;
+  }
+
   if (!activeEvent?.ceremonyStage) {
     return BATTLE_REPLAY_STEP_MS;
   }
