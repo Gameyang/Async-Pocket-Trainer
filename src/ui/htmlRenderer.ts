@@ -4372,11 +4372,24 @@ function createBattlePlaybackView(
 ): BattlePlaybackView {
   const events = frame.battleReplay.events;
   const activeEvent = events[playback.cursor];
+  const isPlaying = events.length > 1 && playback.cursor < events.length - 1;
+
+  audioDebugRendererLog("playback.view", {
+    cursor: playback.cursor,
+    eventCount: events.length,
+    isPlaying,
+    replayKeyLength: playback.replayKey.length,
+    activeSequence: activeEvent?.sequence,
+    activeSourceSequence: activeEvent?.sourceSequence,
+    activeType: activeEvent?.type,
+    activeMove: activeEvent?.move,
+    activeCeremonyStage: activeEvent?.ceremonyStage,
+  });
 
   return {
     activeEvent,
     visibleEvents: events.slice(0, playback.cursor + 1),
-    isPlaying: events.length > 1 && playback.cursor < events.length - 1,
+    isPlaying,
     replayKey: playback.replayKey,
   };
 }
@@ -4399,6 +4412,16 @@ function scheduleBattlePlayback(
     return;
   }
 
+  const activeEvent = frame.battleReplay.events[playback.cursor];
+  const delayMs = resolveBattleReplayStepMs(frame, activeEvent);
+  audioDebugRendererLog("playback.schedule", {
+    cursor: playback.cursor,
+    delayMs,
+    activeSequence: activeEvent?.sequence,
+    activeSourceSequence: activeEvent?.sourceSequence,
+    activeType: activeEvent?.type,
+    activeCeremonyStage: activeEvent?.ceremonyStage,
+  });
   playback.timerId = window.setTimeout(
     () => {
       playback.timerId = undefined;
@@ -4406,9 +4429,17 @@ function scheduleBattlePlayback(
         return;
       }
       playback.cursor = Math.min(playback.cursor + 1, frame.battleReplay.events.length - 1);
+      const nextEvent = frame.battleReplay.events[playback.cursor];
+      audioDebugRendererLog("playback.advance", {
+        cursor: playback.cursor,
+        activeSequence: nextEvent?.sequence,
+        activeSourceSequence: nextEvent?.sourceSequence,
+        activeType: nextEvent?.type,
+        activeCeremonyStage: nextEvent?.ceremonyStage,
+      });
       render();
     },
-    resolveBattleReplayStepMs(frame, frame.battleReplay.events[playback.cursor]),
+    delayMs,
   );
 }
 
@@ -4568,4 +4599,28 @@ function positiveHash(value: string): number {
     hash = (hash * 31 + value.charCodeAt(index)) | 0;
   }
   return Math.abs(hash);
+}
+
+function audioDebugRendererEnabled(): boolean {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  try {
+    const params = new URLSearchParams(window.location.search);
+    return params.has("audioDebug") || window.localStorage.getItem("apt.audioDebug") === "1";
+  } catch {
+    return false;
+  }
+}
+
+function audioDebugRendererLog(event: string, data: Record<string, unknown> = {}): void {
+  if (!audioDebugRendererEnabled()) {
+    return;
+  }
+
+  console.info("[audio-debug]", `renderer.${event}`, {
+    timeMs: Math.round(globalThis.performance?.now?.() ?? Date.now()),
+    ...data,
+  });
 }

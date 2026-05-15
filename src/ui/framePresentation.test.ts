@@ -71,13 +71,13 @@ describe("frame presentation command selection", () => {
     const profile = createShopActionProfile(
       {
         id: "shop:portrait:hf-trainer-05-dragon-queen",
-        label: "드래곤 퀸 로브 12TP",
+        label: "용왕복 12TP",
         role: "secondary",
         enabled: true,
         tpCost: 12,
         portrait: {
           id: "hf-trainer-05-dragon-queen",
-          label: "드래곤 퀸 로브",
+          label: "용왕복",
           assetPath: "resources/trainers/hf-trainer-05-dragon-queen.webp",
           owned: false,
           selected: false,
@@ -87,7 +87,7 @@ describe("frame presentation command selection", () => {
       {} as GameFrame,
     );
 
-    expect(profile.title).toBe("드래곤 퀸 로브");
+    expect(profile.title).toBe("용왕복");
     expect(profile.detail).toContain("체육관 음악");
     expect(profile.detail).toContain("구매 즉시 착용");
   });

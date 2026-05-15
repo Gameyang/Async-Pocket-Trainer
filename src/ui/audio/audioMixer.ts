@@ -17,6 +17,7 @@ const BGM_DUCK_ATTACK_SEC = 0.04;
 const BGM_DUCK_RELEASE_SEC = 0.25;
 const SFX_BACKGROUND_PRELOAD_DELAY_MS = 250;
 const SFX_MAX_START_DELAY_SEC = 0.75;
+const AUDIO_DEBUG_PREFIX = "[audio-debug]";
 
 export type SfxLayer = "impact" | "cry" | "ui";
 
@@ -91,10 +92,13 @@ export class AudioMixer {
 
   unlock(): void {
     this.unlocked = true;
+    audioDebugLog("mixer.unlock.request", { hadContext: Boolean(this.ctx) });
     if (!this.ensureGraph()) {
+      audioDebugLog("mixer.unlock.no-graph");
       return;
     }
     this.preloadSfx();
+    audioDebugLog("mixer.unlock.ready", { state: this.ctx?.state });
     void this.ctx?.resume().catch(() => undefined);
   }
 
@@ -120,15 +124,33 @@ export class AudioMixer {
     if (frame.battleReplayKey !== this.lastReplayKey) {
       this.playedCueIds.clear();
       this.lastReplayKey = frame.battleReplayKey;
+      audioDebugLog("mixer.replay.changed", {
+        replayKeyLength: frame.battleReplayKey.length,
+        activeReplaySequence: frame.activeReplaySequence,
+      });
     }
 
     this.setBgm(frame.bgmKey);
     this.preloadFrameSfx(frame);
 
     const cues = frame.visualCues.filter((cue) => this.shouldPlayCue(cue, frame));
+    audioDebugLog("mixer.apply", {
+      bgmKey: frame.bgmKey,
+      activeReplaySequence: frame.activeReplaySequence,
+      isReplayPlaying: frame.isReplayPlaying,
+      hasOngoingReplay: frame.hasOngoingReplay,
+      cueCount: frame.visualCues.length,
+      playableCues: cues.map((cue) => ({
+        id: cue.id,
+        type: cue.type,
+        sequence: cue.sequence,
+        soundKeys: resolveCueSoundKeys(cue),
+      })),
+    });
     for (const cue of cues) {
       const soundKeys = resolveCueSoundKeys(cue);
       if (this.playedCueIds.has(cue.id)) {
+        audioDebugLog("mixer.cue.skip-played", { id: cue.id, type: cue.type });
         continue;
       }
       if (soundKeys.length === 0) {
@@ -136,6 +158,13 @@ export class AudioMixer {
       }
       this.playedCueIds.add(cue.id);
       const cueStartTime = ctx.currentTime;
+      audioDebugLog("mixer.cue.play", {
+        id: cue.id,
+        type: cue.type,
+        sequence: cue.sequence,
+        cueStartTime,
+        soundKeys,
+      });
       for (const soundKey of soundKeys) {
         this.playSfx(soundKey, cueStartTime);
       }
@@ -269,12 +298,23 @@ export class AudioMixer {
   }
 
   private preloadFrameSfx(frame: AudioMixerFrame): void {
-    const urls = frame.visualCues.flatMap((cue) =>
-      resolveCueSoundKeys(cue)
+    const cueSoundKeys = frame.visualCues.map((cue) => ({
+      id: cue.id,
+      type: cue.type,
+      sequence: cue.sequence,
+      soundKeys: resolveCueSoundKeys(cue),
+    }));
+    const urls = cueSoundKeys.flatMap((cue) =>
+      cue.soundKeys
         .map((soundKey) => this.options.resolveSfxUrl(soundKey))
         .filter((url): url is string => Boolean(url)),
     );
 
+    audioDebugLog("mixer.preload-frame", {
+      activeReplaySequence: frame.activeReplaySequence,
+      cues: cueSoundKeys,
+      urls: urls.map(toAudioDebugUrl),
+    });
     this.enqueueSfxPreloadUrls(urls, true);
   }
 
@@ -284,6 +324,11 @@ export class AudioMixer {
       return;
     }
 
+    audioDebugLog("mixer.preload-queue.enqueue", {
+      prioritize,
+      pending: pendingUrls.map(toAudioDebugUrl),
+      queueLengthBefore: this.sfxPreloadQueue.length,
+    });
     if (prioritize) {
       for (const url of pendingUrls) {
         const existingIndex = this.sfxPreloadQueue.indexOf(url);
@@ -316,6 +361,11 @@ export class AudioMixer {
       return;
     }
 
+    audioDebugLog("mixer.preload-queue.schedule", {
+      delayMs,
+      queueLength: this.sfxPreloadQueue.length,
+      next: toAudioDebugUrl(this.sfxPreloadQueue[0]),
+    });
     this.sfxPreloadTimer = window.setTimeout(() => {
       this.sfxPreloadTimer = undefined;
 
@@ -328,9 +378,17 @@ export class AudioMixer {
         return;
       }
 
+      audioDebugLog("mixer.preload-queue.start", {
+        url: toAudioDebugUrl(url),
+        remaining: this.sfxPreloadQueue.length,
+      });
       this.sfxPreloadInFlight = true;
       void this.loadBuffer(url).finally(() => {
         this.sfxPreloadInFlight = false;
+        audioDebugLog("mixer.preload-queue.done", {
+          url: toAudioDebugUrl(url),
+          remaining: this.sfxPreloadQueue.length,
+        });
         this.scheduleNextSfxPreload();
       });
     }, delayMs);
@@ -452,6 +510,7 @@ export class AudioMixer {
     const url = this.options.resolveSfxUrl(soundKey);
     if (!url) {
       this.options.warn?.(`missing sfx asset for ${soundKey}`);
+      audioDebugLog("sfx.missing-url", { soundKey });
       return;
     }
 
@@ -459,15 +518,34 @@ export class AudioMixer {
     const layer = resolveSfxLayer(soundKey);
     const shouldDuck = soundKey !== "sfx.phase.change";
     this.removeQueuedSfxPreload(url);
+    audioDebugLog("sfx.request", {
+      soundKey,
+      layer,
+      requestedAt,
+      url: toAudioDebugUrl(url),
+      cacheState: this.bufferCache.has(url) ? "hit" : "miss",
+    });
 
     void this.loadBuffer(url).then((buffer) => {
       if (!buffer || !this.ctx || !this.sfxLayerGains) {
+        audioDebugLog("sfx.skip.no-buffer", { soundKey, url: toAudioDebugUrl(url) });
         return;
       }
       if (this.lifecycleHidden || !this.unlocked) {
+        audioDebugLog("sfx.skip.lifecycle", {
+          soundKey,
+          lifecycleHidden: this.lifecycleHidden,
+          unlocked: this.unlocked,
+        });
         return;
       }
       if (this.ctx.currentTime - requestedAt > SFX_MAX_START_DELAY_SEC) {
+        audioDebugLog("sfx.skip.late", {
+          soundKey,
+          requestedAt,
+          currentTime: this.ctx.currentTime,
+          maxDelay: SFX_MAX_START_DELAY_SEC,
+        });
         return;
       }
 
@@ -482,6 +560,14 @@ export class AudioMixer {
         this.ctx.currentTime,
         requestedAt + resolveSfxStartOffset(soundKey),
       );
+      audioDebugLog("sfx.start", {
+        soundKey,
+        layer,
+        requestedAt,
+        currentTime: this.ctx.currentTime,
+        startedAt,
+        duration: buffer.duration,
+      });
       const voice: SfxVoice = {
         source,
         layer,
@@ -573,6 +659,7 @@ export class AudioMixer {
   private loadBuffer(url: string): Promise<AudioBuffer | undefined> {
     const cached = this.bufferCache.get(url);
     if (cached) {
+      audioDebugLog("buffer.cache-hit", { url: toAudioDebugUrl(url) });
       return cached;
     }
 
@@ -581,6 +668,8 @@ export class AudioMixer {
       return Promise.resolve(undefined);
     }
 
+    const startedAtMs = audioDebugNowMs();
+    audioDebugLog("buffer.fetch-start", { url: toAudioDebugUrl(url) });
     const promise = fetch(url)
       .then((response) => {
         if (!response.ok) {
@@ -589,8 +678,21 @@ export class AudioMixer {
         return response.arrayBuffer();
       })
       .then((arrayBuffer) => ctx.decodeAudioData(arrayBuffer))
+      .then((buffer) => {
+        audioDebugLog("buffer.decode-done", {
+          url: toAudioDebugUrl(url),
+          elapsedMs: audioDebugNowMs() - startedAtMs,
+          duration: buffer.duration,
+        });
+        return buffer;
+      })
       .catch((error) => {
         this.options.warn?.(`buffer load failed for ${url}`, error);
+        audioDebugLog("buffer.load-failed", {
+          url: toAudioDebugUrl(url),
+          elapsedMs: audioDebugNowMs() - startedAtMs,
+          error: error instanceof Error ? error.message : String(error),
+        });
         // Drop the cached rejection so a later play can retry the fetch.
         this.bufferCache.delete(url);
         return undefined;
@@ -680,4 +782,40 @@ export function resolveSfxVolume(soundKey: string): number {
     return 0.75;
   }
   return 1.0;
+}
+
+function audioDebugEnabled(): boolean {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  try {
+    const params = new URLSearchParams(window.location.search);
+    return params.has("audioDebug") || window.localStorage.getItem("apt.audioDebug") === "1";
+  } catch {
+    return false;
+  }
+}
+
+function audioDebugLog(event: string, data: Record<string, unknown> = {}): void {
+  if (!audioDebugEnabled()) {
+    return;
+  }
+
+  console.info(AUDIO_DEBUG_PREFIX, event, {
+    timeMs: audioDebugNowMs(),
+    ...data,
+  });
+}
+
+function audioDebugNowMs(): number {
+  return Math.round(globalThis.performance?.now?.() ?? Date.now());
+}
+
+function toAudioDebugUrl(url: string | undefined): string | undefined {
+  if (!url) {
+    return undefined;
+  }
+
+  return url.split("/").at(-1)?.split("?")[0] ?? url;
 }

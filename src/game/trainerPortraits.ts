@@ -16,25 +16,25 @@ export interface TrainerPortraitCatalogItem {
 }
 
 const trainerPortraitLabelOverrides: Record<string, string> = {
-  "field-scout": "필드 스카우트 기본복",
-  "checkpoint-captain": "체크포인트 캡틴 코트",
-  "sheet-rival": "시트 라이벌 유니폼",
-  "hf-trainer-01-harley-quinn": "하트 조커 스트리트",
-  "hf-trainer-02-summer-dress": "한여름 피크닉 원피스",
-  "hf-trainer-03-evil-fairy": "장난 요정 드레스",
-  "hf-trainer-04-turtle-step": "터틀 스텝 점퍼",
-  "hf-trainer-05-dragon-queen": "드래곤 퀸 로브",
-  "hf-trainer-06-long-coat": "롱코트 에이스",
-  "hf-trainer-07-red-suit": "레드 카리스마 슈트",
-  "hf-trainer-08-silent-comic": "무언극 코미디 세트",
-  "hf-trainer-09-card-trickster": "카드 샤플러 코트",
-  "hf-trainer-10-forest-sword": "숲검 순찰복",
-  "hf-trainer-11-armored-hero": "아이언 히어로 아머",
-  "hf-trainer-12-kimono-sakura": "벚꽃 기모노 축제복",
-  "hf-trainer-13-blue-flame-witch": "블루 플레임 위치",
-  "hf-trainer-14-hooded-solo": "후드 방랑자 망토",
-  "hf-trainer-15-pirate-captain": "블랙 세일 캡틴",
-  "hf-trainer-16-winged-angel": "화이트 윙 세라프",
+  "field-scout": "필드복",
+  "checkpoint-captain": "캡틴복",
+  "sheet-rival": "라이벌복",
+  "hf-trainer-01-harley-quinn": "조커룩",
+  "hf-trainer-02-summer-dress": "피크닉",
+  "hf-trainer-03-evil-fairy": "요정복",
+  "hf-trainer-04-turtle-step": "터틀복",
+  "hf-trainer-05-dragon-queen": "용왕복",
+  "hf-trainer-06-long-coat": "롱코트",
+  "hf-trainer-07-red-suit": "레드슈트",
+  "hf-trainer-08-silent-comic": "코믹무언",
+  "hf-trainer-09-card-trickster": "카드코트",
+  "hf-trainer-10-forest-sword": "숲검복",
+  "hf-trainer-11-armored-hero": "영웅갑옷",
+  "hf-trainer-12-kimono-sakura": "벚기모노",
+  "hf-trainer-13-blue-flame-witch": "청염마녀",
+  "hf-trainer-14-hooded-solo": "후드망토",
+  "hf-trainer-15-pirate-captain": "해적선장",
+  "hf-trainer-16-winged-angel": "날개천사",
 };
 
 const trainerBaseLabels: Record<string, string> = {
@@ -472,14 +472,14 @@ function createTrainerPortraitLabel(id: string, source: TrainerPortraitSource): 
     return createPokemonShowdownPortraitLabel(id);
   }
 
-  return `프리미엄 트레이너 ${formatPortraitNumber(id)}`;
+  return `스킨${formatPortraitNumber(id).slice(0, 2)}`;
 }
 
 function createPokemonShowdownPortraitLabel(id: string): string {
   const rawId = id.replace(/^ps-trainer-/, "");
   const exactBase = trainerBaseLabels[rawId] ?? trainerProperNameLabels[rawId];
   if (exactBase) {
-    return `${exactBase} 클래식`;
+    return formatTrainerSkinName(exactBase, [], id);
   }
 
   const baseParts: string[] = [];
@@ -524,54 +524,81 @@ function formatTrainerSkinName(
   variants: readonly string[],
   id: string,
 ): string {
-  const suffix = resolveTrainerSkinSuffix(baseLabel, variants);
+  const variantMark = resolveCompactVariantMark(variants);
+  const base = compactTrainerSkinBase(baseLabel, id);
 
-  if (variants.length === 0) {
-    return `${baseLabel} ${suffix}`;
+  if (!variantMark) {
+    return appendSkinSuffix(base);
   }
 
-  if (variants.includes("챔피언")) {
-    return `${baseLabel} 챔피언 ${suffix}`;
-  }
-
-  if (variants.includes("리그")) {
-    return `${baseLabel} 리그 ${suffix}`;
-  }
-
-  if (variants.includes("마스터즈")) {
-    return `${baseLabel} 마스터즈 ${suffix}`;
-  }
-
-  const variantText = variants.slice(0, 2).join(" ");
-  return `${baseLabel} ${variantText} ${suffix}`.trim() || `픽셀 트레이너 ${formatPortraitNumber(id)}`;
+  const baseLimit = Math.max(1, 4 - variantMark.length);
+  return `${base.slice(0, baseLimit)}${variantMark}`;
 }
 
-function resolveTrainerSkinSuffix(baseLabel: string, variants: readonly string[]): string {
-  const joined = `${baseLabel} ${variants.join(" ")}`;
+function compactTrainerSkinBase(baseLabel: string, id: string): string {
+  const compacted = baseLabel
+    .replace(/\s+/g, "")
+    .replace(/트레이너|포켓몬|조무래기|조련사|마니아/g, "")
+    .replace(/여성|남성|여자|어린/g, "")
+    .replace(/아가씨/g, "아씨")
+    .replace(/짧은치마/g, "치마")
+    .replace(/정체불명/g, "미스터")
+    .replace(/엘리트/g, "엘리")
+    .replace(/브리더/g, "사육")
+    .replace(/사이클리스트/g, "자전거")
+    .replace(/배낭여행객/g, "배낭")
+    .replace(/불놀이꾼/g, "불놀이")
+    .replace(/유치원생/g, "유치")
+    .replace(/초능력자/g, "초능")
+    .replace(/웨이트리스/g, "웨이트")
+    .replace(/카메라맨/g, "카메라");
 
-  if (/슈트|정장|신사|마담|모델|카리스마/.test(joined)) {
-    return "슈트";
+  return (compacted || `픽셀${formatPortraitNumber(id)}`).slice(0, 4);
+}
+
+function appendSkinSuffix(base: string): string {
+  if (base.length >= 4 || /복|룩|옷|코트|슈트|갑옷|망토|기모노$/.test(base)) {
+    return base.slice(0, 4);
   }
 
-  if (/코트|롱코트|후드|방랑|스키|겨울|설원|툰드라/.test(joined)) {
-    return "코트";
+  return `${base.slice(0, 3)}복`;
+}
+
+function resolveCompactVariantMark(variants: readonly string[]): string {
+  const joined = variants.join(" ");
+
+  if (/챔피언/.test(joined)) {
+    return "챔";
   }
 
-  if (/기모노|드레스|원피스|요정|아가씨|짧은치마|아이돌|숙녀|미녀|메이드/.test(joined)) {
-    return "드레스";
+  if (/리그/.test(joined)) {
+    return "리그";
   }
 
-  if (/캡틴|해적|선장|세일|선원|파일럿|경찰|대장/.test(joined)) {
-    return "유니폼";
+  if (/마스터즈/.test(joined)) {
+    return "마스";
   }
 
-  if (/갑옷|아머|영웅|검사|격투|태권|블랙벨트|드래곤|챔피언|리그/.test(joined)) {
-    return "배틀복";
+  const generation = joined.match(/([1-9])세대/);
+  if (generation) {
+    return `${generation[1]}세`;
   }
 
-  if (/조무래기|단|라이벌|트레이너|학생|점원|직원|일꾼|레인저/.test(joined)) {
-    return "유니폼";
+  if (/알로라/.test(joined)) {
+    return "알로";
   }
 
-  return "룩";
+  if (/관동|성도|호연|신오|하나|칼로스/.test(joined)) {
+    return joined.match(/관동|성도|호연|신오|하나|칼로스/)?.[0].slice(0, 2) ?? "";
+  }
+
+  if (/블랙|블루|핑크|화이트/.test(joined)) {
+    return joined.match(/블랙|블루|핑크|화이트/)?.[0].slice(0, 2) ?? "";
+  }
+
+  if (/레츠고/.test(joined)) {
+    return "렛고";
+  }
+
+  return "";
 }

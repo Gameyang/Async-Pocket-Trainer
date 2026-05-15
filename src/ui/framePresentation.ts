@@ -1087,7 +1087,7 @@ function formatTrainerPortraitShopDetail(action: FrameAction): string {
 }
 
 function resolveTrainerPortraitFlavor(title: string): string {
-  if (/조커|광대|코미디|카드|트릭|샤플러/.test(title)) {
+  if (/조커|광대|코미디|코믹|카드|트릭|샤플러/.test(title)) {
     return "승부 전 표정부터 페인트를 넣는 장난기";
   }
 
@@ -1099,7 +1099,7 @@ function resolveTrainerPortraitFlavor(title: string): string {
     return "기술 이펙트보다 먼저 시선을 태우는 마법 무드";
   }
 
-  if (/드래곤|퀸|챔피언|리그|에이스|배틀/.test(title)) {
+  if (/드래곤|용왕|퀸|챔피언|리그|에이스|배틀/.test(title)) {
     return "등장만으로 체육관 음악이 커질 것 같은 위엄";
   }
 

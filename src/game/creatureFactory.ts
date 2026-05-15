@@ -28,6 +28,15 @@ import type {
 const BATTLE_READY_ATTACK_POWER = 35;
 const STAB_LOW_POWER_ATTACK_FLOOR = 15;
 const FIXED_DAMAGE_EFFECT_IDS = new Set([39, 41, 42, 88, 89, 90, 131, 145]);
+const ORIGINAL_OPENING_STARTER_LOADOUTS: Partial<Record<number, readonly [string, string]>> = {
+  1: ["tackle", "growl"],
+  4: ["scratch", "growl"],
+  7: ["tackle", "tail-whip"],
+};
+const ORIGINAL_OPENING_WILD_LOADOUTS: Partial<Record<number, readonly [string, string]>> = {
+  16: ["tackle", "sand-attack"],
+  19: ["tackle", "tail-whip"],
+};
 
 export interface CreatureFactoryOptions {
   rng: SeededRng;
@@ -53,7 +62,7 @@ export function createCreature(options: CreatureFactoryOptions): Creature {
         options.preferredType,
       );
   const level = normalizeLevel(options.level ?? options.wave);
-  const moves = pickMoves(species, level, options.rng);
+  const moves = pickMovesForRole(species, level, options.role, options.rng);
   const statProfile = createPokemonStatProfile({
     seed: createStatProfileSeed(options, species.id, level),
     speciesId: species.id,
@@ -284,6 +293,26 @@ function pickSpeciesForWave(
   });
 
   return rng.pick(weighted);
+}
+
+function pickMovesForRole(
+  species: SpeciesDefinition,
+  level: number,
+  role: CreatureFactoryOptions["role"],
+  rng: SeededRng,
+): MoveDefinition[] {
+  const originalOpeningLoadout =
+    role === "starter"
+      ? ORIGINAL_OPENING_STARTER_LOADOUTS[species.id]
+      : role === "wild" && level <= 5
+        ? ORIGINAL_OPENING_WILD_LOADOUTS[species.id]
+        : undefined;
+
+  if (originalOpeningLoadout) {
+    return originalOpeningLoadout.map((moveId) => cloneMoveDefinition(getMove(moveId)));
+  }
+
+  return pickMoves(species, level, rng);
 }
 
 function pickMoves(species: SpeciesDefinition, level: number, rng: SeededRng): MoveDefinition[] {

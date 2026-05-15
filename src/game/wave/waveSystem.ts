@@ -28,6 +28,7 @@ export interface EncounterBoostOptions {
 
 const OPENING_WILD_LEVEL_MIN = 4;
 const OPENING_WILD_LEVEL_MAX = 5;
+const OPENING_WILD_SPECIES_IDS = [16, 19] as const;
 
 function resolveBoostWave(baseWave: number, rng: SeededRng, boost?: EncounterBoostOptions): number {
   return resolveBoostedLevel(baseWave, rng, boost);
@@ -66,7 +67,9 @@ export function createWildEncounter(
   boost?: EncounterBoostOptions,
   battleFieldOrder?: readonly BattleFieldId[],
 ): EncounterSnapshot {
-  const level = resolveBoostedLevel(resolveWildBaseLevel(wave, rng), rng, boost);
+  const baseLevel = resolveWildBaseLevel(wave, rng);
+  const speciesId = resolveOpeningWildSpeciesId(wave, rng, boost);
+  const level = resolveBoostedLevel(baseLevel, rng, boost);
   const battleField = resolveBattleFieldForWave(wave, battleFieldOrder);
   const creature = applyRouteToCreature(
     createCreature({
@@ -74,6 +77,7 @@ export function createWildEncounter(
       wave,
       level,
       balance,
+      speciesId,
       role: "wild",
       rarityBoost: boost?.rarityBonus ?? 0,
       lockedType: boost?.lockedType,
@@ -92,6 +96,22 @@ export function createWildEncounter(
     opponentName: `${routeLabel(routeId)}야생 ${creature.speciesName}`,
     enemyTeam: [creature],
   };
+}
+
+function resolveOpeningWildSpeciesId(
+  wave: number,
+  rng: SeededRng,
+  boost?: EncounterBoostOptions,
+): number | undefined {
+  if (wave >= OPENING_WILD_LEVEL_MAX) {
+    return undefined;
+  }
+
+  if (boost?.lockedType || (boost?.rarityBonus ?? 0) > 0) {
+    return undefined;
+  }
+
+  return rng.pick([...OPENING_WILD_SPECIES_IDS]);
 }
 
 export function createTrainerEncounter(
