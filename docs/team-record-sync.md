@@ -5,15 +5,18 @@
 
 ## Columns
 
-`APT_WAVE_TEAMS!A:J`
+`APT_WAVE_TEAMS!A:L`
 
 ```text
 version, playerId, trainerName, wave, createdAt, seed, teamPower, teamJson,
-runSummaryJson, trainerPortraitId
+runSummaryJson, trainerPortraitId, teamName, trainerGreeting
 ```
 
 `trainerPortraitId` stores the selected portrait id from the local trainer portrait manifest. Other
 clients resolve that id back to `src/resources/trainers/*.webp` when loading a saved sheet trainer.
+`teamName` stores the public team display name shown to other players. `trainerGreeting` stores the
+optional 50-character trainer line used in battle intro/outro scenes; blank values fall back to the
+default battle line.
 
 `APT_TEAM_RECORDS!A:S`
 

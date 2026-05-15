@@ -34,7 +34,7 @@ export const CODE_SYNC_SETTINGS: SyncSettings = {
   enabled: true,
   mode: "publicCsv",
   spreadsheetId: DEFAULT_PUBLIC_SPREADSHEET_ID,
-  range: `${DEFAULT_PUBLIC_SHEET_NAME}!A:J`,
+  range: `${DEFAULT_PUBLIC_SHEET_NAME}!A:L`,
   teamRecordRange: `${DEFAULT_TEAM_RECORD_SHEET_NAME}!A:S`,
   ...(CODE_APPS_SCRIPT_SUBMIT_URL ? { appsScriptSubmitUrl: CODE_APPS_SCRIPT_SUBMIT_URL } : {}),
 };

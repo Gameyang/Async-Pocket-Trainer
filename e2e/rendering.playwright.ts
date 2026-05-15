@@ -302,12 +302,16 @@ test("reads public CSV from code sync settings and opens team record prompt", as
   await expect(page.locator('.team-record-shift[data-record-placement="battle"]')).toHaveCount(0);
   await waitForBattleReplay(page);
   await expect(page.locator('[data-screen="checkpointVictory"]')).toBeVisible();
-  await page.locator('input[name="trainerName"]').fill("E2E Team");
+  await page.locator('input[name="teamName"]').fill("E2E Team");
+  await page.locator('input[name="trainerGreeting"]').fill("E2E greeting");
   await page.locator("[data-team-record-form] button").click();
   await expect(page.locator('[data-screen="checkpointVictory"]')).toHaveCount(0);
   await expect
     .poll(() => page.evaluate(() => localStorage.getItem("apt:trainer-name:v1")))
     .toBe("E2E Team");
+  await expect
+    .poll(() => page.evaluate(() => localStorage.getItem("apt:trainer-greeting:v1")))
+    .toBe("E2E greeting");
   expect(requests).toContain("GET");
   expect(requests).toContain("POST");
 });

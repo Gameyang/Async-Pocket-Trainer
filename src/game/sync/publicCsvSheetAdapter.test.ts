@@ -34,8 +34,8 @@ describe("PublicCsvTrainerAdapter", () => {
   });
 
   it("extracts sheet names from range syntax", () => {
-    expect(sheetNameFromRange("APT_WAVE_TEAMS!A:J")).toBe("APT_WAVE_TEAMS");
-    expect(sheetNameFromRange("'Async Trainers'!A:J")).toBe("Async Trainers");
+    expect(sheetNameFromRange("APT_WAVE_TEAMS!A:L")).toBe("APT_WAVE_TEAMS");
+    expect(sheetNameFromRange("'Async Trainers'!A:L")).toBe("Async Trainers");
   });
 
   it("parses quoted CSV cells with commas and escaped quotes", () => {
@@ -75,7 +75,9 @@ describe("PublicCsvTrainerAdapter", () => {
       ),
     });
 
-    await expect(adapter.listRows({ wave: 5 })).resolves.toEqual([row]);
+    await expect(adapter.listRows({ wave: 5 })).resolves.toEqual([
+      { ...row, trainerGreeting: undefined },
+    ]);
   });
 
   it("rejects append in public CSV mode", async () => {

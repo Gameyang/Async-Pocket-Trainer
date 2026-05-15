@@ -35,6 +35,8 @@ export const SHEET_TRAINER_ROW_COLUMNS = [
   "teamJson",
   "runSummaryJson",
   "trainerPortraitId",
+  "teamName",
+  "trainerGreeting",
 ] as const;
 
 export interface GoogleSheetsTrainerAdapterOptions {
@@ -239,6 +241,8 @@ export function sheetTrainerRowToValues(row: SheetTrainerRow): string[] {
     row.teamJson,
     row.runSummaryJson,
     row.trainerPortraitId ?? "",
+    row.teamName ?? "",
+    row.trainerGreeting ?? "",
   ];
 }
 
@@ -254,6 +258,8 @@ export function sheetTrainerRowFromValues(values: readonly unknown[]): SheetTrai
     teamJson: readStringCell(values, 7, "teamJson"),
     runSummaryJson: readStringCell(values, 8, "runSummaryJson"),
     trainerPortraitId: readOptionalStringCell(values, 9, "trainerPortraitId"),
+    teamName: readOptionalStringCell(values, 10, "teamName"),
+    trainerGreeting: readOptionalStringCell(values, 11, "trainerGreeting"),
   };
 
   parseSheetTrainerRow(row);

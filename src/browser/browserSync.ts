@@ -29,10 +29,7 @@ import { formatWave } from "../game/localization";
 import type { GameAction, GameState, RunSummary } from "../game/types";
 import type { StorageLike } from "./clientStorage";
 import { hasSyncCredentials, type SyncSettings } from "./syncSettings";
-import {
-  createTeamBattleRecordCacheKey,
-  TeamBattleRecordCache,
-} from "./teamBattleRecordCache";
+import { createTeamBattleRecordCacheKey, TeamBattleRecordCache } from "./teamBattleRecordCache";
 
 export type BrowserSyncState = "disabled" | "offline" | "ready" | "syncing" | "synced" | "error";
 
@@ -52,11 +49,14 @@ export interface BrowserSyncControllerOptions {
   playerId?: string;
   storage?: StorageLike;
   now?: () => string;
+  autoSubmitCheckpointWins?: boolean;
 }
 
 export interface BrowserCheckpointSubmitOptions {
   wave: number;
   trainerName?: string;
+  teamName?: string;
+  trainerGreeting?: string;
   state?: GameState;
   runSummary?: RunSummary;
 }
@@ -76,6 +76,7 @@ export class BrowserSyncController {
   private readonly fetchImpl?: FetchLike & PublicCsvFetchLike & AppsScriptFetchLike;
   private readonly playerId: string;
   private readonly now: () => string;
+  private readonly autoSubmitCheckpointWins: boolean;
   private readonly teamRecordCache: TeamBattleRecordCache;
   private settings: SyncSettings;
   private appendedCheckpoints = new Set<string>();
@@ -97,6 +98,7 @@ export class BrowserSyncController {
     this.fetchImpl = options.fetch;
     this.playerId = options.playerId ?? "browser-player";
     this.now = options.now ?? (() => new Date().toISOString());
+    this.autoSubmitCheckpointWins = options.autoSubmitCheckpointWins ?? true;
     this.teamRecordCache = new TeamBattleRecordCache(
       options.storage,
       createTeamBattleRecordCacheKey(this.playerId),
@@ -211,7 +213,9 @@ export class BrowserSyncController {
         await this.flushTeamBattleRecords();
       }
 
-      await this.submitLatestCheckpointWin();
+      if (this.autoSubmitCheckpointWins) {
+        await this.submitLatestCheckpointWin();
+      }
     }
 
     const status = this.getStatus();
@@ -442,7 +446,8 @@ export class BrowserSyncController {
 
     if (this.settings.mode === "publicCsv") {
       if (this.appsScriptSubmitter) {
-        return (record) => this.appsScriptSubmitter?.submitTeamBattleRecord(record) ?? Promise.resolve();
+        return (record) =>
+          this.appsScriptSubmitter?.submitTeamBattleRecord(record) ?? Promise.resolve();
       }
 
       if (this.injectedTeamRecordAdapter) {
@@ -617,11 +622,15 @@ export class BrowserSyncController {
     const runSummary = {
       ...(options.runSummary ?? this.client.getRunSummary()),
       ...(options.trainerName ? { trainerName: options.trainerName } : {}),
+      ...(options.teamName ? { teamName: options.teamName } : {}),
+      ...(options.trainerGreeting ? { trainerGreeting: options.trainerGreeting } : {}),
     };
 
     return createTrainerSnapshot(state, {
       playerId: this.playerId,
       trainerName: options.trainerName,
+      teamName: options.teamName,
+      trainerGreeting: options.trainerGreeting,
       createdAt: this.now(),
       runSummary,
       wave: options.wave,

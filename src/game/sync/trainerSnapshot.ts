@@ -22,10 +22,13 @@ import { getSelectedTrainerPortraitId, isValidTrainerPortraitId } from "../train
 
 export const LEGACY_TRAINER_SNAPSHOT_VERSION = 1;
 export const PRE_PORTRAIT_TRAINER_SNAPSHOT_VERSION = 2;
-export const TRAINER_SNAPSHOT_VERSION = 3;
+export const PRE_TEAM_PROFILE_TRAINER_SNAPSHOT_VERSION = 3;
+export const TRAINER_SNAPSHOT_VERSION = 4;
+export const MAX_TRAINER_GREETING_LENGTH = 50;
 export type TrainerSnapshotVersion =
   | typeof LEGACY_TRAINER_SNAPSHOT_VERSION
   | typeof PRE_PORTRAIT_TRAINER_SNAPSHOT_VERSION
+  | typeof PRE_TEAM_PROFILE_TRAINER_SNAPSHOT_VERSION
   | typeof TRAINER_SNAPSHOT_VERSION;
 
 export interface TrainerSnapshotCreature {
@@ -47,6 +50,8 @@ export interface TrainerSnapshot {
   playerId: string;
   trainerName: string;
   trainerPortraitId?: string;
+  teamName: string;
+  trainerGreeting?: string;
   wave: number;
   createdAt: string;
   seed: string;
@@ -67,11 +72,15 @@ export interface SheetTrainerRow {
   teamJson: string;
   runSummaryJson: string;
   trainerPortraitId?: string;
+  teamName?: string;
+  trainerGreeting?: string;
 }
 
 export interface CreateTrainerSnapshotOptions {
   playerId: string;
   trainerName?: string;
+  teamName?: string;
+  trainerGreeting?: string;
   createdAt?: string;
   runSummary: RunSummary;
   wave?: number;
@@ -92,12 +101,20 @@ export function createTrainerSnapshot(
   const createdAt = options.createdAt ?? new Date().toISOString();
   assertIsoDate(createdAt, "createdAt");
   const trainerPortraitId = getSelectedTrainerPortraitId(state.metaCurrency);
+  const trainerName = requireNonEmptyString(
+    options.trainerName ?? state.trainerName,
+    "trainerName",
+  );
+  const teamName = normalizeTrainerTeamName(options.teamName, trainerName);
+  const trainerGreeting = normalizeTrainerGreeting(options.trainerGreeting);
 
   return {
     version: TRAINER_SNAPSHOT_VERSION,
     playerId: requireNonEmptyString(options.playerId, "playerId"),
-    trainerName: requireNonEmptyString(options.trainerName ?? state.trainerName, "trainerName"),
+    trainerName,
     trainerPortraitId,
+    teamName,
+    trainerGreeting,
     wave: options.wave ?? state.currentWave,
     createdAt,
     seed: state.seed,
@@ -105,7 +122,10 @@ export function createTrainerSnapshot(
     team: state.team.map(toSnapshotCreature),
     runSummary: {
       ...cloneRunSummary(options.runSummary),
+      trainerName,
       trainerPortraitId,
+      teamName,
+      trainerGreeting,
     },
   };
 }
@@ -124,6 +144,8 @@ export function serializeTrainerSnapshot(snapshot: TrainerSnapshot): SheetTraine
     teamJson: JSON.stringify(snapshot.team),
     runSummaryJson: JSON.stringify(snapshot.runSummary),
     trainerPortraitId: snapshot.trainerPortraitId,
+    teamName: snapshot.teamName,
+    trainerGreeting: snapshot.trainerGreeting ?? "",
   };
 }
 
@@ -134,6 +156,7 @@ export function parseSheetTrainerRow(row: unknown): TrainerSnapshot {
   if (
     version !== LEGACY_TRAINER_SNAPSHOT_VERSION &&
     version !== PRE_PORTRAIT_TRAINER_SNAPSHOT_VERSION &&
+    version !== PRE_TEAM_PROFILE_TRAINER_SNAPSHOT_VERSION &&
     version !== TRAINER_SNAPSHOT_VERSION
   ) {
     throw new Error(`Unsupported trainer row schema version: ${version}`);
@@ -150,17 +173,26 @@ export function parseSheetTrainerRow(row: unknown): TrainerSnapshot {
   assertIsoDate(createdAt, "createdAt");
   readRequiredNumber(source, "teamPower");
 
+  const trainerName = readRequiredString(source, "trainerName");
+  const teamName = normalizeTrainerTeamName(readOptionalString(source, "teamName"), trainerName);
+  const trainerGreeting = normalizeTrainerGreeting(readOptionalString(source, "trainerGreeting"));
   const snapshot: TrainerSnapshot = {
     version: TRAINER_SNAPSHOT_VERSION,
     playerId: readRequiredString(source, "playerId"),
-    trainerName: readRequiredString(source, "trainerName"),
+    trainerName,
     trainerPortraitId: readOptionalTrainerPortraitId(source, "trainerPortraitId"),
+    teamName,
+    trainerGreeting,
     wave: readPositiveInteger(source, "wave"),
     createdAt,
     seed,
     teamPower: team.reduce((total, creature) => total + creature.powerScore, 0),
     team,
-    runSummary,
+    runSummary: {
+      ...runSummary,
+      teamName: runSummary.teamName ?? teamName,
+      trainerGreeting: runSummary.trainerGreeting ?? trainerGreeting,
+    },
   };
   assertTrainerSnapshot(snapshot);
   return snapshot;
@@ -303,6 +335,8 @@ function parseRunSummary(source: Record<string, unknown>): RunSummary {
     teamPower: readNonNegativeNumber(source, "teamPower"),
     events: readNonNegativeInteger(source, "events"),
     gameOverReason,
+    teamName: readOptionalString(source, "teamName"),
+    trainerGreeting: normalizeTrainerGreeting(readOptionalString(source, "trainerGreeting")),
   };
 }
 
@@ -316,6 +350,8 @@ function cloneRunSummary(summary: RunSummary): RunSummary {
 function assertTrainerSnapshot(snapshot: TrainerSnapshot): void {
   requireNonEmptyString(snapshot.playerId, "playerId");
   requireNonEmptyString(snapshot.trainerName, "trainerName");
+  normalizeTrainerTeamName(snapshot.teamName, snapshot.trainerName);
+  normalizeTrainerGreeting(snapshot.trainerGreeting);
   if (snapshot.trainerPortraitId !== undefined) {
     readTrainerPortraitId(snapshot.trainerPortraitId, "trainerPortraitId");
   }
@@ -395,6 +431,44 @@ function requireRecord(value: unknown, field: string): Record<string, unknown> {
 
 function readRequiredString(source: Record<string, unknown>, field: string): string {
   return requireNonEmptyString(source[field], field);
+}
+
+function readOptionalString(source: Record<string, unknown>, field: string): string | undefined {
+  if (source[field] === undefined || source[field] === "") {
+    return undefined;
+  }
+
+  if (typeof source[field] !== "string") {
+    throw new Error(`${field} must be a string.`);
+  }
+
+  return source[field];
+}
+
+export function normalizeTrainerTeamName(value: unknown, fallback: string): string {
+  const normalized = typeof value === "string" ? value.trim() : "";
+  return requireNonEmptyString(normalized || fallback, "teamName");
+}
+
+export function normalizeTrainerGreeting(value: unknown): string | undefined {
+  if (value === undefined || value === "") {
+    return undefined;
+  }
+
+  if (typeof value !== "string") {
+    throw new Error("trainerGreeting must be a string.");
+  }
+
+  const normalized = value.trim();
+  if (!normalized) {
+    return undefined;
+  }
+
+  if (Array.from(normalized).length > MAX_TRAINER_GREETING_LENGTH) {
+    throw new Error(`trainerGreeting must be ${MAX_TRAINER_GREETING_LENGTH} characters or fewer.`);
+  }
+
+  return normalized;
 }
 
 function readOptionalTrainerPortraitId(

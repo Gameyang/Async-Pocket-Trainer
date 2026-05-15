@@ -58,6 +58,7 @@ function teamDecisionFrame(capturedPower: number): GameFrame {
       starterOptions: [],
       battleField,
       bgmKey: "bgm.teamDecision",
+      bgmTrackKey: "bgm.showdown.bw-subway-trainer",
     },
     entities: [
       entity("weak", "player", 0, 100),

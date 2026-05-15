@@ -56,8 +56,9 @@ public distribution.
   - Root audio and `notification.wav`: `src/resources/audio/bgm/showdown/*.m4a`
   - Pokemon cries: `src/resources/audio/cries/showdown/*.m4a`
   - Manifest: `src/resources/audio/showdownAudioManifest.json`
-- Used in: all runtime BGM and SFX resolution. Phase music maps to Showdown battle themes; battle,
-  capture, phase, and faint cues resolve to Showdown notification audio or Pokemon cries.
+- Used in: all runtime BGM and SFX resolution. The 19 Showdown music tracks rotate by phase/wave,
+  `notification.m4a` is used for phase changes, and battle/capture/faint cues mix typed SFX,
+  event-specific cry-pool variants, and involved Pokemon cries where available.
 
 ## Audio - Legacy OpenGameArt SFX
 

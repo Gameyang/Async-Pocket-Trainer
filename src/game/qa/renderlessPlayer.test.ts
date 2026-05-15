@@ -93,6 +93,7 @@ function readyFrame(entities: FrameEntity[]): GameFrame {
       starterOptions: [],
       battleField,
       bgmKey: "bgm.starterReady",
+      bgmTrackKey: "bgm.showdown.xy-rival",
     },
     entities,
     actions: [],

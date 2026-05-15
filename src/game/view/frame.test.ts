@@ -11,6 +11,7 @@ describe("game frame contract", () => {
     let frame = client.getFrame();
 
     expect(validateFrameContract(frame)).toEqual([]);
+    expect(frame.scene.bgmTrackKey).toMatch(/^bgm\.showdown\.[a-z0-9-]+$/);
     expect(frame.actions.map((action) => action.id)).toEqual(["start:1", "start:4", "start:7"]);
 
     client.dispatch(frame.actions[0].action);
@@ -48,6 +49,9 @@ describe("game frame contract", () => {
     expect(frame.visualCues.every((cue) => cue.soundKey.length > 0)).toBe(true);
     expect(frame.visualCues.find((cue) => cue.type === "phase.change")?.cryKey).toMatch(
       /^sfx\.cry\.[a-z0-9-]+$/,
+    );
+    expect(frame.visualCues.find((cue) => cue.type === "phase.change")?.soundKeys).toContainEqual(
+      expect.stringMatching(/^sfx\.cry\.pool\.[a-z0-9-]+$/),
     );
     expect(frame.scene.bgmKey).toBe("bgm.battleCapture");
   });
@@ -88,6 +92,91 @@ describe("game frame contract", () => {
     expect(frame.visualCues.find((cue) => cue.type === "capture.success")?.cryKey).toMatch(
       /^sfx\.cry\.[a-z0-9-]+$/,
     );
+    expect(
+      frame.visualCues.find((cue) => cue.type === "capture.success")?.soundKeys,
+    ).toContainEqual(expect.stringMatching(/^sfx\.cry\.pool\.[a-z0-9-]+$/));
+  });
+
+  it("exposes the run battle field order as a world-map node graph", () => {
+    const client = new HeadlessGameClient({ seed: "field-map" });
+    client.dispatch({ type: "START_RUN", starterSpeciesId: 1 });
+    const order = client.getSnapshot().battleFieldOrder ?? [];
+    let frame = client.getFrame();
+
+    expect(frame.scene.worldMap?.mode).toBe("start");
+    expect(frame.scene.worldMap?.activeIndex).toBe(0);
+    expect(frame.scene.worldMap?.nodes.map((node) => node.id)).toEqual(order);
+    expect(frame.scene.worldMap?.nodes).toHaveLength(18);
+    expect(frame.scene.worldMap?.nodes[0]).toMatchObject({
+      id: order[0],
+      status: "active",
+      waveStart: 1,
+      waveEnd: 5,
+    });
+    expect(frame.scene.worldMap?.nodes[1]).toMatchObject({
+      id: order[1],
+      status: "next",
+      waveStart: 6,
+      waveEnd: 10,
+    });
+
+    const saved = client.saveSnapshot();
+    saved.state.phase = "ready";
+    saved.state.currentWave = 6;
+    client.loadSnapshot(saved);
+    frame = client.getFrame();
+
+    expect(frame.scene.worldMap?.mode).toBe("transition");
+    expect(frame.scene.worldMap?.activeIndex).toBe(1);
+    expect(frame.scene.worldMap?.nodes[1]).toMatchObject({
+      id: order[1],
+      status: "active",
+      timeOfDay: "night",
+    });
+  });
+
+  it("rotates every downloaded Showdown BGM track through scene metadata", () => {
+    const expectedTrackKeys = new Set([
+      "bgm.showdown.bw-rival",
+      "bgm.showdown.bw-subway-trainer",
+      "bgm.showdown.bw-trainer",
+      "bgm.showdown.bw2-homika-dogars",
+      "bgm.showdown.bw2-kanto-gym-leader",
+      "bgm.showdown.bw2-rival",
+      "bgm.showdown.colosseum-miror-b",
+      "bgm.showdown.dpp-rival",
+      "bgm.showdown.dpp-trainer",
+      "bgm.showdown.hgss-johto-trainer",
+      "bgm.showdown.hgss-kanto-trainer",
+      "bgm.showdown.oras-rival",
+      "bgm.showdown.oras-trainer",
+      "bgm.showdown.sm-rival",
+      "bgm.showdown.sm-trainer",
+      "bgm.showdown.spl-elite4",
+      "bgm.showdown.xd-miror-b",
+      "bgm.showdown.xy-rival",
+      "bgm.showdown.xy-trainer",
+    ]);
+    const observedTrackKeys = new Set<string>();
+    const phases = ["ready", "captureDecision", "teamDecision", "gameOver"] as const;
+
+    for (const phase of phases) {
+      for (
+        let wave = 1;
+        wave <= 120 && observedTrackKeys.size < expectedTrackKeys.size;
+        wave += 1
+      ) {
+        const client = new HeadlessGameClient({ seed: `bgm-rotation-${phase}-${wave}` });
+        client.dispatch({ type: "START_RUN", starterSpeciesId: 1 });
+        const snapshot = client.saveSnapshot();
+        snapshot.state.phase = phase;
+        snapshot.state.currentWave = wave;
+        client.loadSnapshot(snapshot);
+        observedTrackKeys.add(client.getFrame().scene.bgmTrackKey);
+      }
+    }
+
+    expect(observedTrackKeys).toEqual(expectedTrackKeys);
   });
 
   it("localizes move detail effects for renderer-facing summaries", () => {
@@ -156,6 +245,9 @@ describe("game frame contract", () => {
       moveType: missEvent?.moveType,
       moveCategory: missEvent?.moveCategory,
     });
+    expect(missCue?.soundKeys).toContainEqual(
+      expect.stringMatching(/^sfx\.cry\.pool\.[a-z0-9-]+$/),
+    );
     expect(missEvent?.moveType).toMatch(
       /normal|fire|water|grass|electric|poison|ground|flying|bug|fighting|psychic|rock|ghost|ice|dragon|dark|steel|fairy/,
     );
@@ -163,10 +255,16 @@ describe("game frame contract", () => {
       soundKey: expect.stringMatching(/^sfx\.battle\.type\.[a-z-]+\.critical$/),
       critical: true,
     });
+    expect(typedHitCue?.soundKeys).toContainEqual(
+      expect.stringMatching(/^sfx\.cry\.pool\.[a-z0-9-]+$/),
+    );
     expect(supportCue).toMatchObject({
       soundKey: `sfx.battle.support.type.${supportEvent?.moveType}`,
       moveType: supportEvent?.moveType,
     });
+    expect(supportCue?.soundKeys).toContainEqual(
+      expect.stringMatching(/^sfx\.cry\.pool\.[a-z0-9-]+$/),
+    );
     expect(superEffectiveEvent?.label).not.toMatch(/\d+-\d+-[0-9a-f]+/);
   });
 
@@ -182,6 +280,9 @@ describe("game frame contract", () => {
     });
     expect(frame.scene.opponentSlots).toHaveLength(1);
     expect(frame.visualCues.map((cue) => cue.type)).toContain("capture.fail");
+    expect(frame.visualCues.find((cue) => cue.type === "capture.fail")?.soundKeys).toContainEqual(
+      expect.stringMatching(/^sfx\.cry\.pool\.[a-z0-9-]+$/),
+    );
   });
 
   it("marks sheet trainer encounters with deterministic portrait metadata", () => {

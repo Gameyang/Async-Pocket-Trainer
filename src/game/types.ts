@@ -108,6 +108,8 @@ export interface OpponentTeamRecordContext {
   snapshotPlayerId: string;
   snapshotTrainerName: string;
   snapshotTrainerPortraitId?: string;
+  snapshotTeamName?: string;
+  snapshotTrainerGreeting?: string;
   snapshotWave: number;
   snapshotCreatedAt: string;
   snapshotSeed: string;
@@ -588,6 +590,8 @@ export interface RunSummary {
   seed: string;
   trainerName: string;
   trainerPortraitId?: string;
+  teamName?: string;
+  trainerGreeting?: string;
   finalWave: number;
   phase: GamePhase;
   money: number;

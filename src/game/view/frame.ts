@@ -1,5 +1,9 @@
 import { getMove, getSpecies, starterSpeciesIds } from "../data/catalog";
-import { resolveBattleFieldForWave } from "../battleField";
+import {
+  BATTLE_FIELD_WAVE_SPAN,
+  normalizeBattleFieldOrder,
+  resolveBattleFieldForWave,
+} from "../battleField";
 import {
   calculateDexUnlockReward,
   calculateSkillUnlockReward,
@@ -59,6 +63,7 @@ import {
   trainerPortraitActionId,
 } from "../trainerPortraits";
 import type {
+  BattleFieldId,
   BattleStat,
   BattleStatus,
   BattleFieldState,
@@ -134,8 +139,37 @@ export interface FrameScene {
   capture?: FrameCaptureScene;
   trainer?: FrameTrainerScene;
   battleField: BattleFieldState;
+  worldMap?: FrameBattleFieldMap;
   bgmKey: FrameBgmKey;
+  bgmTrackKey: string;
   teamEffect?: { entityId: string; kind: string; key: string };
+}
+
+export type FrameBattleFieldMapMode = "start" | "transition" | "travel";
+export type FrameBattleFieldMapNodeStatus = "completed" | "active" | "next" | "upcoming";
+
+export interface FrameBattleFieldMap {
+  mode: FrameBattleFieldMapMode;
+  activeIndex: number;
+  nextIndex: number;
+  cycle: number;
+  progressInField: number;
+  progressTotal: number;
+  nodes: FrameBattleFieldMapNode[];
+}
+
+export interface FrameBattleFieldMapNode {
+  index: number;
+  id: BattleFieldId;
+  label: string;
+  element: ElementType;
+  elementLabel: string;
+  timeOfDay: BattleFieldState["timeOfDay"];
+  timeLabel: string;
+  waveStart: number;
+  waveEnd: number;
+  levelLabel: string;
+  status: FrameBattleFieldMapNodeStatus;
 }
 
 export interface FrameStarterOption {
@@ -202,6 +236,8 @@ export interface FrameTrainerScene {
   source: EncounterSource;
   label: string;
   trainerName: string;
+  teamName: string;
+  greeting?: string;
   portraitKey: string;
   portraitPath: string;
   teamPower?: number;
@@ -337,6 +373,7 @@ export type FrameVisualCue =
       sequence: number;
       effectKey: string;
       soundKey: string;
+      soundKeys?: string[];
       cryKey?: string;
       turn: number;
       sourceEntityId: string;
@@ -355,6 +392,7 @@ export type FrameVisualCue =
       sequence: number;
       effectKey: string;
       soundKey: string;
+      soundKeys?: string[];
       cryKey?: string;
       turn: number;
       sourceEntityId?: string;
@@ -370,6 +408,7 @@ export type FrameVisualCue =
       sequence: number;
       effectKey: string;
       soundKey: string;
+      soundKeys?: string[];
       cryKey?: string;
       turn: number;
       entityId: string;
@@ -381,6 +420,7 @@ export type FrameVisualCue =
       sequence: number;
       effectKey: string;
       soundKey: string;
+      soundKeys?: string[];
       cryKey?: string;
       label: string;
       phase: GamePhase;
@@ -391,6 +431,7 @@ export type FrameVisualCue =
       sequence: number;
       effectKey: string;
       soundKey: string;
+      soundKeys?: string[];
       cryKey?: string;
       label: string;
       ball: BallType;
@@ -407,6 +448,7 @@ export function createGameFrame(
   const dexContext = createFrameDexContext(state);
   const currentBattleField = resolveBattleFieldForWave(state.currentWave, state.battleFieldOrder);
   const sceneBattleField = resolveSceneBattleField(state, currentBattleField);
+  const worldMap = createBattleFieldWorldMap(state);
   const trainerPortrait = createFrameTrainerPortrait(
     getSelectedTrainerPortraitId(state.metaCurrency),
     state,
@@ -498,7 +540,9 @@ export function createGameFrame(
       capture: captureScene,
       trainer: createTrainerScene(state),
       battleField: sceneBattleField,
+      worldMap,
       bgmKey: createBgmKey(state),
+      bgmTrackKey: createBgmTrackKey(state),
       teamEffect:
         state.lastTeamEffect && state.lastTeamEffect.frameId >= frameId
           ? {
@@ -513,6 +557,52 @@ export function createGameFrame(
     timeline: createTimeline(state),
     battleReplay: createBattleReplay(state),
     visualCues: createVisualCues(state),
+  };
+}
+
+function createBattleFieldWorldMap(state: GameState): FrameBattleFieldMap {
+  const order = normalizeBattleFieldOrder(state.battleFieldOrder);
+  const normalizedWave = Math.max(1, Math.floor(state.currentWave));
+  const activeBlock = Math.floor((normalizedWave - 1) / BATTLE_FIELD_WAVE_SPAN);
+  const cycleIndex = Math.floor(activeBlock / order.length);
+  const cycleStartBlock = cycleIndex * order.length;
+  const activeIndex = activeBlock % order.length;
+  const nextIndex = (activeIndex + 1) % order.length;
+  const progressInField = ((normalizedWave - 1) % BATTLE_FIELD_WAVE_SPAN) + 1;
+  const mode: FrameBattleFieldMapMode =
+    normalizedWave === 1 ? "start" : progressInField === 1 ? "transition" : "travel";
+
+  return {
+    mode,
+    activeIndex,
+    nextIndex,
+    cycle: cycleIndex + 1,
+    progressInField,
+    progressTotal: BATTLE_FIELD_WAVE_SPAN,
+    nodes: order.map((_, index) => {
+      const nodeWave = (cycleStartBlock + index) * BATTLE_FIELD_WAVE_SPAN + 1;
+      const field = resolveBattleFieldForWave(nodeWave, order);
+      return {
+        index,
+        id: field.id,
+        label: field.label,
+        element: field.element,
+        elementLabel: localizeType(field.element),
+        timeOfDay: field.timeOfDay,
+        timeLabel: field.timeLabel,
+        waveStart: field.waveStart,
+        waveEnd: field.waveEnd,
+        levelLabel: `Lv. ${field.waveStart}-${field.waveEnd}`,
+        status:
+          index === activeIndex
+            ? "active"
+            : index === nextIndex
+              ? "next"
+              : index < activeIndex
+                ? "completed"
+                : "upcoming",
+      };
+    }),
   };
 }
 
@@ -600,6 +690,10 @@ export function validateFrameContract(frame: GameFrame): string[] {
     errors.push(`trainer has invalid portrait path ${frame.scene.trainer.portraitPath}`);
   }
 
+  if (!/^bgm\.showdown\.[a-z0-9-]+$/.test(frame.scene.bgmTrackKey)) {
+    errors.push(`scene has invalid bgm track key ${frame.scene.bgmTrackKey}`);
+  }
+
   for (const cue of frame.visualCues) {
     if (!Number.isInteger(cue.sequence) || cue.sequence < 0) {
       errors.push(`cue ${cue.id} has invalid sequence ${cue.sequence}`);
@@ -611,6 +705,12 @@ export function validateFrameContract(frame: GameFrame): string[] {
 
     if (!cue.soundKey) {
       errors.push(`cue ${cue.id} has no sound key`);
+    }
+
+    for (const soundKey of cue.soundKeys ?? []) {
+      if (!soundKey) {
+        errors.push(`cue ${cue.id} has an empty supplemental sound key`);
+      }
     }
 
     if (cue.cryKey && !/^sfx\.cry\.[a-z0-9-]+$/.test(cue.cryKey)) {
@@ -690,6 +790,38 @@ export function validateFrameContract(frame: GameFrame): string[] {
 
 const generatedTrainerPortraits = trainerPortraitManifest.generated;
 const sheetTrainerPortrait = trainerPortraitManifest.sheet;
+
+const showdownStarterBgmStems = [
+  "xy-rival",
+  "bw-rival",
+  "bw2-rival",
+  "dpp-rival",
+  "oras-rival",
+  "sm-rival",
+] as const;
+const showdownBattleBgmStems = [
+  "bw-trainer",
+  "bw2-homika-dogars",
+  "bw2-kanto-gym-leader",
+  "dpp-trainer",
+  "hgss-johto-trainer",
+  "hgss-kanto-trainer",
+  "oras-trainer",
+  "sm-trainer",
+  "xy-trainer",
+  "spl-elite4",
+] as const;
+const showdownTeamDecisionBgmStems = [
+  "bw-subway-trainer",
+  "colosseum-miror-b",
+  "xd-miror-b",
+] as const;
+const showdownGameOverBgmStems = [
+  "spl-elite4",
+  "xd-miror-b",
+  "colosseum-miror-b",
+  "bw2-kanto-gym-leader",
+] as const;
 
 function createFrameTrainerPortrait(portraitId: string, state: GameState): FrameTrainerPortrait {
   const portrait = getTrainerPortrait(portraitId);
@@ -840,6 +972,7 @@ function createTrainerScene(state: GameState): FrameTrainerScene | undefined {
   const trainerName =
     state.pendingEncounter?.opponentName ?? state.lastBattle?.opponentName ?? "트레이너";
   const opponentTeam = state.pendingEncounter?.opponentTeam ?? state.lastBattle?.opponentTeam;
+  const teamName = opponentTeam?.snapshotTeamName ?? trainerName;
   const portraitPath = pickTrainerPortrait(
     trainerName,
     source,
@@ -850,6 +983,8 @@ function createTrainerScene(state: GameState): FrameTrainerScene | undefined {
     source,
     label: source === "sheet" ? "시트 트레이너" : "트레이너",
     trainerName,
+    teamName,
+    greeting: opponentTeam?.snapshotTrainerGreeting,
     portraitKey: `trainer:${portraitPath.split("/").at(-1)?.replace(".webp", "") ?? "portrait"}`,
     portraitPath,
     teamPower: opponentTeam?.teamPower,
@@ -885,6 +1020,33 @@ function createBgmKey(state: GameState): FrameBgmKey {
   }
 
   return "bgm.starterReady";
+}
+
+function createBgmTrackKey(state: GameState): string {
+  if (state.phase === "gameOver") {
+    return toShowdownBgmTrackKey(pickByWave(showdownGameOverBgmStems, state));
+  }
+
+  if (state.phase === "teamDecision") {
+    return toShowdownBgmTrackKey(pickByWave(showdownTeamDecisionBgmStems, state));
+  }
+
+  if (state.phase === "captureDecision" || state.lastBattle?.replay.length) {
+    return toShowdownBgmTrackKey(pickByWave(showdownBattleBgmStems, state));
+  }
+
+  return toShowdownBgmTrackKey(pickByWave(showdownStarterBgmStems, state));
+}
+
+function pickByWave<const T extends readonly string[]>(stems: T, state: GameState): T[number] {
+  const phaseOffset = positiveHash(`${state.seed}:${state.phase}`) % stems.length;
+  const waveOffset = Math.max(0, state.currentWave - 1);
+  const index = (phaseOffset + waveOffset) % stems.length;
+  return stems[index];
+}
+
+function toShowdownBgmTrackKey(stem: string): string {
+  return `bgm.showdown.${stem}`;
 }
 
 function toFrameEntity(
@@ -1847,6 +2009,7 @@ function createVisualCues(state: GameState): FrameVisualCue[] {
       sequence: state.lastBattle?.replay.at(-1)?.sequence ?? 0,
       effectKey: "phase.change",
       soundKey: "sfx.phase.change",
+      soundKeys: [createCryPoolSoundKey("phase", state.phase, state.currentWave, state.seed)],
       cryKey: createEncounterCryKey(state),
       label: state.phase,
       phase: state.phase,
@@ -1880,6 +2043,15 @@ function createCaptureCue(state: GameState): FrameVisualCue | undefined {
     sequence: (state.lastBattle?.replay.at(-1)?.sequence ?? 0) + latestEvent.id,
     effectKey: type,
     soundKey: latestCapture.success ? "sfx.capture.success" : "sfx.capture.fail",
+    soundKeys: [
+      createCryPoolSoundKey(
+        "capture",
+        type,
+        latestCapture.ball,
+        target?.speciesId ?? latestCapture.targetName,
+        latestEvent.id,
+      ),
+    ],
     cryKey:
       latestCapture.success && target
         ? toCrySoundKey(getSpecies(target.speciesId).identifier)
@@ -2298,6 +2470,18 @@ function toCrySoundKey(speciesIdentifier: string): string {
   return `sfx.cry.${speciesIdentifier}`;
 }
 
+function createCryPoolSoundKey(...parts: Array<string | number | boolean | undefined>): string {
+  return `sfx.cry.pool.${positiveHash(parts.join(":")).toString(36)}`;
+}
+
+function positiveHash(value: string): number {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 31 + value.charCodeAt(index)) | 0;
+  }
+  return Math.abs(hash);
+}
+
 function battleHitSoundKey(moveType: ElementType | undefined, critical: boolean): string {
   if (!moveType) {
     return critical ? "sfx.battle.critical.hit" : "sfx.battle.hit";
@@ -2353,6 +2537,16 @@ function battleReplayEventToCue(
       sequence: event.sequence,
       effectKey: "battle.miss",
       soundKey: "sfx.battle.miss",
+      soundKeys: [
+        createCryPoolSoundKey(
+          "miss",
+          event.moveType ?? "unknown",
+          event.actorId,
+          event.targetId,
+          event.sequence,
+        ),
+      ],
+      cryKey: lookup.cryKey(event.actorId),
       turn: event.turn,
       sourceEntityId: event.actorId,
       targetEntityId: event.targetId,
@@ -2374,6 +2568,18 @@ function battleReplayEventToCue(
       sequence: event.sequence,
       effectKey: battleHitEffectKey(event.effectiveness, event.critical),
       soundKey: battleHitSoundKey(event.moveType, event.critical),
+      soundKeys: [
+        createCryPoolSoundKey(
+          "hit",
+          event.moveType ?? "unknown",
+          event.effectiveness,
+          event.critical,
+          event.actorId,
+          event.targetId,
+          event.sequence,
+        ),
+      ],
+      cryKey: lookup.cryKey(event.targetId),
       turn: event.turn,
       sourceEntityId: event.actorId,
       targetEntityId: event.targetId,
@@ -2390,16 +2596,28 @@ function battleReplayEventToCue(
   }
 
   if (isSupportCueEvent(event)) {
+    const supportEntityId = event.type === "move.effect" ? event.entityId : undefined;
     return {
       id: `battle:${event.sequence}:support`,
       type: "battle.support",
       sequence: event.sequence,
       effectKey: "battle.support",
       soundKey: battleSupportSoundKey(event.moveType),
+      soundKeys: [
+        createCryPoolSoundKey(
+          "support",
+          event.moveType,
+          event.actorId ?? "",
+          event.targetId ?? "",
+          supportEntityId ?? "",
+          event.sequence,
+        ),
+      ],
+      cryKey: lookup.cryKey(supportEntityId ?? event.targetId ?? event.actorId),
       turn: event.turn,
       sourceEntityId: event.actorId,
       targetEntityId: event.targetId,
-      entityId: event.type === "move.effect" ? event.entityId : undefined,
+      entityId: supportEntityId,
       label: battleSupportLabel(event, lookup),
       moveType: event.moveType,
       moveCategory: event.moveCategory,
@@ -2414,6 +2632,7 @@ function battleReplayEventToCue(
       sequence: event.sequence,
       effectKey: "creature.faint",
       soundKey: "sfx.creature.faint",
+      soundKeys: [createCryPoolSoundKey("faint", event.entityId, event.sequence)],
       cryKey: lookup.cryKey(event.entityId),
       turn: event.turn,
       entityId: event.entityId,

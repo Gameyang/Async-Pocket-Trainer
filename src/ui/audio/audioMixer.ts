@@ -1,4 +1,4 @@
-import type { FrameBgmKey, FrameVisualCue } from "../../game/view/frame.ts";
+import type { FrameVisualCue } from "../../game/view/frame.ts";
 
 // Centralised audio playback for BGM and SFX.
 //
@@ -11,12 +11,12 @@ import type { FrameBgmKey, FrameVisualCue } from "../../game/view/frame.ts";
 const MASTER_GAIN = 0.85;
 const BGM_BASE_GAIN = 0.55;
 const BGM_DUCKED_GAIN = 0.28;
-const SFX_VOICE_LIMIT = 8;
+const SFX_VOICE_LIMIT = 12;
 const BGM_DUCK_ATTACK_SEC = 0.04;
 const BGM_DUCK_RELEASE_SEC = 0.25;
 
 export interface AudioMixerFrame {
-  bgmKey: FrameBgmKey;
+  bgmKey: string;
   visualCues: readonly FrameVisualCue[];
   battleReplayKey: string;
   activeReplaySequence: number | undefined;
@@ -26,12 +26,12 @@ export interface AudioMixerFrame {
 
 export interface AudioMixerOptions {
   resolveSfxUrl: (soundKey: string) => string | undefined;
-  resolveBgmUrl: (bgmKey: FrameBgmKey) => string | undefined;
+  resolveBgmUrl: (bgmKey: string) => string | undefined;
   warn?: (message: string, error?: unknown) => void;
 }
 
 interface BgmSlot {
-  key: FrameBgmKey;
+  key: string;
   loadSeq: number;
   source?: AudioBufferSourceNode;
 }
@@ -237,7 +237,7 @@ export class AudioMixer {
     updateVisibility();
   }
 
-  private setBgm(key: FrameBgmKey): void {
+  private setBgm(key: string): void {
     if (this.bgm?.key === key && this.bgm.source) {
       return;
     }
@@ -425,22 +425,20 @@ function isBattleSfxCue(cue: FrameVisualCue): boolean {
 }
 
 function resolveCueSoundKeys(cue: FrameVisualCue, includePrimary: boolean): string[] {
+  const supplemental = cue.soundKeys ?? [];
   if (!includePrimary) {
-    return cue.cryKey ? [cue.cryKey] : [];
+    return dedupeSoundKeys([...supplemental, ...(cue.cryKey ? [cue.cryKey] : [])]);
   }
 
-  if (
-    (cue.type === "creature.faint" || cue.type === "capture.success" || cue.type === "phase.change") &&
-    cue.cryKey
-  ) {
-    return [cue.cryKey];
-  }
-
-  const keys = [cue.soundKey];
+  const keys = [cue.soundKey, ...supplemental];
   if (cue.cryKey && cue.cryKey !== cue.soundKey) {
     keys.push(cue.cryKey);
   }
-  return keys;
+  return dedupeSoundKeys(keys);
+}
+
+function dedupeSoundKeys(keys: string[]): string[] {
+  return [...new Set(keys)];
 }
 
 function resolveSfxVolume(soundKey: string): number {

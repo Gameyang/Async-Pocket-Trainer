@@ -28,7 +28,7 @@ describe("synthetic trainer snapshots", () => {
     expect(rows.every((row) => row.trainerName.startsWith("Synthetic"))).toBe(true);
     expect(rows.every((row) => row.seed.startsWith("manual-seed:wave-"))).toBe(true);
     expect(rows.map(parseSheetTrainerRow)).toEqual(first);
-    expect(rows.map(sheetTrainerRowToValues).every((values) => values.length === 10)).toBe(true);
+    expect(rows.map(sheetTrainerRowToValues).every((values) => values.length === 12)).toBe(true);
   }, 15_000);
 
   it("rejects non-checkpoint waves", async () => {

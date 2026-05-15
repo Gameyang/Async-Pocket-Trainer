@@ -21,15 +21,19 @@ describe("trainer snapshot sync schema", () => {
 
     const snapshot = createTrainerSnapshot(client.getSnapshot(), {
       playerId: "player-a",
+      teamName: "Sheet Squad",
+      trainerGreeting: "오늘도 정면 승부!",
       createdAt: "2026-05-11T12:00:00.000Z",
       runSummary: client.getRunSummary(),
     });
     const row = serializeTrainerSnapshot(snapshot);
 
     expect(row).toMatchObject({
-      version: 3,
+      version: 4,
       playerId: "player-a",
       trainerName: "Sheet Tester",
+      teamName: "Sheet Squad",
+      trainerGreeting: "오늘도 정면 승부!",
       wave: snapshot.wave,
       seed: "snapshot-row",
       teamPower: snapshot.teamPower,
@@ -46,16 +50,18 @@ describe("trainer snapshot sync schema", () => {
     client.autoStep("greedy");
     const renamed = createTrainerSnapshot(client.getSnapshot(), {
       playerId: "player-name",
-      trainerName: "Renamed Team",
+      trainerName: "Original Trainer",
+      teamName: "Renamed Team",
       createdAt: "2026-05-11T12:00:00.000Z",
       runSummary: {
         ...client.getRunSummary(),
-        trainerName: "Renamed Team",
+        teamName: "Renamed Team",
       },
       wave: 5,
     });
 
-    expect(serializeTrainerSnapshot(renamed).trainerName).toBe("Renamed Team");
+    expect(serializeTrainerSnapshot(renamed).trainerName).toBe("Original Trainer");
+    expect(serializeTrainerSnapshot(renamed).teamName).toBe("Renamed Team");
   });
 
   it("rejects unsupported schema versions and broken JSON payloads", () => {
@@ -69,7 +75,7 @@ describe("trainer snapshot sync schema", () => {
     const row = serializeTrainerSnapshot(snapshot);
 
     expect(() =>
-      parseSheetTrainerRow({ ...row, version: 4 } satisfies Omit<SheetTrainerRow, "version"> & {
+      parseSheetTrainerRow({ ...row, version: 5 } satisfies Omit<SheetTrainerRow, "version"> & {
         version: number;
       }),
     ).toThrow(/Unsupported trainer row schema version/);
@@ -114,6 +120,8 @@ describe("trainer snapshot sync schema", () => {
     const legacyRow = {
       ...row,
       version: 1,
+      teamName: undefined,
+      trainerGreeting: undefined,
       teamJson: JSON.stringify(
         snapshot.team.map(
           ({ statProfile: _statProfile, statBonuses: _statBonuses, ...creature }) => ({
@@ -133,7 +141,8 @@ describe("trainer snapshot sync schema", () => {
 
     const migrated = parseSheetTrainerRow(legacyRow);
 
-    expect(migrated.version).toBe(3);
+    expect(migrated.version).toBe(4);
+    expect(migrated.teamName).toBe("Legacy A");
     expect(migrated.team[0].statProfile).toBeDefined();
     expect(migrated.team[0].stats.hp).toBeLessThan(999);
     expect(migrated.teamPower).toBe(

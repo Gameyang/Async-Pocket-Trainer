@@ -8,6 +8,8 @@ import {
 } from "../game/types";
 import type {
   FrameAction,
+  FrameBattleFieldMap,
+  FrameBattleFieldMapNode,
   FrameBattleReplayEvent,
   FrameBgmKey,
   FrameCaptureScene,
@@ -86,6 +88,16 @@ const showdownCryAssetUrls = import.meta.glob<string>("../resources/audio/cries/
   import: "default",
   query: "?url",
 });
+const showdownCryStems = Object.keys(showdownCryAssetUrls)
+  .map(
+    (assetPath) =>
+      assetPath
+        .split("/")
+        .at(-1)
+        ?.replace(/\.m4a$/i, "") ?? "",
+  )
+  .filter(Boolean)
+  .sort();
 
 const SHOWDOWN_BGM_BY_KEY: Record<FrameBgmKey, string> = {
   "bgm.starterReady": "xy-rival",
@@ -152,7 +164,11 @@ const resolveShowdownCryStem = (stem: string): string => SHOWDOWN_CRY_STEM_OVERR
 
 const showdownElementSfxPattern = /^sfx\.battle\.(?:support\.)?type\.([a-z-]+)(?:\.critical)?$/;
 
+const showdownCryPoolKeyPattern = /^sfx\.cry\.pool\.([a-z0-9-]+)$/;
+
 const showdownCryKeyPattern = /^sfx\.cry\.([a-z0-9-]+)$/;
+
+const showdownBgmTrackKeyPattern = /^bgm\.showdown\.([a-z0-9-]+)$/;
 
 export interface FrameClient {
   getFrame(): GameFrame;
@@ -167,12 +183,19 @@ export interface HtmlRendererTeamRecordView {
   wave: number;
   opponentName: string;
   trainerName: string;
+  teamName: string;
+  trainerGreeting?: string;
   message?: string;
+}
+
+export interface HtmlRendererTeamRecordSubmitPayload {
+  teamName: string;
+  trainerGreeting?: string;
 }
 
 export interface HtmlRendererOptions {
   getStatusView?: () => HtmlRendererStatusView;
-  onTeamRecordSubmit?: (trainerName: string) => unknown | Promise<unknown>;
+  onTeamRecordSubmit?: (payload: HtmlRendererTeamRecordSubmitPayload) => unknown | Promise<unknown>;
   onStarterReroll?: () => unknown | Promise<unknown>;
 }
 
@@ -309,7 +332,7 @@ export function mountHtmlRenderer(
     bindStarterReroll(root, options, render);
     bindStarterDexSelection(root);
     audioMixer.apply({
-      bgmKey: frame.scene.bgmKey,
+      bgmKey: frame.scene.bgmTrackKey,
       visualCues: frame.visualCues,
       battleReplayKey: playbackView.replayKey,
       activeReplaySequence:
@@ -611,7 +634,10 @@ function bindTeamRecord(root: HTMLElement, options: HtmlRendererOptions, render:
     }
 
     const data = new FormData(form);
-    await options.onTeamRecordSubmit(String(data.get("trainerName") ?? ""));
+    await options.onTeamRecordSubmit({
+      teamName: String(data.get("teamName") ?? data.get("trainerName") ?? ""),
+      trainerGreeting: String(data.get("trainerGreeting") ?? ""),
+    });
     render();
   });
 }
@@ -1455,6 +1481,7 @@ function renderReadyScreen({
         </div>
         ${renderShopTeamGrid(playerEntities, shopTargetAction, frame.scene.teamEffect)}
       </div>
+      ${frame.scene.worldMap ? renderWorldMap(frame.scene.worldMap) : ""}
       ${nextAction ? `<div class="shop-start-row">${renderShopStartAction(nextAction, frame)}</div>` : ""}
       <div class="shop-card-grid" data-shop-card-count="${shopActions.length}">
         ${shopActions.map((action) => renderShopActionCard(action, frame)).join("")}
@@ -1463,6 +1490,67 @@ function renderReadyScreen({
       ${renderTeamDetailPopups(playerEntities, frame.actions)}
     </section>
   `;
+}
+
+function renderWorldMap(map: FrameBattleFieldMap): string {
+  const positions = map.nodes.map((_, index) => createWorldMapNodePosition(index));
+  const linePoints = positions.map((position) => `${position.x},${position.y}`).join(" ");
+  const progressPoints = positions
+    .slice(0, Math.max(1, map.activeIndex + 1))
+    .map((position) => `${position.x},${position.y}`)
+    .join(" ");
+  const activeNode = map.nodes[map.activeIndex];
+  const nextNode = map.nodes[map.nextIndex];
+  const modeLabel =
+    map.mode === "start" ? "모험 시작" : map.mode === "transition" ? "새 필드 이동" : "진행 중";
+  const statusLabel = activeNode
+    ? `${activeNode.label} ${activeNode.timeLabel} · ${activeNode.elementLabel} · ${activeNode.levelLabel}`
+    : modeLabel;
+
+  return `
+    <section class="journey-map" data-map-mode="${map.mode}" data-active-index="${map.activeIndex}" aria-label="모험 월드맵">
+      <div class="journey-map-head">
+        <span>WORLD MAP</span>
+        <strong>${escapeHtml(statusLabel)}</strong>
+        <em>${escapeHtml(modeLabel)} ${map.progressInField}/${map.progressTotal}${nextNode ? ` · 다음 ${escapeHtml(nextNode.label)}` : ""}</em>
+      </div>
+      <div class="journey-map-graph">
+        <svg class="journey-map-lines" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+          <polyline class="journey-map-line" points="${linePoints}" />
+          ${progressPoints.includes(" ") ? `<polyline class="journey-map-line journey-map-line-progress" points="${progressPoints}" />` : ""}
+        </svg>
+        ${map.nodes.map((node, index) => renderWorldMapNode(node, positions[index])).join("")}
+      </div>
+    </section>
+  `;
+}
+
+function renderWorldMapNode(
+  node: FrameBattleFieldMapNode,
+  position: { x: number; y: number },
+): string {
+  return `
+    <article class="journey-node" data-node-status="${node.status}" data-node-type="${node.element}" data-battle-field="${escapeHtml(node.id)}" data-time-of-day="${node.timeOfDay}" style="left: ${position.x}%; top: ${position.y}%;">
+      <span class="journey-node-index">${node.index + 1}</span>
+      <strong>${escapeHtml(node.label)}</strong>
+      <span class="journey-node-meta">
+        <em>${escapeHtml(node.elementLabel)}</em>
+        <small>${escapeHtml(node.levelLabel)}</small>
+      </span>
+    </article>
+  `;
+}
+
+function createWorldMapNodePosition(index: number): { x: number; y: number } {
+  const columns = 6;
+  const row = Math.floor(index / columns);
+  const colInRow = index % columns;
+  const col = row % 2 === 0 ? colInRow : columns - 1 - colInRow;
+
+  return {
+    x: 8 + col * 16.8,
+    y: 18 + row * 32,
+  };
 }
 
 function shouldRenderReadyCaptureFeedback(
@@ -2132,7 +2220,7 @@ function renderGameOverScreen({
           ${renderTeamDots(playerEntities)}
         </div>
         <div>
-          <strong>${escapeHtml(frame.scene.trainer?.trainerName ?? frame.scene.subtitle)}</strong>
+          <strong>${escapeHtml(frame.scene.trainer?.teamName ?? frame.scene.subtitle)}</strong>
           ${renderTeamDots(opponentEntities)}
         </div>
       </div>
@@ -2232,7 +2320,7 @@ function renderTrainerBadge(trainer: FrameTrainerScene | undefined): string {
       <img src="${resolveTrainerAssetPath(trainer.portraitPath)}" alt="${escapeHtml(`${trainer.trainerName} 트레이너 초상`)}" />
       <div>
         <span>${escapeHtml(trainer.label)}</span>
-        <strong>${escapeHtml(trainer.trainerName)}</strong>
+        <strong>${escapeHtml(trainer.teamName)}</strong>
       </div>
     </div>
   `;
@@ -2255,7 +2343,7 @@ function renderTrainerBattleCeremony(
   const winner =
     activeEvent.winner === "player" ? "player" : activeEvent.winner === "enemy" ? "enemy" : "";
   const playerLine = activeEvent.playerLine ?? "가자!";
-  const opponentLine = activeEvent.opponentLine ?? "승부다!";
+  const opponentLine = opponentTrainer.greeting ?? activeEvent.opponentLine ?? "승부다!";
 
   return `
     <div class="trainer-ceremony" data-stage="${stage}" data-winner="${winner}" aria-hidden="true">
@@ -2268,7 +2356,7 @@ function renderTrainerBattleCeremony(
       })}
       ${renderCeremonyTrainer({
         lane: "enemy",
-        name: opponentTrainer.trainerName,
+        name: opponentTrainer.teamName,
         label: opponentTrainer.label,
         portraitPath: opponentTrainer.portraitPath,
         line: opponentLine,
@@ -2374,7 +2462,11 @@ function renderCheckpointVictoryScreen(
         </div>
         <label>
           <span>팀 이름</span>
-          <input name="trainerName" value="${escapeHtml(record.trainerName)}" maxlength="24" autocomplete="off" />
+          <input name="teamName" value="${escapeHtml(record.teamName)}" maxlength="24" autocomplete="off" />
+        </label>
+        <label>
+          <span>인사말</span>
+          <input name="trainerGreeting" value="${escapeHtml(record.trainerGreeting ?? "")}" maxlength="50" autocomplete="off" placeholder="생략하면 기본 대사를 사용합니다" />
         </label>
         <button type="submit">정산 저장</button>
         ${message}
@@ -3253,6 +3345,11 @@ function resolveSfxUrl(soundKey: string): string | undefined {
     return showdownNotificationUrl;
   }
 
+  const poolMatch = showdownCryPoolKeyPattern.exec(soundKey);
+  if (poolMatch) {
+    return showdownCryPoolUrl(poolMatch[1]);
+  }
+
   const cryMatch = showdownCryKeyPattern.exec(soundKey);
   if (cryMatch) {
     return showdownCryUrl(cryMatch[1]);
@@ -3267,6 +3364,28 @@ function resolveSfxUrl(soundKey: string): string | undefined {
   return mappedCry ? showdownCryUrl(mappedCry) : undefined;
 }
 
-function resolveBgmUrl(bgmKey: FrameBgmKey): string | undefined {
-  return showdownBgmUrl(SHOWDOWN_BGM_BY_KEY[bgmKey]);
+function resolveBgmUrl(bgmKey: string): string | undefined {
+  const trackMatch = showdownBgmTrackKeyPattern.exec(bgmKey);
+  if (trackMatch) {
+    return showdownBgmUrl(trackMatch[1]);
+  }
+
+  const fallbackStem = SHOWDOWN_BGM_BY_KEY[bgmKey as FrameBgmKey];
+  return fallbackStem ? showdownBgmUrl(fallbackStem) : undefined;
+}
+
+function showdownCryPoolUrl(seed: string): string | undefined {
+  if (showdownCryStems.length === 0) {
+    return undefined;
+  }
+
+  return showdownCryUrl(showdownCryStems[positiveHash(seed) % showdownCryStems.length]);
+}
+
+function positiveHash(value: string): number {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 31 + value.charCodeAt(index)) | 0;
+  }
+  return Math.abs(hash);
 }

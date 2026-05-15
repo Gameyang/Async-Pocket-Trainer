@@ -21,6 +21,7 @@ import type { GameFrame } from "../game/view/frame";
 
 export const PLAYER_ID_STORAGE_KEY = "apt:player-id:v1";
 export const TRAINER_NAME_STORAGE_KEY = "apt:trainer-name:v1";
+export const TRAINER_GREETING_STORAGE_KEY = "apt:trainer-greeting:v1";
 
 export interface BrowserGameRuntimeOptions {
   storage: StorageLike;
@@ -42,6 +43,8 @@ export interface RuntimeTeamRecordView {
   wave: number;
   opponentName: string;
   trainerName: string;
+  teamName: string;
+  trainerGreeting?: string;
   message?: string;
 }
 
@@ -62,14 +65,21 @@ export interface BrowserGameRuntime {
   saveSnapshot(): HeadlessClientSnapshot;
   getRunSummary(): RunSummary;
   getStatusView(): RuntimeStatusView;
-  submitTeamRecord(trainerName: string): Promise<void>;
+  submitTeamRecord(input: TeamRecordSubmitInput): Promise<void>;
   rerollStarterChoices(): void;
+}
+
+export interface TeamRecordSubmitInput {
+  teamName: string;
+  trainerGreeting?: string;
 }
 
 interface PendingTeamRecord {
   wave: number;
   opponentName: string;
   trainerName: string;
+  teamName: string;
+  trainerGreeting?: string;
   state: GameState;
   runSummary: RunSummary;
   message?: string;
@@ -93,6 +103,7 @@ export function createBrowserGameRuntime(options: BrowserGameRuntimeOptions): Br
     options.syncSettings ?? CODE_SYNC_SETTINGS,
     {
       ...options.syncOptions,
+      autoSubmitCheckpointWins: false,
       playerId: options.playerId ?? getBrowserPlayerId(storage),
       storage,
       now,
@@ -144,6 +155,8 @@ export function createBrowserGameRuntime(options: BrowserGameRuntimeOptions): Br
         wave: before.currentWave,
         opponentName: state.lastBattle?.opponentName ?? "Trainer",
         trainerName: getBrowserTrainerName(storage),
+        teamName: getBrowserTrainerName(storage),
+        trainerGreeting: getBrowserTrainerGreeting(storage),
         state,
         runSummary: client.getRunSummary(),
       };
@@ -172,17 +185,20 @@ export function createBrowserGameRuntime(options: BrowserGameRuntimeOptions): Br
         ? toTeamRecordView(recordPrompt, syncController.getStatus())
         : undefined,
     }),
-    async submitTeamRecord(trainerName: string) {
+    async submitTeamRecord(input: TeamRecordSubmitInput) {
       if (!recordPrompt) {
         return;
       }
 
-      const normalized = saveBrowserTrainerName(storage, trainerName);
+      const normalized = saveBrowserTrainerName(storage, input.teamName);
+      const trainerGreeting = saveBrowserTrainerGreeting(storage, input.trainerGreeting);
       client.dispatch({ type: "SET_TRAINER_NAME", trainerName: normalized });
       saveClientSnapshot(client.saveSnapshot(), storage);
       const status = await syncController.submitCheckpointRecord({
         wave: recordPrompt.wave,
         trainerName: normalized,
+        teamName: normalized,
+        trainerGreeting,
         state: {
           ...recordPrompt.state,
           trainerName: normalized,
@@ -190,6 +206,8 @@ export function createBrowserGameRuntime(options: BrowserGameRuntimeOptions): Br
         runSummary: {
           ...recordPrompt.runSummary,
           trainerName: normalized,
+          teamName: normalized,
+          trainerGreeting,
         },
       });
 
@@ -199,6 +217,8 @@ export function createBrowserGameRuntime(options: BrowserGameRuntimeOptions): Br
         recordPrompt = {
           ...recordPrompt,
           trainerName: normalized,
+          teamName: normalized,
+          trainerGreeting,
           message: status.message,
         };
       }
@@ -256,6 +276,28 @@ export function getBrowserTrainerName(storage: StorageLike): string {
 export function saveBrowserTrainerName(storage: StorageLike, trainerName: string): string {
   const normalized = trainerName.trim() || DEFAULT_BROWSER_TRAINER_NAME;
   storage.setItem(TRAINER_NAME_STORAGE_KEY, normalized);
+  return normalized;
+}
+
+export function getBrowserTrainerGreeting(storage: StorageLike): string | undefined {
+  const greeting = storage.getItem(TRAINER_GREETING_STORAGE_KEY)?.trim();
+  return greeting || undefined;
+}
+
+export function saveBrowserTrainerGreeting(
+  storage: StorageLike,
+  trainerGreeting: string | undefined,
+): string | undefined {
+  const normalized = Array.from((trainerGreeting ?? "").trim())
+    .slice(0, 50)
+    .join("");
+
+  if (!normalized) {
+    storage.removeItem(TRAINER_GREETING_STORAGE_KEY);
+    return undefined;
+  }
+
+  storage.setItem(TRAINER_GREETING_STORAGE_KEY, normalized);
   return normalized;
 }
 
@@ -323,6 +365,8 @@ function toTeamRecordView(
     wave: record.wave,
     opponentName: record.opponentName,
     trainerName: record.trainerName,
+    teamName: record.teamName,
+    trainerGreeting: record.trainerGreeting,
     message: record.message ?? status.message,
   };
 }
