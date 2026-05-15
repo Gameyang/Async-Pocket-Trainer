@@ -80,6 +80,11 @@
   pointer-events: none;
 }
 
+.fx-instance[data-fx-directed="true"],
+.fx-instance[data-fx-directed="true"] span {
+  animation: none;
+}
+
 .fx-shape-strike {
   transform: rotate(-18deg);
   animation: fx-strike-life var(--fx-duration) ease-out forwards;

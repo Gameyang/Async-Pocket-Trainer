@@ -43,7 +43,7 @@ import {
   type ShopActionProfile,
 } from "./framePresentation";
 import { effectEngine } from "./effects/engine";
-import { resolveEffectDescriptor } from "./effects/mapping";
+import { resolveEffectDescriptor, resolveEffectShape } from "./effects/mapping";
 import { getElementPalette } from "./effects/palette";
 
 const BATTLE_REPLAY_STEP_MS = 540;
@@ -148,12 +148,22 @@ interface ActiveFeedbackToast extends ScheduledFeedbackToast {
 
 interface AudioState {
   unlocked: boolean;
+  ctx?: AudioContext;
+  masterGain?: GainNode;
+  bgmGain?: GainNode;
+  sfxGain?: GainNode;
+  compressor?: DynamicsCompressorNode;
   currentBgmKey?: FrameBgmKey;
-  bgm?: HTMLAudioElement;
+  bgmSource?: AudioBufferSourceNode;
+  bufferCache: Map<string, Promise<AudioBuffer | undefined>>;
+  activeSfxSources: Set<AudioBufferSourceNode>;
   playedCueIds: Set<string>;
   lastReplayKey: string;
-  activeSfx: Set<HTMLAudioElement>;
 }
+
+const BGM_BASE_GAIN = 0.55;
+const BGM_DUCKED_GAIN = 0.28;
+const SFX_VOICE_LIMIT = 8;
 
 type BattleMotionClip =
   | "use-strike"
@@ -206,7 +216,8 @@ export function mountHtmlRenderer(
     unlocked: false,
     playedCueIds: new Set(),
     lastReplayKey: "",
-    activeSfx: new Set(),
+    bufferCache: new Map(),
+    activeSfxSources: new Set(),
   };
   const lifecycle: AppLifecycleState = {
     suspended: isPageSuspended(),
@@ -1199,10 +1210,13 @@ function renderBattleScreen({
   activeCue,
 }: ScreenRenderContext): string {
   const battleEntities = playerEntities.concat(opponentEntities);
+  const cameraShake = shouldShakeBattleCamera(playback.activeEvent, playerEntities)
+    ? resolveBattleCameraShake(playback.activeEvent, playerEntities)
+    : undefined;
   const activeCueAttribute = [
     activeCue ? ` data-active-cue="${escapeHtml(activeCue.effectKey)}"` : "",
-    shouldShakeBattleCamera(playback.activeEvent, playerEntities)
-      ? ' data-camera-shake="ally-damage"'
+    cameraShake
+      ? ` data-camera-shake="ally-damage" data-camera-shake-intensity="${cameraShake}"`
       : "",
   ].join("");
 
@@ -1236,12 +1250,36 @@ function shouldShakeBattleCamera(
   activeEvent: FrameBattleReplayEvent | undefined,
   playerEntities: readonly FrameEntity[],
 ): boolean {
-  return (
+  return Boolean(resolveBattleCameraShake(activeEvent, playerEntities));
+}
+
+function resolveBattleCameraShake(
+  activeEvent: FrameBattleReplayEvent | undefined,
+  playerEntities: readonly FrameEntity[],
+): "light" | "medium" | "heavy" | undefined {
+  const isPlayerDamage =
     activeEvent?.type === "damage.apply" &&
     (activeEvent.damage ?? 0) > 0 &&
     (activeEvent.sourceSide === "player" ||
-      playerEntities.some((entity) => entity.id === activeEvent.sourceEntityId))
-  );
+      playerEntities.some((entity) => entity.id === activeEvent.sourceEntityId));
+
+  if (!isPlayerDamage) {
+    return undefined;
+  }
+
+  if (
+    activeEvent.critical ||
+    (activeEvent.effectiveness ?? 1) > 1 ||
+    (activeEvent.damage ?? 0) >= 90
+  ) {
+    return "heavy";
+  }
+
+  if ((activeEvent.damage ?? 0) >= 36) {
+    return "medium";
+  }
+
+  return "light";
 }
 
 function renderStarterScreen(
@@ -2842,16 +2880,23 @@ function resolveMoveVfxShape(
   activeEvent: FrameBattleReplayEvent,
   activeCue: FrameVisualCue | undefined,
 ): string {
-  if (activeEvent.moveCategory === "status" || activeCue?.type === "battle.support") {
-    return "aura";
+  const category =
+    activeEvent.moveCategory ?? (activeCue?.type === "battle.support" ? "status" : undefined);
+
+  if (!category) {
+    return "particles";
   }
 
-  if (["electric", "psychic", "ice", "dragon"].includes(moveType)) {
-    return "beam";
-  }
-
-  if (["fire", "water", "poison", "rock", "ground", "steel"].includes(moveType)) {
-    return "missile";
+  switch (resolveEffectShape(category, moveType).shape) {
+    case "projectile":
+      return "missile";
+    case "beam":
+      return "beam";
+    case "aura":
+      return "aura";
+    case "strike":
+    case "burst":
+      return "particles";
   }
 
   return "particles";
@@ -2952,6 +2997,54 @@ function createBattleReplayKey(frame: GameFrame): string {
 
 function unlockAudio(audioState: AudioState): void {
   audioState.unlocked = true;
+  ensureAudioGraph(audioState);
+  void audioState.ctx?.resume().catch(() => undefined);
+}
+
+function ensureAudioGraph(audioState: AudioState): boolean {
+  if (audioState.ctx) {
+    return true;
+  }
+
+  const Ctor =
+    typeof window !== "undefined"
+      ? (window.AudioContext ??
+        (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext)
+      : undefined;
+
+  if (!Ctor) {
+    return false;
+  }
+
+  const ctx = new Ctor();
+  // Gentle bus compressor — tames peaks when several SFX overlap with BGM.
+  const compressor = ctx.createDynamicsCompressor();
+  compressor.threshold.value = -10;
+  compressor.knee.value = 8;
+  compressor.ratio.value = 4;
+  compressor.attack.value = 0.005;
+  compressor.release.value = 0.12;
+
+  const masterGain = ctx.createGain();
+  masterGain.gain.value = 0.85;
+
+  const bgmGain = ctx.createGain();
+  bgmGain.gain.value = BGM_BASE_GAIN;
+
+  const sfxGain = ctx.createGain();
+  sfxGain.gain.value = 1.0;
+
+  bgmGain.connect(masterGain);
+  sfxGain.connect(masterGain);
+  masterGain.connect(compressor);
+  compressor.connect(ctx.destination);
+
+  audioState.ctx = ctx;
+  audioState.compressor = compressor;
+  audioState.masterGain = masterGain;
+  audioState.bgmGain = bgmGain;
+  audioState.sfxGain = sfxGain;
+  return true;
 }
 
 function syncAudio(
@@ -2963,6 +3056,10 @@ function syncAudio(
   if (!audioState.unlocked || lifecycle.suspended) {
     pauseAudio(audioState);
     return;
+  }
+
+  if (audioState.ctx?.state === "suspended") {
+    void audioState.ctx.resume().catch(() => undefined);
   }
 
   if (playback.replayKey !== audioState.lastReplayKey) {
@@ -3017,89 +3114,192 @@ function isBattleSfxCue(cue: FrameVisualCue): boolean {
   );
 }
 
+function loadAudioBuffer(
+  audioState: AudioState,
+  url: string,
+): Promise<AudioBuffer | undefined> {
+  const cached = audioState.bufferCache.get(url);
+  if (cached) {
+    return cached;
+  }
+
+  const ctx = audioState.ctx;
+  if (!ctx) {
+    return Promise.resolve(undefined);
+  }
+
+  const promise = fetch(url)
+    .then((response) => response.arrayBuffer())
+    .then((arrayBuffer) => ctx.decodeAudioData(arrayBuffer))
+    .catch((error) => {
+      console.warn(`[audio] failed to decode ${url}:`, error);
+      audioState.bufferCache.delete(url);
+      return undefined;
+    });
+
+  audioState.bufferCache.set(url, promise);
+  return promise;
+}
+
 function syncBgm(audioState: AudioState, bgmKey: FrameBgmKey): void {
-  if (audioState.currentBgmKey === bgmKey && audioState.bgm) {
-    void audioState.bgm.play().catch(() => undefined);
+  if (!ensureAudioGraph(audioState) || !audioState.ctx) {
     return;
   }
 
-  audioState.bgm?.pause();
-  const url = resolveBgmUrl(bgmKey);
-
-  if (!url) {
-    audioState.currentBgmKey = undefined;
-    audioState.bgm = undefined;
+  if (audioState.currentBgmKey === bgmKey && audioState.bgmSource) {
     return;
   }
 
-  const bgm = new Audio(url);
-  bgm.loop = true;
-  bgm.volume = 0.34;
+  if (audioState.bgmSource) {
+    try {
+      audioState.bgmSource.stop();
+    } catch {
+      // Source may have already ended.
+    }
+    audioState.bgmSource = undefined;
+  }
+
   audioState.currentBgmKey = bgmKey;
-  audioState.bgm = bgm;
-  void bgm.play().catch(() => undefined);
+  const url = resolveBgmUrl(bgmKey);
+  if (!url) {
+    return;
+  }
+
+  void loadAudioBuffer(audioState, url).then((buffer) => {
+    if (!buffer || audioState.currentBgmKey !== bgmKey || !audioState.ctx || !audioState.bgmGain) {
+      return;
+    }
+
+    // Discard if BGM was swapped or stopped while the buffer was loading.
+    if (audioState.bgmSource) {
+      return;
+    }
+
+    const source = audioState.ctx.createBufferSource();
+    source.buffer = buffer;
+    source.loop = true;
+    source.connect(audioState.bgmGain);
+    source.start();
+    audioState.bgmSource = source;
+  });
 }
 
 function pauseAudio(audioState: AudioState): void {
-  audioState.bgm?.pause();
-  stopActiveSfx(audioState);
-}
-
-function stopActiveSfx(audioState: AudioState): void {
-  for (const audio of audioState.activeSfx) {
-    audio.pause();
-    try {
-      audio.currentTime = 0;
-    } catch {
-      // Some mobile browsers reject seeking streams that have not fully loaded.
-    }
+  if (audioState.ctx?.state === "running") {
+    void audioState.ctx.suspend().catch(() => undefined);
   }
-
-  audioState.activeSfx.clear();
 }
 
 function playSfx(audioState: AudioState, soundKey: string): void {
-  const url = resolveSfxUrl(soundKey);
+  if (!ensureAudioGraph(audioState) || !audioState.ctx || !audioState.sfxGain) {
+    return;
+  }
 
+  const url = resolveSfxUrl(soundKey);
   if (!url) {
     console.warn(`[audio] missing sfx asset for key: ${soundKey}`);
     return;
   }
 
-  const audio = new Audio(url);
-  audio.volume = resolveSfxVolume(soundKey);
-  audioState.activeSfx.add(audio);
-  const cleanup = () => audioState.activeSfx.delete(audio);
-  audio.addEventListener("ended", cleanup, { once: true });
-  audio.addEventListener("error", cleanup, { once: true });
-  void audio.play().catch((error) => {
-    console.warn(`[audio] sfx play failed for ${soundKey}:`, error);
-    cleanup();
+  const volume = resolveSfxVolume(soundKey);
+  const shouldDuck = soundKey !== "sfx.phase.change";
+
+  void loadAudioBuffer(audioState, url).then((buffer) => {
+    if (!buffer || !audioState.ctx || !audioState.sfxGain) {
+      return;
+    }
+
+    // Cap concurrent voices — stop the oldest if we exceed the limit.
+    if (audioState.activeSfxSources.size >= SFX_VOICE_LIMIT) {
+      const oldest = audioState.activeSfxSources.values().next().value;
+      if (oldest) {
+        try {
+          oldest.stop();
+        } catch {
+          // Already stopped.
+        }
+        audioState.activeSfxSources.delete(oldest);
+      }
+    }
+
+    const source = audioState.ctx.createBufferSource();
+    source.buffer = buffer;
+    const gain = audioState.ctx.createGain();
+    gain.gain.value = volume;
+    source.connect(gain).connect(audioState.sfxGain);
+    source.addEventListener("ended", () => {
+      audioState.activeSfxSources.delete(source);
+    });
+    audioState.activeSfxSources.add(source);
+
+    if (shouldDuck) {
+      duckBgm(audioState, buffer.duration);
+    }
+
+    try {
+      source.start();
+    } catch (error) {
+      console.warn(`[audio] sfx start failed for ${soundKey}:`, error);
+      audioState.activeSfxSources.delete(source);
+    }
   });
 }
 
+function duckBgm(audioState: AudioState, sfxDuration: number): void {
+  const ctx = audioState.ctx;
+  const bgmGain = audioState.bgmGain;
+  if (!ctx || !bgmGain) {
+    return;
+  }
+
+  const now = ctx.currentTime;
+  const hold = Math.max(0.15, Math.min(sfxDuration, 0.9));
+  const attack = 0.04;
+  const release = 0.25;
+
+  bgmGain.gain.cancelScheduledValues(now);
+  bgmGain.gain.setValueAtTime(bgmGain.gain.value, now);
+  bgmGain.gain.linearRampToValueAtTime(BGM_DUCKED_GAIN, now + attack);
+  bgmGain.gain.setValueAtTime(BGM_DUCKED_GAIN, now + attack + hold);
+  bgmGain.gain.linearRampToValueAtTime(BGM_BASE_GAIN, now + attack + hold + release);
+}
+
 function resolveSfxVolume(soundKey: string): number {
-  if (soundKey.startsWith("sfx.battle.type.") || soundKey.startsWith("sfx.battle.support.")) {
-    return 0.56;
-  }
-
   if (soundKey === "sfx.battle.critical.hit") {
-    return 0.58;
+    return 0.72;
   }
 
-  if (
-    soundKey === "sfx.battle.hit" ||
-    soundKey === "sfx.battle.miss" ||
-    soundKey === "sfx.creature.faint"
-  ) {
-    return 0.46;
+  if (soundKey.startsWith("sfx.battle.support.")) {
+    // Support cues are longer and sustained — keep them subdued so they sit under impacts.
+    return 0.42;
+  }
+
+  if (soundKey.startsWith("sfx.battle.type.")) {
+    // Element impact body — main voice that should cut through.
+    return soundKey.endsWith(".critical") ? 0.62 : 0.55;
+  }
+
+  if (soundKey === "sfx.battle.hit") {
+    return 0.55;
+  }
+
+  if (soundKey === "sfx.battle.miss") {
+    return 0.42;
+  }
+
+  if (soundKey === "sfx.creature.faint") {
+    return 0.68;
+  }
+
+  if (soundKey === "sfx.capture.success" || soundKey === "sfx.capture.fail") {
+    return 0.6;
   }
 
   if (soundKey === "sfx.phase.change") {
-    return 0.18;
+    return 0.32;
   }
 
-  return 0.34;
+  return 0.4;
 }
 
 function escapeHtml(value: string): string {

@@ -44,7 +44,9 @@ describe("renderer contract boundaries", () => {
     expect(source).toContain("data-motion-clip");
     expect(source).toContain("resolveBattleMotionTemplate");
     expect(source).toContain("data-camera-shake");
+    expect(source).toContain("data-camera-shake-intensity");
     expect(source).toContain("shouldShakeBattleCamera");
+    expect(source).toContain("resolveEffectShape");
   });
 
   it("does not advertise an installable PWA shell on static GitHub Pages", () => {

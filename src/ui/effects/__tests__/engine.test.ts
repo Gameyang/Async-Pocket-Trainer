@@ -67,6 +67,31 @@ describe("effect engine", () => {
     expect(instance?.style.getPropertyValue("top")).toBe("300px");
   });
 
+  it("uses directed HTML motion presets and cancels them on cleanup", () => {
+    const dom = installFakeDom();
+    const { source, target } = createBattleDom(dom);
+    const raf = createRafController();
+    const engine = createEffectEngine({
+      now: () => 0,
+      requestAnimationFrame: raf.requestAnimationFrame,
+      cancelAnimationFrame: raf.cancelAnimationFrame,
+    });
+    const descriptor = resolveEffectDescriptor({ category: "special", type: "poison" });
+
+    engine.spawn(descriptor, source, target, "cue-1", "battle.hit");
+
+    const instance = dom.querySelector(".fx-instance");
+    const projectileCore = dom.querySelector(".fx-projectile-core");
+    const animation = projectileCore?.animations[0];
+
+    expect(instance?.dataset.fxDirected).toBe("true");
+    expect(projectileCore?.animations.length).toBeGreaterThan(0);
+
+    engine.clear();
+
+    expect(animation?.cancelled).toBe(true);
+  });
+
   it("removes expired instances and stops scheduling frames when idle", () => {
     const dom = installFakeDom();
     const { source, target } = createBattleDom(dom);
@@ -197,10 +222,24 @@ class FakeStyle {
   }
 }
 
+class FakeAnimation {
+  cancelled = false;
+
+  constructor(
+    readonly keyframes: Keyframe[],
+    readonly options: KeyframeAnimationOptions | number | undefined,
+  ) {}
+
+  cancel(): void {
+    this.cancelled = true;
+  }
+}
+
 class FakeElement {
   className = "";
   readonly children: FakeElement[] = [];
   readonly dataset: Record<string, string> = {};
+  readonly animations: FakeAnimation[] = [];
   readonly style = new FakeStyle();
   parentElement?: FakeElement;
   private readonly attributes = new Map<string, string>();
@@ -296,6 +335,15 @@ class FakeElement {
 
     visit(this);
     return matches;
+  }
+
+  animate(
+    keyframes: Keyframe[] | PropertyIndexedKeyframes | null,
+    options?: number | KeyframeAnimationOptions,
+  ): Animation {
+    const animation = new FakeAnimation(Array.isArray(keyframes) ? keyframes : [], options);
+    this.animations.push(animation);
+    return animation as unknown as Animation;
   }
 
   getBoundingClientRect(): DOMRect {

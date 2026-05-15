@@ -4,12 +4,14 @@ import { buildBeamShape } from "./shapes/beam";
 import { buildBurstShape } from "./shapes/burst";
 import { buildProjectileShape } from "./shapes/projectile";
 import { buildStrikeShape } from "./shapes/strike";
+import { applyDomMotionPreset } from "./motionDirector";
 
 export interface EffectInstance {
   id: string;
   cueId: string;
   effectKey: string;
   rootEl: HTMLElement;
+  animations: Animation[];
   startedAt: number;
   durationMs: number;
 }
@@ -52,6 +54,7 @@ export function createEffectEngine(options: EffectEngineOptions = {}): EffectEng
   let nextInstanceId = 1;
 
   const removeInstance = (instance: EffectInstance) => {
+    instance.animations.forEach((animation) => animation.cancel());
     instance.rootEl.remove();
     activeKeys.delete(dedupeKey(instance.cueId, instance.effectKey));
     const index = active.indexOf(instance);
@@ -109,11 +112,13 @@ export function createEffectEngine(options: EffectEngineOptions = {}): EffectEng
 
       applyPalette(rootEl, descriptor);
       overlay.appendChild(rootEl);
+      const animations = applyDomMotionPreset(rootEl, descriptor, geometry);
       active.push({
         id: `fx-${nextInstanceId}`,
         cueId,
         effectKey,
         rootEl,
+        animations,
         startedAt: clock(),
         durationMs: descriptor.meta.durationMs,
       });
