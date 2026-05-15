@@ -366,6 +366,43 @@ interface TutorialVisualCue {
   icon: string;
 }
 
+type TutorialViewportLayout = "portrait" | "landscape";
+type TutorialTextToken =
+  | "starterSelectButtonArea"
+  | "readyTeamArea"
+  | "captureCandidateArea"
+  | "gameOverWaveArea"
+  | "gameOverTeamArea";
+
+interface TutorialViewportState {
+  layout: TutorialViewportLayout;
+}
+
+const TUTORIAL_LANDSCAPE_MEDIA_QUERY =
+  "(orientation: landscape) and (min-width: 700px) and (max-height: 720px)";
+
+const TUTORIAL_VIEWPORT_TEXT: Record<
+  TutorialViewportLayout,
+  Record<TutorialTextToken, string>
+> = {
+  portrait: {
+    starterSelectButtonArea: "카드 아래",
+    readyTeamArea: "위쪽 팀 칸",
+    captureCandidateArea: "위쪽에는",
+    gameOverWaveArea: "가운데에는",
+    gameOverTeamArea: "아래에는",
+  },
+  landscape: {
+    starterSelectButtonArea: "왼쪽 카드 안",
+    readyTeamArea: "왼쪽 팀 칸",
+    captureCandidateArea: "왼쪽에는",
+    gameOverWaveArea: "오른쪽에는",
+    gameOverTeamArea: "왼쪽에는",
+  },
+};
+
+const TUTORIAL_TOKEN_PATTERN = /\{([a-zA-Z][a-zA-Z0-9]*)\}/g;
+
 const TUTORIAL_GUIDE_TONES: Record<TutorialGuideId, TutorialGuideTone> = {
   "first-visit": "dex",
   "first-shop": "shop",
@@ -441,7 +478,7 @@ const TUTORIAL_GUIDES: Record<TutorialGuideId, TutorialGuideDefinition> = {
         kicker: "첫 선택",
         title: "카드를 누르면 일이 생겨요",
         body: [
-          "밝은 카드를 누르면 아래에 선택 버튼이 나와요.",
+          "밝은 카드를 누르면 {starterSelectButtonArea}에 선택 버튼이 나와요.",
           "선택을 누르면 그 포켓몬이 첫 팀원이 돼요.",
           "보상 표시가 있으면 카드를 눌러 보석을 먼저 받아요.",
           "도감이 늘수록 다음 도전에서 고를 친구가 많아져요.",
@@ -458,7 +495,7 @@ const TUTORIAL_GUIDES: Record<TutorialGuideId, TutorialGuideDefinition> = {
         kicker: "준비 화면",
         title: "팀을 먼저 살펴봐요",
         body: [
-          "위쪽 팀 칸에는 포켓몬을 최대 6마리까지 둘 수 있어요.",
+          "{readyTeamArea}에는 포켓몬을 최대 6마리까지 둘 수 있어요.",
           "빈 칸은 다음에 잡은 포켓몬이 들어갈 자리예요.",
           "포켓몬 카드를 누르면 HP, 능력치, 기술을 자세히 볼 수 있어요.",
           "아이템을 쓰기 전에 누가 다쳤는지 먼저 확인해요.",
@@ -516,7 +553,7 @@ const TUTORIAL_GUIDES: Record<TutorialGuideId, TutorialGuideDefinition> = {
         title: "잡은 포켓몬을 확인해요",
         body: [
           "포켓몬을 잡았어요.",
-          "왼쪽에는 새로 잡은 포켓몬이 보여요.",
+          "{captureCandidateArea} 새로 잡은 포켓몬이 보여요.",
           "전투력, HP, 능력치, 기술을 볼 수 있어요.",
           "지금 팀과 비교해서 데려갈지 고르면 돼요.",
         ],
@@ -590,8 +627,8 @@ const TUTORIAL_GUIDES: Record<TutorialGuideId, TutorialGuideDefinition> = {
         title: "이번 도전이 끝났어요",
         body: [
           "전투에서 지면 도전이 끝나요.",
-          "가운데에는 몇 웨이브까지 갔는지 보여요.",
-          "아래에는 함께했던 팀이 보여요.",
+          "{gameOverWaveArea} 몇 웨이브까지 갔는지 보여요.",
+          "{gameOverTeamArea} 함께했던 팀이 보여요.",
           "져도 저장된 도감과 보상은 사라지지 않아요.",
         ],
         focus: ["최종 웨이브", "마지막 팀", "도전 결과"],
@@ -624,7 +661,6 @@ export function mountHtmlRenderer(
   const audioMixer = new AudioMixer({
     resolveSfxUrl,
     resolveBgmUrl,
-    preloadSfxUrls: () => Object.values(localSfxAssetUrls),
     warn: (message, error) => {
       console.warn(`[audio] ${message}`, error ?? "");
     },
@@ -645,9 +681,11 @@ export function mountHtmlRenderer(
   };
   const shopTarget: ShopTargetState = {};
   const tutorialGuide = createTutorialGuideState();
+  const tutorialViewport = createTutorialViewportState();
 
   const render = () => {
     const frame = client.getFrame();
+    tutorialViewport.layout = resolveTutorialViewportLayout();
     screenWakeLock.setEnabled(shouldKeepScreenAwake(frame));
     if (frame.phase !== "ready") {
       shopTarget.action = undefined;
@@ -665,6 +703,7 @@ export function mountHtmlRenderer(
       shopTarget.action,
       transientFeedback,
       tutorialGuide,
+      tutorialViewport.layout,
     );
     positionActiveMoveVfx(root, playbackView.activeEvent);
     spawnActiveBattleEffect(
@@ -703,6 +742,7 @@ export function mountHtmlRenderer(
   };
 
   render();
+  bindTutorialViewportLayout(tutorialViewport, render);
   bindAppLifecycle(lifecycle, battlePlayback, render);
 }
 
@@ -1092,6 +1132,7 @@ function renderFrame(
   shopTargetAction?: FrameAction,
   transientFeedback?: TransientFeedbackState,
   tutorialGuide?: TutorialGuideState,
+  tutorialLayout: TutorialViewportLayout = "portrait",
 ): string {
   const entityView = createEntityPlaybackView(frame, playback);
   const playerEntities = frame.scene.playerSlots
@@ -1141,7 +1182,7 @@ function renderFrame(
     transientFeedback,
   });
   const feedbackToasts = renderFeedbackToastStack(frame, playback, transientFeedback);
-  const tutorialOverlay = renderTutorialGuide(tutorialGuide);
+  const tutorialOverlay = renderTutorialGuide(tutorialGuide, tutorialLayout);
   return `
     <main class="app-shell" data-frame-id="${frame.frameId}" data-protocol="${frame.protocolVersion}" data-phase="${frame.phase}" data-wave="${frame.hud.wave}" data-money="${frame.hud.money}" data-trainer-points="${frame.hud.trainerPoints}" data-battle-field="${escapeHtml(frame.hud.battleField.id)}" data-time-of-day="${frame.hud.battleField.timeOfDay}" ${renderBallDataAttributes(frame)} data-team-size="${playerEntities.length}" data-team-hp-ratio="${frame.hud.teamHpRatio}" data-timeline-count="${frame.timeline.length}" data-battle-playback="${playback.isPlaying ? "playing" : "idle"}" data-battle-sequence="${playback.activeEvent?.sequence ?? 0}" data-battle-event-type="${escapeHtml(playback.activeEvent?.type ?? "")}">
       ${screen}
@@ -1164,6 +1205,45 @@ function createTutorialGuideState(): TutorialGuideState {
     pageIndex: 0,
     dontShowAgain: true,
   };
+}
+
+function createTutorialViewportState(): TutorialViewportState {
+  return {
+    layout: resolveTutorialViewportLayout(),
+  };
+}
+
+function bindTutorialViewportLayout(
+  state: TutorialViewportState,
+  render: () => void,
+): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  const update = () => {
+    const layout = resolveTutorialViewportLayout();
+    if (state.layout === layout) {
+      return;
+    }
+
+    state.layout = layout;
+    render();
+  };
+
+  window
+    .matchMedia?.(TUTORIAL_LANDSCAPE_MEDIA_QUERY)
+    ?.addEventListener?.("change", update);
+  window.addEventListener("resize", update);
+  window.addEventListener("orientationchange", update);
+}
+
+function resolveTutorialViewportLayout(): TutorialViewportLayout {
+  if (typeof window === "undefined" || !window.matchMedia) {
+    return "portrait";
+  }
+
+  return window.matchMedia(TUTORIAL_LANDSCAPE_MEDIA_QUERY).matches ? "landscape" : "portrait";
 }
 
 function loadTutorialSeenIds(): Set<TutorialGuideId> {
@@ -1354,7 +1434,10 @@ function clearTutorialGuide(state: TutorialGuideState): void {
   state.pendingActionId = undefined;
 }
 
-function renderTutorialGuide(state: TutorialGuideState | undefined): string {
+function renderTutorialGuide(
+  state: TutorialGuideState | undefined,
+  layout: TutorialViewportLayout,
+): string {
   const activeId = state?.activeId;
   if (!state || !activeId) {
     return "";
@@ -1368,23 +1451,25 @@ function renderTutorialGuide(state: TutorialGuideState | undefined): string {
   const guideTone = TUTORIAL_GUIDE_TONES[activeId];
   const dontShowAgainChecked = state.dontShowAgain ? " checked" : "";
   const focusItems = page.focus
-    .map((item, index) => renderTutorialGuideFocusItem(item, activeId, index))
+    .map((item, index) => renderTutorialGuideFocusItem(item, activeId, index, layout))
     .join("");
+  const finalLabel = resolveTutorialGuideTextTokens(guide.finalLabel, layout);
+  const nextLabel = resolveTutorialGuideTextTokens("다음", layout);
 
   return `
-    <section class="tutorial-guide-layer" data-tutorial-id="${activeId}" role="dialog" aria-modal="true" aria-labelledby="tutorial-guide-title">
+    <section class="tutorial-guide-layer" data-tutorial-id="${activeId}" data-tutorial-layout="${layout}" role="dialog" aria-modal="true" aria-labelledby="tutorial-guide-title">
       <article class="tutorial-guide-card" data-guide-tone="${guideTone}">
         <button type="button" class="tutorial-guide-close" data-tutorial-dismiss aria-label="튜토리얼 닫기">×</button>
         <header>
-          <span class="tutorial-guide-kicker">${escapeHtml(page.kicker)}</span>
+          <span class="tutorial-guide-kicker">${escapeHtml(resolveTutorialGuideTextTokens(page.kicker, layout))}</span>
           <span class="tutorial-guide-progress">${pageIndex + 1}/${guide.pages.length}</span>
           <div class="tutorial-guide-title-row">
             <span class="tutorial-guide-visual" data-tutorial-cue="${guideTone}" aria-hidden="true">${renderTutorialGuideIcon(activeId)}</span>
-            <h2 id="tutorial-guide-title">${escapeHtml(page.title)}</h2>
+            <h2 id="tutorial-guide-title">${escapeHtml(resolveTutorialGuideTextTokens(page.title, layout))}</h2>
           </div>
         </header>
         <ul class="tutorial-guide-body">
-          ${page.body.map((line, index) => renderTutorialGuideBodyLine(line, activeId, index)).join("")}
+          ${page.body.map((line, index) => renderTutorialGuideBodyLine(line, activeId, index, layout)).join("")}
         </ul>
         <div class="tutorial-guide-focus" aria-label="곧 볼 화면 요소">
           <strong>곧 볼 것</strong>
@@ -1402,7 +1487,7 @@ function renderTutorialGuide(state: TutorialGuideState | undefined): string {
           }
           <button type="button" class="tutorial-guide-primary" ${
             isLastPage ? "data-tutorial-finish" : "data-tutorial-next"
-          }>${escapeHtml(isLastPage ? guide.finalLabel : "다음")}</button>
+          }>${escapeHtml(isLastPage ? finalLabel : nextLabel)}</button>
         </footer>
       </article>
     </section>
@@ -1431,25 +1516,43 @@ function renderTutorialGuideBodyLine(
   line: string,
   id: TutorialGuideId,
   index: number,
+  layout: TutorialViewportLayout,
 ): string {
-  const cue = resolveTutorialVisualCue(line, id, index);
+  const text = resolveTutorialGuideTextTokens(line, layout);
+  const cue = resolveTutorialVisualCue(text, id, index);
   return `
     <li data-tutorial-cue="${cue.tone}">
       <span class="tutorial-guide-line-icon" aria-hidden="true">${cue.icon}</span>
-      <span class="tutorial-guide-line-text">${renderTutorialGuideText(line)}</span>
+      <span class="tutorial-guide-line-text">${renderTutorialGuideText(text)}</span>
     </li>
   `;
 }
 
-function renderTutorialGuideFocusItem(item: string, id: TutorialGuideId, index: number): string {
-  const cue = resolveTutorialVisualCue(item, id, index);
-  return `<span data-tutorial-cue="${cue.tone}"><span class="tutorial-guide-chip-icon" aria-hidden="true">${cue.icon}</span>${renderTutorialGuideText(item)}</span>`;
+function renderTutorialGuideFocusItem(
+  item: string,
+  id: TutorialGuideId,
+  index: number,
+  layout: TutorialViewportLayout,
+): string {
+  const text = resolveTutorialGuideTextTokens(item, layout);
+  const cue = resolveTutorialVisualCue(text, id, index);
+  return `<span data-tutorial-cue="${cue.tone}"><span class="tutorial-guide-chip-icon" aria-hidden="true">${cue.icon}</span>${renderTutorialGuideText(text)}</span>`;
 }
 
 function renderTutorialGuideText(text: string): string {
   return escapeHtml(text).replace(TUTORIAL_HIGHLIGHT_PATTERN, (match) => {
     const tone = TUTORIAL_HIGHLIGHT_TONES[match] ?? "info";
     return `<strong class="tutorial-guide-highlight" data-tutorial-cue="${tone}">${match}</strong>`;
+  });
+}
+
+function resolveTutorialGuideTextTokens(
+  text: string,
+  layout: TutorialViewportLayout,
+): string {
+  return text.replace(TUTORIAL_TOKEN_PATTERN, (token, key: string) => {
+    const replacements = TUTORIAL_VIEWPORT_TEXT[layout];
+    return Object.hasOwn(replacements, key) ? replacements[key as TutorialTextToken] : token;
   });
 }
 
@@ -2518,6 +2621,8 @@ function renderShopTeamSlot(
   }
 
   const hpState = resolveHpState(entity.hp.ratio);
+  const criticalHpAttribute =
+    entity.hp.max > 0 && entity.hp.ratio <= 0.2 ? ' data-hp-critical="true"' : "";
   const requiresHealable =
     targetAction?.action.type === "BUY_HEAL" && targetAction.action.scope === "single";
   const targetAllowed =
@@ -2561,7 +2666,7 @@ function renderShopTeamSlot(
         <div><dt>스</dt><dd>${entity.stats.speed}</dd></div>
       </dl>
       <div class="shop-slot-moves">${moves}</div>
-      <span class="slot-meter" data-hp-state="${hpState}"><span style="width: ${Math.round(entity.hp.ratio * 100)}%"></span></span>
+      <span class="slot-meter" data-hp-state="${hpState}"${criticalHpAttribute}><span style="width: ${Math.round(entity.hp.ratio * 100)}%"></span></span>
     </${tag}>
   `;
 }
