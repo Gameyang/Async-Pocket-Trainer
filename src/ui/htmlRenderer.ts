@@ -111,16 +111,6 @@ const localSfxAssetUrls = import.meta.glob<string>("../resources/audio/sfx/*.m4a
   import: "default",
   query: "?url",
 });
-const showdownCryStems = Object.keys(showdownCryAssetUrls)
-  .map(
-    (assetPath) =>
-      assetPath
-        .split("/")
-        .at(-1)
-        ?.replace(/\.m4a$/i, "") ?? "",
-  )
-  .filter(Boolean)
-  .sort();
 
 const SHOWDOWN_BGM_BY_KEY: Record<FrameBgmKey, string> = {
   "bgm.starterReady": "xy-rival",
@@ -202,8 +192,6 @@ const localSfxUrl = (stem: string): string | undefined =>
 const phaseChangeSfxUrl = localSfxUrl("phase-change") ?? showdownNotificationUrl;
 
 const showdownElementSfxPattern = /^sfx\.battle\.(?:support\.)?type\.([a-z-]+)(?:\.critical)?$/;
-
-const showdownCryPoolKeyPattern = /^sfx\.cry\.pool\.([a-z0-9-]+)$/;
 
 const showdownCryKeyPattern = /^sfx\.cry\.([a-z0-9-]+)$/;
 
@@ -4552,11 +4540,6 @@ function resolveSfxUrl(soundKey: string): string | undefined {
     }
   }
 
-  const poolMatch = showdownCryPoolKeyPattern.exec(soundKey);
-  if (poolMatch) {
-    return showdownCryPoolUrl(poolMatch[1]);
-  }
-
   const cryMatch = showdownCryKeyPattern.exec(soundKey);
   if (cryMatch) {
     return showdownCryUrl(cryMatch[1]);
@@ -4604,14 +4587,6 @@ function sceneBgmUrl(sceneFolder: string, seed: string): string | undefined {
 
 function legacySceneBgmUrl(sceneFolder: string): string | undefined {
   return legacyBgmAssetUrls[`../resources/audio/bgm/${sceneFolder}.m4a`];
-}
-
-function showdownCryPoolUrl(seed: string): string | undefined {
-  if (showdownCryStems.length === 0) {
-    return undefined;
-  }
-
-  return showdownCryUrl(showdownCryStems[positiveHash(seed) % showdownCryStems.length]);
 }
 
 function positiveHash(value: string): number {

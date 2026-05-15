@@ -2105,7 +2105,6 @@ function createVisualCues(state: GameState): FrameVisualCue[] {
       sequence: state.lastBattle?.replay.at(-1)?.sequence ?? 0,
       effectKey: "phase.change",
       soundKey: "sfx.phase.change",
-      soundKeys: [createCryPoolSoundKey("phase", state.phase, state.currentWave, state.seed)],
       cryKey: createEncounterCryKey(state),
       label: state.phase,
       phase: state.phase,
@@ -2139,19 +2138,7 @@ function createCaptureCue(state: GameState): FrameVisualCue | undefined {
     sequence: (state.lastBattle?.replay.at(-1)?.sequence ?? 0) + latestEvent.id,
     effectKey: type,
     soundKey: latestCapture.success ? "sfx.capture.success" : "sfx.capture.fail",
-    soundKeys: [
-      createCryPoolSoundKey(
-        "capture",
-        type,
-        latestCapture.ball,
-        target?.speciesId ?? latestCapture.targetName,
-        latestEvent.id,
-      ),
-    ],
-    cryKey:
-      latestCapture.success && target
-        ? toCrySoundKey(getSpecies(target.speciesId).identifier)
-        : undefined,
+    cryKey: target ? toCrySoundKey(getSpecies(target.speciesId).identifier) : undefined,
     label: latestCapture.success ? "포획 성공!" : "포획 실패",
     ball: latestCapture.ball,
     targetEntityId: target?.instanceId,
@@ -2679,10 +2666,6 @@ function toCrySoundKey(speciesIdentifier: string): string {
   return `sfx.cry.${speciesIdentifier}`;
 }
 
-function createCryPoolSoundKey(...parts: Array<string | number | boolean | undefined>): string {
-  return `sfx.cry.pool.${positiveHash(parts.join(":")).toString(36)}`;
-}
-
 function positiveHash(value: string): number {
   let hash = 0;
   for (let index = 0; index < value.length; index += 1) {
@@ -2746,16 +2729,6 @@ function battleReplayEventToCue(
       sequence: event.sequence,
       effectKey: "battle.miss",
       soundKey: "sfx.battle.miss",
-      soundKeys: [
-        createCryPoolSoundKey(
-          "miss",
-          event.moveType ?? "unknown",
-          event.actorId,
-          event.targetId,
-          event.sequence,
-        ),
-      ],
-      cryKey: lookup.cryKey(event.actorId),
       turn: event.turn,
       sourceEntityId: event.actorId,
       targetEntityId: event.targetId,
@@ -2777,18 +2750,6 @@ function battleReplayEventToCue(
       sequence: event.sequence,
       effectKey: battleHitEffectKey(event.effectiveness, event.critical),
       soundKey: battleHitSoundKey(event.moveType, event.critical),
-      soundKeys: [
-        createCryPoolSoundKey(
-          "hit",
-          event.moveType ?? "unknown",
-          event.effectiveness,
-          event.critical,
-          event.actorId,
-          event.targetId,
-          event.sequence,
-        ),
-      ],
-      cryKey: lookup.cryKey(event.targetId),
       turn: event.turn,
       sourceEntityId: event.actorId,
       targetEntityId: event.targetId,
@@ -2812,17 +2773,6 @@ function battleReplayEventToCue(
       sequence: event.sequence,
       effectKey: "battle.support",
       soundKey: battleSupportSoundKey(event.moveType),
-      soundKeys: [
-        createCryPoolSoundKey(
-          "support",
-          event.moveType,
-          event.actorId ?? "",
-          event.targetId ?? "",
-          supportEntityId ?? "",
-          event.sequence,
-        ),
-      ],
-      cryKey: lookup.cryKey(supportEntityId ?? event.targetId ?? event.actorId),
       turn: event.turn,
       sourceEntityId: event.actorId,
       targetEntityId: event.targetId,
@@ -2841,7 +2791,6 @@ function battleReplayEventToCue(
       sequence: event.sequence,
       effectKey: "creature.faint",
       soundKey: "sfx.creature.faint",
-      soundKeys: [createCryPoolSoundKey("faint", event.entityId, event.sequence)],
       cryKey: lookup.cryKey(event.entityId),
       turn: event.turn,
       entityId: event.entityId,

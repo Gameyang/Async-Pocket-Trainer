@@ -10,7 +10,7 @@ import { validateFrameContract } from "./frame";
 
 describe("game frame contract", () => {
   it("exposes renderer-facing entities, actions, and visual cues without requiring DOM", () => {
-    const client = new HeadlessGameClient({ seed: "frame-contract" });
+    const client = new HeadlessGameClient({ seed: "opening-wild-level" });
     let frame = client.getFrame();
 
     expect(validateFrameContract(frame)).toEqual([]);

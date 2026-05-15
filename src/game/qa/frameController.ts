@@ -277,6 +277,10 @@ function chooseEncounterBoost(
   frame: GameFrame,
   actions: readonly FrameAction[],
 ): FrameAction | undefined {
+  if (frame.hud.wave < 5) {
+    return undefined;
+  }
+
   if (frame.hud.encounterBoost) {
     return undefined;
   }
