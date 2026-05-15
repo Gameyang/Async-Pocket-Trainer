@@ -4499,6 +4499,54 @@ button.move-detail-content:hover {
   font-weight: 900;
 }
 
+.shop-scope-badge {
+  display: inline-grid;
+  place-items: center;
+  min-height: 16px;
+  margin: 0 4px 2px 0;
+  border: 2px solid rgba(19, 28, 40, 0.84);
+  border-radius: 5px;
+  padding: 0 5px;
+  background: #edf4ff;
+  color: #153049;
+  font-size: 0.52rem;
+  font-weight: 900;
+  line-height: 1;
+  vertical-align: 1px;
+  white-space: nowrap;
+  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.1);
+}
+
+.shop-scope-badge[data-scope-kind="single"] {
+  background: #fff0c9;
+  color: #5a3c05;
+}
+
+.shop-scope-badge[data-scope-kind="team"] {
+  background: #dff7d5;
+  color: #245c25;
+}
+
+.shop-scope-badge[data-scope-kind="next"] {
+  background: #dcefff;
+  color: #1b4b72;
+}
+
+.shop-scope-badge[data-scope-kind="instant"] {
+  background: #ffe2d5;
+  color: #6a2718;
+}
+
+.shop-scope-badge[data-scope-kind="utility"] {
+  background: #ece2ff;
+  color: #44246f;
+}
+
+.shop-scope-badge[data-scope-kind="skin"] {
+  background: #e2f6ff;
+  color: #1b5571;
+}
+
 .shop-card[data-grade="common"] {
   --grade-color: #4a5662;
 }

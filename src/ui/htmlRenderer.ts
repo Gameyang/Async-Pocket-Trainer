@@ -5,6 +5,7 @@ import {
   type ElementType,
   type GameAction,
   type MoveCategory,
+  type PremiumOfferId,
 } from "../game/types";
 import type {
   FrameAction,
@@ -30,7 +31,7 @@ import {
   localizeType,
 } from "../game/localization";
 import { formatBattleFieldLabel } from "../game/battleField";
-import { getHealItemName } from "../game/shopCatalog";
+import { getHealItemName, getPremiumOffer } from "../game/shopCatalog";
 import {
   createBattleCueText,
   createBattleEventSummary,
@@ -2883,12 +2884,13 @@ function renderShopActionCard(action: FrameAction, frame: GameFrame): string {
   const visual = action.portrait
     ? renderShopPortraitIcon(action.portrait.assetPath, action.portrait.label)
     : renderActionIcon(action);
+  const scopeBadge = renderShopScopeBadge(action);
 
   return `
     <button type="button" class="shop-card" data-action-id="${escapeHtml(action.id)}" data-shop-kind="${profile.kind}" data-role="${action.role}"${gradeAttribute}${featuredAttribute}${saleAttribute}${premiumAttribute}${portraitAttribute}${ownedAttribute}${selectedAttribute}${soldOutAttribute}${healAttribute} aria-label="${escapeHtml(ariaLabel)}"${disabled}${reason}>
       ${visual}
       <small>${escapeHtml(compactMeta)}</small>
-      <p class="shop-card-body"><strong>${escapeHtml(profile.title)}</strong>${escapeHtml(detailText)}</p>
+      <p class="shop-card-body">${scopeBadge}<strong>${escapeHtml(profile.title)}</strong>${escapeHtml(detailText)}</p>
       ${saleBadge}
       ${premiumBadge}
       ${inventoryBadge}
@@ -2896,6 +2898,73 @@ function renderShopActionCard(action: FrameAction, frame: GameFrame): string {
       ${soldOutBadge}
     </button>
   `;
+}
+
+interface ShopScopeBadge {
+  kind: "single" | "team" | "next" | "instant" | "utility" | "skin";
+  label: string;
+}
+
+function renderShopScopeBadge(action: FrameAction): string {
+  const badge = resolveShopScopeBadge(action);
+  return badge
+    ? `<span class="shop-scope-badge" data-scope-kind="${badge.kind}">${escapeHtml(badge.label)}</span>`
+    : "";
+}
+
+function resolveShopScopeBadge(action: FrameAction): ShopScopeBadge | undefined {
+  if (action.id === "encounter:next") {
+    return { kind: "next", label: "다음 전투" };
+  }
+
+  switch (action.action.type) {
+    case "REST_TEAM":
+      return { kind: "team", label: "팀 전체" };
+    case "BUY_HEAL":
+      return action.action.scope === "team"
+        ? { kind: "team", label: "팀 전체" }
+        : { kind: "single", label: "단일 대상" };
+    case "BUY_STAT_BOOST":
+    case "BUY_STAT_REROLL":
+    case "BUY_TEACH_MOVE":
+      return { kind: "single", label: "단일 대상" };
+    case "BUY_BALL":
+      return { kind: "instant", label: "즉시 획득" };
+    case "BUY_SCOUT":
+    case "BUY_RARITY_BOOST":
+    case "BUY_LEVEL_BOOST":
+    case "BUY_TYPE_LOCK":
+      return { kind: "next", label: "다음 전투" };
+    case "SORT_TEAM":
+      return { kind: "utility", label: "팀 정렬" };
+    case "REROLL_SHOP_INVENTORY":
+      return { kind: "utility", label: "상점 갱신" };
+    case "BUY_TRAINER_PORTRAIT":
+      return { kind: "skin", label: "스킨" };
+    case "BUY_PREMIUM_SHOP_ITEM":
+      return resolvePremiumShopScopeBadge(action.action.offerId);
+    default:
+      return undefined;
+  }
+}
+
+function resolvePremiumShopScopeBadge(offerId: PremiumOfferId): ShopScopeBadge | undefined {
+  const offer = getPremiumOffer(offerId);
+  switch (offer.effect.kind) {
+    case "heal":
+      return offer.effect.scope === "team"
+        ? { kind: "team", label: "팀 전체" }
+        : { kind: "single", label: "단일 대상" };
+    case "statBoost":
+    case "teachMove":
+      return { kind: "single", label: "단일 대상" };
+    case "ball":
+      return { kind: "instant", label: "즉시 획득" };
+    case "rarityBoost":
+    case "levelBoost":
+    case "typeLock":
+      return { kind: "next", label: "다음 전투" };
+  }
 }
 
 function renderShopPortraitIcon(assetPath: string, label: string): string {

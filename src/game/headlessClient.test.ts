@@ -44,29 +44,6 @@ describe("HeadlessGameClient", () => {
     expect(new Set(statKeys).size).toBeGreaterThan(1);
   });
 
-  it("keeps the first wild battle decisive with the starter level advantage", () => {
-    const client = new HeadlessGameClient({
-      seed: "input-skip",
-      balance: { battleDamageScale: 0.1 },
-    });
-
-    client.dispatch({ type: "START_RUN", starterSpeciesId: 1 });
-    client.dispatch({ type: "RESOLVE_NEXT_ENCOUNTER" });
-    const battle = client.getSnapshot().lastBattle;
-
-    expect(battle?.kind).toBe("wild");
-    expect(battle?.winner).toBe("player");
-    expect(battle?.turns).toBeLessThanOrEqual(4);
-
-    const enemyMaxHp = battle?.enemyTeam[0].stats.hp ?? 1;
-    const expectedFloor = Math.ceil(enemyMaxHp * 0.22);
-    const playerHits =
-      battle?.log.filter((entry) => entry.actorSide === "player" && entry.damage > 0) ?? [];
-
-    expect(playerHits.length).toBeGreaterThan(1);
-    expect(playerHits.slice(0, -1).every((entry) => entry.damage >= expectedFloor)).toBe(true);
-  });
-
   it("keeps dex and skill TP rewards pending until the player claims them", () => {
     const client = new HeadlessGameClient({ seed: "manual-dex-rewards" });
 

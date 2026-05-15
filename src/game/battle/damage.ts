@@ -3,9 +3,6 @@ import { clamp, type SeededRng } from "../rng";
 import type { BattleStat, Creature, ElementType, MoveDefinition } from "../types";
 
 const MIN_EFFECTIVE_DAMAGE_LEVEL = 5;
-const EARLY_LEVEL_ADVANTAGE_LEVEL_GAP = 3;
-const EARLY_LEVEL_ADVANTAGE_DEFENDER_MAX_LEVEL = 3;
-const EARLY_LEVEL_ADVANTAGE_HP_FLOOR_RATIO = 0.22;
 
 export interface DamageResult {
   damage: number;
@@ -61,17 +58,12 @@ export function estimateDamage(
   const defense = getDefenseStat(defender, move);
   const stab = attacker.types.includes(move.type) ? 1.5 : 1;
   const effectiveness = getTypeEffectiveness(move.type, defender.types);
-
-  if (effectiveness === 0) {
-    return 0;
-  }
-
   const sideMultiplier = getSideDefenseMultiplier(move, context);
   const raw = calculateBaseDamage(resolveBattleLevel(attacker), power, attack, defense);
   const averageVariance = 0.925;
 
-  const damage = Math.max(
-    1,
+  return Math.max(
+    0,
     Math.floor(
       raw *
         stab *
@@ -79,12 +71,10 @@ export function estimateDamage(
         sideMultiplier *
         averageVariance *
         damageScale *
-        (context.hitCount ?? 1),
+        (context.hitCount ?? 1) *
+        move.accuracy,
     ),
   );
-  const adjustedDamage = applyEarlyLevelAdvantageDamageFloor(damage, attacker, defender);
-
-  return Math.max(0, Math.floor(adjustedDamage * move.accuracy));
 }
 
 export function calculateDamage(
@@ -146,11 +136,7 @@ export function calculateDamage(
     ),
   );
 
-  return {
-    damage: applyEarlyLevelAdvantageDamageFloor(damage, attacker, defender),
-    effectiveness,
-    critical,
-  };
+  return { damage, effectiveness, critical };
 }
 
 export function getModifiedStat(creature: Creature, stat: BattleStat): number {
@@ -161,10 +147,7 @@ export function getModifiedStat(creature: Creature, stat: BattleStat): number {
     return Math.max(1, Math.floor(base * 0.5 * getStageMultiplier(stage)));
   }
 
-  return Math.max(
-    stat === "accuracy" || stat === "evasion" ? 0.25 : 1,
-    base * getStageMultiplier(stage),
-  );
+  return Math.max(stat === "accuracy" || stat === "evasion" ? 0.25 : 1, base * getStageMultiplier(stage));
 }
 
 export function getStageMultiplier(stage: number): number {
@@ -195,16 +178,12 @@ function calculateBaseDamage(
   defense: number,
 ): number {
   const levelFactor = Math.floor((2 * level) / 5) + 2;
-  return Math.floor(Math.floor((levelFactor * power * attack) / Math.max(1, defense)) / 50) + 2;
+  return Math.floor((Math.floor((levelFactor * power * attack) / Math.max(1, defense)) / 50)) + 2;
 }
 
 function resolveBattleLevel(creature: Creature): number {
-  return Math.max(MIN_EFFECTIVE_DAMAGE_LEVEL, resolveActualLevel(creature));
-}
-
-function resolveActualLevel(creature: Creature): number {
   if (typeof creature.level === "number") {
-    return clamp(Math.round(creature.level), 1, 100);
+    return clamp(Math.max(MIN_EFFECTIVE_DAMAGE_LEVEL, Math.round(creature.level)), 1, 100);
   }
 
   const statTotal =
@@ -213,33 +192,7 @@ function resolveActualLevel(creature: Creature): number {
     creature.stats.defense +
     creature.stats.special +
     creature.stats.speed;
-  return clamp(Math.max(1, Math.round(statTotal / 18)), 1, 100);
-}
-
-function applyEarlyLevelAdvantageDamageFloor(
-  damage: number,
-  attacker: Creature,
-  defender: Creature,
-): number {
-  if (damage <= 0) {
-    return damage;
-  }
-
-  const attackerLevel = resolveActualLevel(attacker);
-  const defenderLevel = resolveActualLevel(defender);
-
-  if (
-    defenderLevel > EARLY_LEVEL_ADVANTAGE_DEFENDER_MAX_LEVEL ||
-    attackerLevel - defenderLevel < EARLY_LEVEL_ADVANTAGE_LEVEL_GAP
-  ) {
-    return damage;
-  }
-
-  const floor = Math.max(
-    1,
-    Math.ceil(Math.max(1, defender.stats.hp) * EARLY_LEVEL_ADVANTAGE_HP_FLOOR_RATIO),
-  );
-  return Math.max(damage, floor);
+  return clamp(Math.max(MIN_EFFECTIVE_DAMAGE_LEVEL, Math.round(statTotal / 18)), 1, 100);
 }
 
 function getSideDefenseMultiplier(move: MoveDefinition, context: DamageContext): number {
