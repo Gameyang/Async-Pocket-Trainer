@@ -80,6 +80,91 @@ describe("battle damage rules", () => {
     expect(result.damage).toBeGreaterThan(1);
   });
 
+  it("raises early level-advantage hits above chip damage in rolls and estimates", () => {
+    const weakTap = move({
+      id: "weak-tap",
+      name: "Weak Tap",
+      type: "normal",
+      power: 1,
+      accuracy: 1,
+    });
+    const attacker = creature("starter", [weakTap], { attack: 5, special: 5, speed: 50 }, 5);
+    const defender = creature(
+      "wild",
+      [weakTap],
+      { hp: 12, attack: 5, defense: 100, special: 100, speed: 5 },
+      1,
+    );
+    const expectedFloor = Math.ceil(defender.stats.hp * 0.22);
+    const result = calculateDamage(attacker, defender, weakTap, new FixedChanceRng(false), 0.1);
+
+    expect(result.damage).toBe(expectedFloor);
+    expect(estimateDamage(attacker, defender, weakTap, 0.1)).toBe(expectedFloor);
+  });
+
+  it("does not apply the early level-advantage floor to same-level battles", () => {
+    const weakTap = move({
+      id: "weak-tap",
+      name: "Weak Tap",
+      type: "normal",
+      power: 1,
+      accuracy: 1,
+    });
+    const attacker = creature("attacker", [weakTap], { attack: 5, special: 5 }, 5);
+    const defender = creature(
+      "defender",
+      [weakTap],
+      { hp: 12, attack: 5, defense: 100, special: 100, speed: 5 },
+      5,
+    );
+
+    expect(
+      calculateDamage(attacker, defender, weakTap, new FixedChanceRng(false), 0.1).damage,
+    ).toBe(1);
+    expect(estimateDamage(attacker, defender, weakTap, 0.1)).toBe(1);
+  });
+
+  it("keeps immunities, status moves, and fixed damage outside the early damage floor", () => {
+    const weakTap = move({
+      id: "weak-tap",
+      name: "Weak Tap",
+      type: "normal",
+      power: 1,
+      accuracy: 1,
+    });
+    const growl = move({
+      id: "growl",
+      name: "Growl",
+      type: "normal",
+      power: 0,
+      accuracy: 1,
+      category: "status",
+    });
+    const attacker = creature("starter", [weakTap], { attack: 5, special: 5, speed: 50 }, 5);
+    const defender = creature(
+      "wild",
+      [weakTap],
+      { hp: 12, attack: 5, defense: 100, special: 100, speed: 5 },
+      1,
+    );
+    const immuneDefender = { ...defender, types: ["ghost" as const] };
+
+    expect(
+      calculateDamage(attacker, immuneDefender, weakTap, new FixedChanceRng(false), 0.1).damage,
+    ).toBe(0);
+    expect(estimateDamage(attacker, immuneDefender, weakTap, 0.1)).toBe(0);
+    expect(calculateDamage(attacker, defender, growl, new FixedChanceRng(false), 0.1).damage).toBe(
+      0,
+    );
+    expect(estimateDamage(attacker, defender, growl, 0.1)).toBe(0);
+    expect(
+      calculateDamage(attacker, defender, weakTap, new FixedChanceRng(false), 0.1, {
+        fixedDamage: 1,
+      }).damage,
+    ).toBe(1);
+    expect(estimateDamage(attacker, defender, weakTap, 0.1, { fixedDamage: 1 })).toBe(1);
+  });
+
   it("applies status ailments and residual poison damage through replay events", () => {
     const poisonSting = move({
       id: "poison-sting",
