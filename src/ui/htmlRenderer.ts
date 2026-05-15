@@ -350,6 +350,76 @@ interface TutorialGuideState {
   pendingActionId?: string;
 }
 
+type TutorialGuideTone = "dex" | "shop" | "battle" | "capture" | "success" | "warning";
+type TutorialCueTone =
+  | TutorialGuideTone
+  | "coin"
+  | "gem"
+  | "team"
+  | "hp"
+  | "action"
+  | "info";
+
+interface TutorialVisualCue {
+  tone: TutorialCueTone;
+  icon: string;
+}
+
+const TUTORIAL_GUIDE_TONES: Record<TutorialGuideId, TutorialGuideTone> = {
+  "first-visit": "dex",
+  "first-shop": "shop",
+  "first-battle-start": "battle",
+  "first-capture-success": "capture",
+  "first-capture-failure": "warning",
+  "first-trainer-win": "success",
+  "first-battle-loss": "warning",
+};
+
+const TUTORIAL_HIGHLIGHT_TONES: Record<string, TutorialCueTone> = {
+  PREMIUM: "gem",
+  HP: "hp",
+  "6마리": "team",
+  도감: "dex",
+  잠긴: "dex",
+  카드: "action",
+  선택: "action",
+  버튼: "action",
+  누르면: "action",
+  코인: "coin",
+  보석: "gem",
+  팀: "team",
+  팀원: "team",
+  상세: "info",
+  능력치: "info",
+  기술: "info",
+  회복: "hp",
+  전투: "battle",
+  트레이너: "battle",
+  웨이브: "battle",
+  월드맵: "battle",
+  자동: "battle",
+  잡고: "capture",
+  잡으면: "capture",
+  포획: "capture",
+  몬스터볼: "capture",
+  볼: "capture",
+  성공: "success",
+  이기면: "success",
+  보상: "success",
+  실패: "warning",
+  패배: "warning",
+  쓰러져도: "warning",
+  부족: "warning",
+};
+
+const TUTORIAL_HIGHLIGHT_PATTERN = new RegExp(
+  Object.keys(TUTORIAL_HIGHLIGHT_TONES)
+    .sort((left, right) => right.length - left.length)
+    .map(escapeRegExp)
+    .join("|"),
+  "g",
+);
+
 const TUTORIAL_GUIDES: Record<TutorialGuideId, TutorialGuideDefinition> = {
   "first-visit": {
     id: "first-visit",
@@ -1294,22 +1364,26 @@ function renderTutorialGuide(state: TutorialGuideState | undefined): string {
   const page = guide.pages[pageIndex];
   const isFirstPage = pageIndex === 0;
   const isLastPage = pageIndex >= guide.pages.length - 1;
+  const guideTone = TUTORIAL_GUIDE_TONES[activeId];
   const dontShowAgainChecked = state.dontShowAgain ? " checked" : "";
   const focusItems = page.focus
-    .map((item) => `<span>${escapeHtml(item)}</span>`)
+    .map((item, index) => renderTutorialGuideFocusItem(item, activeId, index))
     .join("");
 
   return `
     <section class="tutorial-guide-layer" data-tutorial-id="${activeId}" role="dialog" aria-modal="true" aria-labelledby="tutorial-guide-title">
-      <article class="tutorial-guide-card">
+      <article class="tutorial-guide-card" data-guide-tone="${guideTone}">
         <button type="button" class="tutorial-guide-close" data-tutorial-dismiss aria-label="튜토리얼 닫기">×</button>
         <header>
           <span class="tutorial-guide-kicker">${escapeHtml(page.kicker)}</span>
           <span class="tutorial-guide-progress">${pageIndex + 1}/${guide.pages.length}</span>
-          <h2 id="tutorial-guide-title">${escapeHtml(page.title)}</h2>
+          <div class="tutorial-guide-title-row">
+            <span class="tutorial-guide-visual" data-tutorial-cue="${guideTone}" aria-hidden="true">${renderTutorialGuideIcon(activeId)}</span>
+            <h2 id="tutorial-guide-title">${escapeHtml(page.title)}</h2>
+          </div>
         </header>
         <ul class="tutorial-guide-body">
-          ${page.body.map((line) => `<li>${escapeHtml(line)}</li>`).join("")}
+          ${page.body.map((line, index) => renderTutorialGuideBodyLine(line, activeId, index)).join("")}
         </ul>
         <div class="tutorial-guide-focus" aria-label="곧 볼 화면 요소">
           <strong>곧 볼 것</strong>
@@ -1332,6 +1406,110 @@ function renderTutorialGuide(state: TutorialGuideState | undefined): string {
       </article>
     </section>
   `;
+}
+
+function renderTutorialGuideIcon(id: TutorialGuideId): string {
+  switch (id) {
+    case "first-visit":
+      return "📜";
+    case "first-shop":
+      return "🪙";
+    case "first-battle-start":
+      return "⚔️";
+    case "first-capture-success":
+    case "first-capture-failure":
+      return renderBallSvg("pokeBall");
+    case "first-trainer-win":
+      return "💎";
+    case "first-battle-loss":
+      return "🛡️";
+  }
+}
+
+function renderTutorialGuideBodyLine(
+  line: string,
+  id: TutorialGuideId,
+  index: number,
+): string {
+  const cue = resolveTutorialVisualCue(line, id, index);
+  return `
+    <li data-tutorial-cue="${cue.tone}">
+      <span class="tutorial-guide-line-icon" aria-hidden="true">${cue.icon}</span>
+      <span class="tutorial-guide-line-text">${renderTutorialGuideText(line)}</span>
+    </li>
+  `;
+}
+
+function renderTutorialGuideFocusItem(item: string, id: TutorialGuideId, index: number): string {
+  const cue = resolveTutorialVisualCue(item, id, index);
+  return `<span data-tutorial-cue="${cue.tone}"><span class="tutorial-guide-chip-icon" aria-hidden="true">${cue.icon}</span>${renderTutorialGuideText(item)}</span>`;
+}
+
+function renderTutorialGuideText(text: string): string {
+  return escapeHtml(text).replace(TUTORIAL_HIGHLIGHT_PATTERN, (match) => {
+    const tone = TUTORIAL_HIGHLIGHT_TONES[match] ?? "info";
+    return `<strong class="tutorial-guide-highlight" data-tutorial-cue="${tone}">${match}</strong>`;
+  });
+}
+
+function resolveTutorialVisualCue(
+  text: string,
+  id: TutorialGuideId,
+  index: number,
+): TutorialVisualCue {
+  if (text.includes("코인")) {
+    return { tone: "coin", icon: "🪙" };
+  }
+
+  if (text.includes("보석") || text.includes("PREMIUM")) {
+    return { tone: "gem", icon: "💎" };
+  }
+
+  if (text.includes("팀") || text.includes("6마리") || text.includes("팀원")) {
+    return { tone: "team", icon: "🐾" };
+  }
+
+  if (text.includes("HP") || text.includes("회복") || text.includes("다쳤")) {
+    return { tone: "hp", icon: "💚" };
+  }
+
+  if (
+    text.includes("전투") ||
+    text.includes("트레이너") ||
+    text.includes("웨이브") ||
+    text.includes("월드맵") ||
+    text.includes("자동")
+  ) {
+    return { tone: "battle", icon: "⚔️" };
+  }
+
+  if (
+    text.includes("포획") ||
+    text.includes("잡") ||
+    text.includes("몬스터볼") ||
+    text.includes("볼")
+  ) {
+    return { tone: "capture", icon: renderBallSvg("pokeBall") };
+  }
+
+  if (text.includes("성공") || text.includes("이기면") || text.includes("보상")) {
+    return { tone: "success", icon: "✅" };
+  }
+
+  if (text.includes("실패") || text.includes("패배") || text.includes("쓰러") || text.includes("부족")) {
+    return { tone: "warning", icon: "!" };
+  }
+
+  if (text.includes("선택") || text.includes("누르면") || text.includes("버튼")) {
+    return { tone: "action", icon: "▶" };
+  }
+
+  if (text.includes("도감") || text.includes("잠긴") || text.includes("카드")) {
+    return { tone: "dex", icon: "📜" };
+  }
+
+  const fallbackTone = TUTORIAL_GUIDE_TONES[id];
+  return { tone: fallbackTone, icon: index === 0 ? renderTutorialGuideIcon(id) : "•" };
 }
 
 function bindTutorialGuide(
@@ -4088,6 +4266,10 @@ function formatPercent(value: number): string {
 
 function cssEscape(value: string): string {
   return value.replaceAll("\\", "\\\\").replaceAll('"', '\\"');
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function resolveAssetPath(assetPath: string): string {

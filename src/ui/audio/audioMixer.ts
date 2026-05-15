@@ -15,6 +15,8 @@ const SFX_BASE_GAIN = 0.6;
 const SFX_TOTAL_VOICE_LIMIT = 56;
 const BGM_DUCK_ATTACK_SEC = 0.04;
 const BGM_DUCK_RELEASE_SEC = 0.25;
+const SFX_BACKGROUND_PRELOAD_DELAY_MS = 250;
+const SFX_MAX_START_DELAY_SEC = 0.75;
 
 export type SfxLayer = "impact" | "cry" | "ui";
 
@@ -77,6 +79,9 @@ export class AudioMixer {
   private playedCueIds = new Set<string>();
   private lastReplayKey = "";
   private didPreloadSfx = false;
+  private sfxPreloadQueue: string[] = [];
+  private sfxPreloadInFlight = false;
+  private sfxPreloadTimer: number | undefined;
   private listenerCleanup: Array<() => void> = [];
 
   constructor(options: AudioMixerOptions) {
@@ -161,6 +166,9 @@ export class AudioMixer {
       this.stopSfxVoice(voice);
     }
     this.activeSfxVoices.length = 0;
+    this.clearSfxPreloadTimer();
+    this.sfxPreloadQueue.length = 0;
+    this.sfxPreloadInFlight = false;
     this.playedCueIds.clear();
 
     if (this.ctx) {
@@ -255,11 +263,49 @@ export class AudioMixer {
     }
 
     this.didPreloadSfx = true;
-    for (const url of this.options.preloadSfxUrls?.() ?? []) {
-      if (url) {
-        void this.loadBuffer(url);
-      }
+    this.sfxPreloadQueue = [...new Set(this.options.preloadSfxUrls?.() ?? [])].filter(Boolean);
+    this.scheduleNextSfxPreload();
+  }
+
+  private scheduleNextSfxPreload(): void {
+    if (
+      !this.ctx ||
+      !this.unlocked ||
+      this.lifecycleHidden ||
+      this.sfxPreloadInFlight ||
+      this.sfxPreloadTimer !== undefined ||
+      this.sfxPreloadQueue.length === 0
+    ) {
+      return;
     }
+
+    this.sfxPreloadTimer = window.setTimeout(() => {
+      this.sfxPreloadTimer = undefined;
+
+      if (!this.ctx || !this.unlocked || this.lifecycleHidden) {
+        return;
+      }
+
+      const url = this.sfxPreloadQueue.shift();
+      if (!url) {
+        return;
+      }
+
+      this.sfxPreloadInFlight = true;
+      void this.loadBuffer(url).finally(() => {
+        this.sfxPreloadInFlight = false;
+        this.scheduleNextSfxPreload();
+      });
+    }, SFX_BACKGROUND_PRELOAD_DELAY_MS);
+  }
+
+  private clearSfxPreloadTimer(): void {
+    if (this.sfxPreloadTimer === undefined) {
+      return;
+    }
+
+    window.clearTimeout(this.sfxPreloadTimer);
+    this.sfxPreloadTimer = undefined;
   }
 
   private installLifecycleListeners(): void {
@@ -271,9 +317,13 @@ export class AudioMixer {
       const hidden = document.hidden || document.visibilityState === "hidden";
       this.lifecycleHidden = hidden;
       if (hidden) {
+        this.clearSfxPreloadTimer();
         this.pause();
       } else if (this.unlocked && this.ctx?.state === "suspended") {
         void this.ctx.resume().catch(() => undefined);
+        this.scheduleNextSfxPreload();
+      } else if (this.unlocked) {
+        this.scheduleNextSfxPreload();
       }
     };
 
@@ -371,12 +421,16 @@ export class AudioMixer {
     const volume = resolveSfxVolume(soundKey);
     const layer = resolveSfxLayer(soundKey);
     const shouldDuck = soundKey !== "sfx.phase.change";
+    this.removeQueuedSfxPreload(url);
 
     void this.loadBuffer(url).then((buffer) => {
       if (!buffer || !this.ctx || !this.sfxLayerGains) {
         return;
       }
       if (this.lifecycleHidden || !this.unlocked) {
+        return;
+      }
+      if (this.ctx.currentTime - requestedAt > SFX_MAX_START_DELAY_SEC) {
         return;
       }
 
@@ -413,6 +467,13 @@ export class AudioMixer {
         this.releaseSfxVoice(voice);
       }
     });
+  }
+
+  private removeQueuedSfxPreload(url: string): void {
+    const index = this.sfxPreloadQueue.indexOf(url);
+    if (index >= 0) {
+      this.sfxPreloadQueue.splice(index, 1);
+    }
   }
 
   private reserveSfxVoice(layer: SfxLayer): void {
