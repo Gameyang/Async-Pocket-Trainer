@@ -1819,29 +1819,53 @@ function renderTeamDetailPopups(
 
 function renderTeamDetailPopup(entity: FrameEntity, actions: readonly FrameAction[]): string {
   const moves = entity.moveDex.map((entry) => renderTeamDetailMove(entry, actions)).join("");
+  const primaryType: ElementType = entity.types[0] ?? "normal";
+  const palette = getElementPalette(primaryType);
+  const paletteVars =
+    `--card-type-primary:${palette.primary};` +
+    `--card-type-secondary:${palette.secondary};` +
+    `--card-type-accent:${palette.accent};`;
+
+  const typeChips = entity.types
+    .slice(0, 2)
+    .map(
+      (type, idx) =>
+        `<span class="type-chip" data-type="${escapeHtml(type)}">${escapeHtml(
+          entity.typeLabels[idx] ?? type,
+        )}</span>`,
+    )
+    .join("");
+
+  const hpRatio = entity.hp.max === 0 ? 0 : entity.hp.current / entity.hp.max;
+  const hpState = resolveHpState(hpRatio);
 
   return `
     <div class="team-detail-popup" data-entity-id="${escapeHtml(entity.id)}" role="dialog" aria-modal="true" aria-label="${escapeHtml(`${entity.name} 상세 보기`)}">
-      <article class="team-detail-card">
+      <article class="team-detail-card" data-primary-type="${escapeHtml(primaryType)}" style="${paletteVars}">
+        <div class="team-detail-card__glow" aria-hidden="true"></div>
         <button type="button" class="team-detail-close" data-team-detail-close aria-label="상세 보기 닫기">✕</button>
-        <header>
-          <img src="${resolveAssetPath(entity.assetPath)}" alt="${escapeHtml(`${entity.name} 포켓몬`)}" />
-          <div>
-            <span>${escapeHtml(entity.typeLabels.join(" / "))}</span>
+        <header class="team-detail-card__head">
+          <img class="team-detail-card__sprite" src="${resolveAssetPath(entity.assetPath)}" alt="${escapeHtml(`${entity.name} 포켓몬`)}" />
+          <div class="team-detail-card__title">
             <div class="pokemon-title-line">
               <h2>${escapeHtml(entity.name)}</h2>
               ${renderPokemonLevelBadge(entity.level)}
             </div>
-            <p>HP ${entity.hp.current}/${entity.hp.max}</p>
+            <div class="team-detail-card__types">${typeChips}</div>
+            <div class="team-detail-card__hp" data-hp-state="${hpState}">
+              <span class="team-detail-card__hp-label">HP</span>
+              <span class="team-detail-card__hp-value">${entity.hp.current}<small>/${entity.hp.max}</small></span>
+              <span class="slot-meter" data-hp-state="${hpState}"><span style="width: ${Math.round(hpRatio * 100)}%"></span></span>
+            </div>
           </div>
         </header>
-        <dl class="team-detail-stats">
-          <div><dt>HP</dt><dd>${entity.hp.max}</dd></div>
-          <div><dt>공격</dt><dd>${entity.stats.attack}</dd></div>
-          <div><dt>방어</dt><dd>${entity.stats.defense}</dd></div>
-          <div><dt>특수</dt><dd>${entity.stats.special}</dd></div>
-          <div><dt>스피드</dt><dd>${entity.stats.speed}</dd></div>
-          <div><dt>전투력</dt><dd>${entity.scores.power}</dd></div>
+        <dl class="team-detail-card__stats">
+          ${renderStatRow("HP", entity.stats.hp, "hp")}
+          ${renderStatRow("공격", entity.stats.attack, "attack")}
+          ${renderStatRow("방어", entity.stats.defense, "defense")}
+          ${renderStatRow("특수", entity.stats.special, "special")}
+          ${renderStatRow("스피드", entity.stats.speed, "speed")}
+          ${renderStatRow("전투력", entity.scores.power, "power", STAT_BAR_POWER_CAP)}
         </dl>
         <section class="team-detail-moves" aria-label="스킬">
           <h3>스킬</h3>
@@ -1864,26 +1888,34 @@ function renderTeamDetailMove(
   const actionAttribute = claimAction
     ? ` type="button" data-action-id="${escapeHtml(claimAction.id)}"`
     : "";
+  const moveTypeKey: ElementType = move?.typeKey ?? "normal";
+  const moveState = entry.unlocked ? "unlocked" : "locked";
+  const rewardState = claimAction ? "claimable" : entry.rewardClaimed ? "claimed" : "none";
 
   return `
-    <li class="team-detail-move-card" data-move-state="${entry.unlocked ? "unlocked" : "locked"}" data-reward-state="${claimAction ? "claimable" : entry.rewardClaimed ? "claimed" : "none"}">
+    <li class="team-detail-move-card" data-move-state="${moveState}" data-reward-state="${rewardState}" data-type="${escapeHtml(moveTypeKey)}">
       <${contentTag}${actionAttribute} class="move-detail-content">
         ${claimAction ? renderRewardAlertBadge(claimAction) : ""}
-      <div class="move-detail-head">
-          <strong>${escapeHtml(move?.name ?? "???")}</strong>
-          <span class="move-detail-type">${escapeHtml(move?.type ?? "LOCKED")}</span>
-      </div>
-      <dl class="move-detail-grid">
-          <div class="move-detail-level"><dt>습득</dt><dd>Lv. ${entry.level}</dd></div>
+        <div class="move-detail-head">
+          <span class="move-type-dot" data-type="${escapeHtml(moveTypeKey)}" aria-hidden="true"></span>
+          <strong class="move-detail-name">${escapeHtml(move?.name ?? "???")}</strong>
+          <span class="move-detail-type" data-type="${escapeHtml(moveTypeKey)}">${escapeHtml(move?.type ?? "LOCKED")}</span>
+          ${
+            entry.unlocked
+              ? '<span class="move-detail-state-badge" data-state="unlocked">언락</span>'
+              : `<span class="move-detail-state-badge" data-state="locked">Lv. ${entry.level}</span>`
+          }
+        </div>
+        <dl class="move-detail-grid">
           ${
             move
               ? `<div class="move-detail-category"><dt>분류</dt><dd>${escapeHtml(localizeMoveCategory(move.category))}</dd></div>
                 <div class="move-detail-power"><dt>위력</dt><dd>${escapeHtml(formatMovePower(move))}</dd></div>
                 <div class="move-detail-accuracy"><dt>명중</dt><dd>${escapeHtml(move.accuracyLabel)}</dd></div>
                 <div class="move-detail-priority"><dt>우선도</dt><dd>${escapeHtml(formatMovePriority(move.priority))}</dd></div>`
-              : `<div class="move-detail-locked"><dt>정보</dt><dd>???</dd></div>`
+              : `<div class="move-detail-locked"><dt>습득</dt><dd>Lv. ${entry.level}</dd></div>`
           }
-      </dl>
+        </dl>
         <p class="move-detail-effect"><span>${move ? "효과" : "조건"}</span>${escapeHtml(
           move ? move.effect : `Lv. ${entry.level}에 습득 가능`,
         )}</p>
