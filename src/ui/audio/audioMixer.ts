@@ -9,8 +9,9 @@ import type { FrameVisualCue } from "../../game/view/frame.ts";
 // renderer just calls `unlock()` once and `apply()` per frame.
 
 const MASTER_GAIN = 0.85;
-const BGM_BASE_GAIN = 0.55;
-const BGM_DUCKED_GAIN = 0.28;
+const BGM_BASE_GAIN = 0.4;
+const BGM_DUCKED_GAIN = 0.2;
+const SFX_BASE_GAIN = 0.6;
 const SFX_VOICE_LIMIT = 12;
 const BGM_DUCK_ATTACK_SEC = 0.04;
 const BGM_DUCK_RELEASE_SEC = 0.25;
@@ -180,7 +181,7 @@ export class AudioMixer {
     const bgmGain = ctx.createGain();
     bgmGain.gain.value = BGM_BASE_GAIN;
     const sfxGain = ctx.createGain();
-    sfxGain.gain.value = 1.0;
+    sfxGain.gain.value = SFX_BASE_GAIN;
 
     bgmGain.connect(masterGain);
     sfxGain.connect(masterGain);

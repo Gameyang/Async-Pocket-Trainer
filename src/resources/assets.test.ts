@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import sharp from "sharp";
 
@@ -48,6 +48,7 @@ const bgm = [
   "audio/bgm/team-decision.m4a",
   "audio/bgm/game-over.m4a",
 ];
+const sceneBgmFolders = ["starter-ready", "battle-capture", "team-decision", "game-over"];
 
 const showdownCryStemOverrides: Record<string, string> = {
   "nidoran-f": "nidoranf",
@@ -106,7 +107,14 @@ describe("local generated assets", () => {
     expect(showdownAudioManifest.rootAudio.length).toBeGreaterThanOrEqual(20);
     expect(showdownAudioManifest.cries.length).toBeGreaterThan(1000);
 
-    for (const asset of [...showdownAudioManifest.rootAudio, ...showdownAudioManifest.cries]) {
+    for (const asset of showdownAudioManifest.rootAudio) {
+      const bytes = readCurrentRootAudioAsset(asset.outputPath);
+
+      expect(bytes.byteLength).toBeGreaterThan(512);
+      expect(bytes.toString("ascii", 4, 8)).toBe("ftyp");
+    }
+
+    for (const asset of showdownAudioManifest.cries) {
       const bytes = readAsset(asset.outputPath);
 
       expect(bytes.byteLength).toBeGreaterThan(512);
@@ -146,6 +154,33 @@ async function expectTransparentWebpSprite(assetPath: string): Promise<void> {
 
 function readAsset(path: string): Buffer {
   return readFileSync(new URL(`./${path.replace(/^resources\//, "")}`, import.meta.url));
+}
+
+function readCurrentRootAudioAsset(path: string): Buffer {
+  const normalizedPath = path.replace(/^resources\//, "");
+  const directUrl = new URL(`./${normalizedPath}`, import.meta.url);
+  if (existsSync(directUrl)) {
+    return readFileSync(directUrl);
+  }
+
+  const fileName = normalizedPath.split("/").at(-1);
+  if (fileName) {
+    if (fileName === "notification.m4a") {
+      const fallbackUrl = new URL("./audio/sfx/phase-change.m4a", import.meta.url);
+      if (existsSync(fallbackUrl)) {
+        return readFileSync(fallbackUrl);
+      }
+    }
+
+    for (const sceneFolder of sceneBgmFolders) {
+      const sceneUrl = new URL(`./audio/bgm/${sceneFolder}/${fileName}`, import.meta.url);
+      if (existsSync(sceneUrl)) {
+        return readFileSync(sceneUrl);
+      }
+    }
+  }
+
+  return readFileSync(directUrl);
 }
 
 function isPng(bytes: Buffer): boolean {

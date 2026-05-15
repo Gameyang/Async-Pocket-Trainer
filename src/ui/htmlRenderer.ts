@@ -2227,15 +2227,21 @@ function renderTeamCompareSlots(
   }).join("");
 }
 
-const CANDIDATE_STAT_CAP = 180;
+const STAT_BAR_BASE_CAP = 180;
+const STAT_BAR_POWER_CAP = 600;
 
-function candidateStatFill(value: number): number {
+function statBarFill(value: number, cap: number = STAT_BAR_BASE_CAP): number {
   if (!Number.isFinite(value) || value <= 0) return 0;
-  return Math.min(1, value / CANDIDATE_STAT_CAP);
+  return Math.min(1, value / cap);
 }
 
-function renderCandidateStatRow(label: string, value: number, statKey: string): string {
-  const fill = candidateStatFill(value).toFixed(3);
+function renderStatRow(
+  label: string,
+  value: number,
+  statKey: string,
+  cap?: number,
+): string {
+  const fill = statBarFill(value, cap).toFixed(3);
   return `
     <div class="stat-row" data-stat="${statKey}" style="--stat-fill: ${fill}">
       <dt>${escapeHtml(label)}</dt>
@@ -2301,11 +2307,11 @@ function renderCandidateCard(entity: FrameEntity, weakestPower: number): string 
         </div>
       </header>
       <dl class="candidate-card__stats">
-        ${renderCandidateStatRow("HP", entity.stats.hp, "hp")}
-        ${renderCandidateStatRow("공격", entity.stats.attack, "attack")}
-        ${renderCandidateStatRow("방어", entity.stats.defense, "defense")}
-        ${renderCandidateStatRow("특수", entity.stats.special, "special")}
-        ${renderCandidateStatRow("스피드", entity.stats.speed, "speed")}
+        ${renderStatRow("HP", entity.stats.hp, "hp")}
+        ${renderStatRow("공격", entity.stats.attack, "attack")}
+        ${renderStatRow("방어", entity.stats.defense, "defense")}
+        ${renderStatRow("특수", entity.stats.special, "special")}
+        ${renderStatRow("스피드", entity.stats.speed, "speed")}
       </dl>
       ${skills ? `<ul class="candidate-card__skills" aria-label="보유 스킬">${skills}</ul>` : ""}
     </article>

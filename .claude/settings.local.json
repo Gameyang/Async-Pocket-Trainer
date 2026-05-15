@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "Bash(npx tsc *)",
-      "Bash(npx vite *)"
+      "Bash(npx vite *)",
+      "Bash(ls \"C:/Users/yang.jin/.claude/projects/d--Gameyang-Async-Pocket-Trainer/memory/\" 2>&1)",
+      "Read(//c/Users/yang.jin/.claude/projects/d--Gameyang-Async-Pocket-Trainer/**)"
     ]
   }
 }
