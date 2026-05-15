@@ -40,7 +40,7 @@ export const defaultBalance: GameBalance = {
   checkpointTeamSizeGrowthPerCheckpoint: 1 / 3,
   teamRestCost: 120,
   pokeBallCost: 12,
-  greatBallCost: 36,
+  greatBallCost: 34,
   ultraBallCost: 82,
   hyperBallCost: 150,
   masterBallCost: 300,

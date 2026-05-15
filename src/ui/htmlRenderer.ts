@@ -201,6 +201,8 @@ interface BattlePlaybackState {
   replayKey: string;
   cursor: number;
   timerId?: number;
+  timerReplayKey?: string;
+  timerCursor?: number;
 }
 
 interface BattlePlaybackView {
@@ -3047,9 +3049,10 @@ function renderShopActionCard(action: FrameAction, frame: GameFrame): string {
     ? renderShopPortraitIcon(action.portrait.assetPath, action.portrait.label)
     : renderActionIcon(action);
   const scopeBadge = renderShopScopeBadge(action);
+  const scopeBadgeAttribute = scopeBadge ? ' data-has-scope-badge="true"' : "";
 
   return `
-    <button type="button" class="shop-card" data-action-id="${escapeHtml(action.id)}" data-shop-kind="${profile.kind}" data-role="${action.role}"${gradeAttribute}${featuredAttribute}${saleAttribute}${premiumAttribute}${portraitAttribute}${ownedAttribute}${selectedAttribute}${soldOutAttribute}${healAttribute} aria-label="${escapeHtml(ariaLabel)}"${disabled}${reason}>
+    <button type="button" class="shop-card" data-action-id="${escapeHtml(action.id)}" data-shop-kind="${profile.kind}" data-role="${action.role}"${gradeAttribute}${featuredAttribute}${saleAttribute}${premiumAttribute}${portraitAttribute}${ownedAttribute}${selectedAttribute}${soldOutAttribute}${healAttribute}${scopeBadgeAttribute} aria-label="${escapeHtml(ariaLabel)}"${disabled}${reason}>
       ${visual}
       <small>${escapeHtml(compactMeta)}</small>
       <p class="shop-card-body"><strong>${escapeHtml(profile.title)}</strong>${detailText}</p>
@@ -4619,20 +4622,38 @@ function scheduleBattlePlayback(
 
   const activeEvent = frame.battleReplay.events[playback.cursor];
   const delayMs = resolveBattleReplayStepMs(frame, activeEvent);
+  const scheduledReplayKey = playback.replayKey;
+  const scheduledCursor = playback.cursor;
   audioDebugRendererLog("playback.schedule", {
     cursor: playback.cursor,
     delayMs,
+    replayKeyLength: scheduledReplayKey.length,
     activeSequence: activeEvent?.sequence,
     activeSourceSequence: activeEvent?.sourceSequence,
     activeType: activeEvent?.type,
     activeCeremonyStage: activeEvent?.ceremonyStage,
   });
+  playback.timerReplayKey = scheduledReplayKey;
+  playback.timerCursor = scheduledCursor;
   playback.timerId = window.setTimeout(() => {
     playback.timerId = undefined;
+    playback.timerReplayKey = undefined;
+    playback.timerCursor = undefined;
     if (lifecycle.suspended) {
       return;
     }
-    playback.cursor = Math.min(playback.cursor + 1, frame.battleReplay.events.length - 1);
+
+    if (playback.replayKey !== scheduledReplayKey || playback.cursor !== scheduledCursor) {
+      audioDebugRendererLog("playback.advance.skip-stale", {
+        scheduledCursor,
+        currentCursor: playback.cursor,
+        scheduledReplayKeyLength: scheduledReplayKey.length,
+        currentReplayKeyLength: playback.replayKey.length,
+      });
+      return;
+    }
+
+    playback.cursor = Math.min(scheduledCursor + 1, frame.battleReplay.events.length - 1);
     const nextEvent = frame.battleReplay.events[playback.cursor];
     audioDebugRendererLog("playback.advance", {
       cursor: playback.cursor,
@@ -4652,6 +4673,8 @@ function clearBattlePlaybackTimer(playback: BattlePlaybackState): void {
 
   window.clearTimeout(playback.timerId);
   playback.timerId = undefined;
+  playback.timerReplayKey = undefined;
+  playback.timerCursor = undefined;
 }
 
 function resolveBattleReplayStepMs(

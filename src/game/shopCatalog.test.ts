@@ -34,7 +34,7 @@ describe("shop price bands", () => {
     expect(defaultBalance.trainerRewardBonus).toBe(40);
 
     expect(ballTypes.map((ball) => getBallCost(ball, defaultBalance))).toEqual([
-      12, 36, 82, 150, 300,
+      12, 34, 82, 150, 300,
     ]);
     expect(healTiers.map((tier) => getHealProduct("single", tier).cost)).toEqual([
       8, 16, 30, 50, 78,
