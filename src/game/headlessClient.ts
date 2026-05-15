@@ -6,8 +6,9 @@ import {
   healTeam,
   normalizeCreatureBattleLoadout,
   rerollCreatureStatProfile,
+  replaceCreatureMoveByRole,
 } from "./creatureFactory";
-import { defaultBalance, getMove, getSpecies, movesById, starterSpeciesIds } from "./data/catalog";
+import { defaultBalance, getMove, getSpecies, starterSpeciesIds } from "./data/catalog";
 import {
   DEFAULT_HEADLESS_TRAINER_NAME,
   formatWave,
@@ -586,10 +587,7 @@ export class HeadlessGameClient {
       }
 
       meta.trainerPoints -= offer.tpCost;
-      const replaceIndex = pickWeakestMoveIndex(target.moves);
-      target.moves = target.moves.map((existing, index) =>
-        index === replaceIndex ? cloneMove(learnedMove) : existing,
-      );
+      target.moves = replaceCreatureMoveByRole(target, learnedMove);
       target.powerScore = scoreCreature({
         stats: target.stats,
         moves: target.moves,
@@ -1424,10 +1422,7 @@ export class HeadlessGameClient {
     }
 
     this.state.money -= cost;
-    const replaceIndex = pickWeakestMoveIndex(target.moves);
-    const updatedMoves = target.moves.map((existing, index) =>
-      index === replaceIndex ? cloneMove(learnedMove) : existing,
-    );
+    const updatedMoves = replaceCreatureMoveByRole(target, learnedMove);
     target.moves = updatedMoves;
     target.powerScore = scoreCreature({
       stats: target.stats,
@@ -2257,30 +2252,4 @@ function pickLearnsetMoveByType(
   const candidates = getLearnableLevelUpMoves(creature, element, { grade });
 
   return candidates.length > 0 ? rng.pick(candidates) : undefined;
-}
-
-function pickWeakestMoveIndex(moves: readonly MoveDefinition[]): number {
-  if (moves.length === 0) return 0;
-  let weakestIndex = 0;
-  let weakestPower = Number.POSITIVE_INFINITY;
-  for (let index = 0; index < moves.length; index += 1) {
-    const power = moves[index].power ?? 0;
-    if (power < weakestPower) {
-      weakestPower = power;
-      weakestIndex = index;
-    }
-  }
-  return weakestIndex;
-}
-
-function cloneMove(move: MoveDefinition): MoveDefinition {
-  const catalogMove = movesById[move.id];
-  const source = catalogMove ?? getMove(move.id);
-  return {
-    ...source,
-    flags: [...(source.flags ?? [])],
-    statChanges: (source.statChanges ?? []).map((change) => ({ ...change })),
-    meta: { ...source.meta },
-    statusEffect: source.statusEffect ? { ...source.statusEffect } : undefined,
-  };
 }

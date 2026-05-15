@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import { runAutoBattle } from "./battle/battleEngine";
-import { defaultBalance, getUnlockedLevelUpMoveIds } from "./data/catalog";
+import { defaultBalance, getMove, getUnlockedLevelUpMoveIds } from "./data/catalog";
 import {
   cloneCreature,
   createCreature,
   normalizeCreatureBattleLoadout,
+  replaceCreatureMoveByRole,
 } from "./creatureFactory";
 import { SeededRng } from "./rng";
 import type { Creature, MoveDefinition } from "./types";
@@ -106,6 +107,34 @@ describe("creature move assignment", () => {
       expect(created.moves.map((move) => move.category)).toEqual(["physical", "status"]);
       expect(created.moves[0].id).toBe("tackle");
     }
+  });
+
+  it("uses harden as the strict support fallback for attack-only low-level species", () => {
+    const created = createCreature({
+      rng: new SeededRng("attack-only-low-level"),
+      wave: 1,
+      balance: defaultBalance,
+      speciesId: 4,
+      role: "wild",
+    });
+
+    expect(created.moves.map((move) => move.id)).toEqual(["scratch", "harden"]);
+    expect(created.moves.map((move) => move.category)).toEqual(["physical", "status"]);
+  });
+
+  it("replaces learned moves in the matching auto-battle role slot", () => {
+    const base = createCreature({
+      rng: new SeededRng("role-slot-learning"),
+      wave: 1,
+      balance: defaultBalance,
+      speciesId: 4,
+      role: "wild",
+    });
+    const withAttack = replaceCreatureMoveByRole(base, getMove("ember"));
+    const withSupport = replaceCreatureMoveByRole(base, getMove("growl"));
+
+    expect(withAttack.map((move) => move.id)).toEqual(["ember", "harden"]);
+    expect(withSupport.map((move) => move.id)).toEqual(["scratch", "growl"]);
   });
 
   it("normalizes restored battle loadouts to one attack and one support move", () => {

@@ -1,5 +1,4 @@
 import {
-  getLevelUpMoveIds,
   getMove,
   getSpecies,
   getUnlockedLevelUpMoveIds,
@@ -201,12 +200,27 @@ export function normalizeCreatureMoves(
   const normalizedMoves = moves.map(cloneMoveDefinition);
   const attackCandidates = getMoveCandidates(speciesId, level, isAttackMove, "tackle");
   const supportCandidates = getMoveCandidates(speciesId, level, isSupportMove, "harden");
-  const attack =
-    normalizedMoves.find((move) => isMoveInCandidates(move, attackCandidates)) ??
-    attackCandidates[0];
-  const support =
-    normalizedMoves.find((move) => isMoveInCandidates(move, supportCandidates)) ??
-    supportCandidates[0];
+  const attack = normalizedMoves.find(isAttackMove) ?? attackCandidates[0];
+  const support = normalizedMoves.find(isSupportMove) ?? supportCandidates[0];
+
+  return [attack, support].map(cloneMoveDefinition);
+}
+
+export function replaceCreatureMoveByRole(
+  creature: Creature,
+  learnedMove: MoveDefinition,
+): MoveDefinition[] {
+  const level = resolveExistingCreatureLevel(creature);
+  const normalizedMoves = normalizeCreatureMoves(creature.speciesId, level, creature.moves);
+  const learned = cloneMoveDefinition(learnedMove);
+  const attack = isAttackMove(learned)
+    ? learned
+    : (normalizedMoves.find(isAttackMove) ??
+      getMoveCandidates(creature.speciesId, level, isAttackMove, "tackle")[0]);
+  const support = isSupportMove(learned)
+    ? learned
+    : (normalizedMoves.find(isSupportMove) ??
+      getMoveCandidates(creature.speciesId, level, isSupportMove, "harden")[0]);
 
   return [attack, support].map(cloneMoveDefinition);
 }
@@ -286,15 +300,7 @@ function getMoveCandidates(
     return unlockedMatches;
   }
 
-  const levelUpMatches = getLevelUpMoveIds(speciesId)
-    .map((moveId) => getMove(moveId))
-    .filter(predicate);
-
-  return levelUpMatches.length > 0 ? levelUpMatches : [getMove(fallbackMoveId)];
-}
-
-function isMoveInCandidates(move: MoveDefinition, candidates: readonly MoveDefinition[]): boolean {
-  return candidates.some((candidate) => candidate.id === move.id);
+  return [getMove(fallbackMoveId)];
 }
 
 function isAttackMove(move: MoveDefinition): boolean {

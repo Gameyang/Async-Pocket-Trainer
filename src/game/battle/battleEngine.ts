@@ -14,6 +14,8 @@ import type {
   MoveStatChange,
 } from "../types";
 
+const AUTO_BATTLE_ATTACK_CHANCE = 0.7;
+
 export interface AutoBattleOptions {
   kind: EncounterKind;
   playerTeam: readonly Creature[];
@@ -57,7 +59,7 @@ type BattleReplayEventInput = BattleReplayEvent extends infer Event
 
 export function runAutoBattle(options: AutoBattleOptions): BattleResult {
   const cloneForBattle =
-    options.normalizeLoadouts ?? true ? normalizeCreatureBattleLoadout : cloneCreature;
+    (options.normalizeLoadouts ?? true) ? normalizeCreatureBattleLoadout : cloneCreature;
   const playerTeam = options.playerTeam.map(cloneForBattle);
   const enemyTeam = options.enemyTeam.map(cloneForBattle);
   const log: BattleLogEntry[] = [];
@@ -131,9 +133,7 @@ export function runAutoBattle(options: AutoBattleOptions): BattleResult {
         continue;
       }
 
-      if (
-        resolvePreMoveSkip(action.actor, action.side, turns, options.rng, pushReplay)
-      ) {
+      if (resolvePreMoveSkip(action.actor, action.side, turns, options.rng, pushReplay)) {
         actedThisTurn.add(action.actor.instanceId);
         continue;
       }
@@ -263,9 +263,7 @@ function chooseMove(
   );
 
   if (attack && support) {
-    const attackWeight = getMoveWeight(attacker, defender, attack, defenderSide, damageScale);
-    const supportWeight = getMoveWeight(attacker, defender, support, defenderSide, damageScale);
-    return rng.chance(attackWeight / (attackWeight + supportWeight)) ? attack : support;
+    return rng.chance(AUTO_BATTLE_ATTACK_CHANCE) ? attack : support;
   }
 
   return pickWeightedMove(moves, attacker, defender, defenderSide, rng, damageScale);
@@ -380,14 +378,14 @@ function isMoveUsable(attacker: Creature, move: MoveDefinition): boolean {
 
 function getForcedMove(actor: Creature): MoveDefinition | undefined {
   const volatile = actor.volatile;
-  const forcedMoveId =
-    volatile?.chargingMoveId || volatile?.lockedMoveId || volatile?.encoreMoveId;
+  const forcedMoveId = volatile?.chargingMoveId || volatile?.lockedMoveId || volatile?.encoreMoveId;
 
   if (!forcedMoveId) {
     return undefined;
   }
 
-  const move = actor.moves.find((candidate) => candidate.id === forcedMoveId) ?? movesById[forcedMoveId];
+  const move =
+    actor.moves.find((candidate) => candidate.id === forcedMoveId) ?? movesById[forcedMoveId];
   return move && isMoveUsable(actor, move) ? move : undefined;
 }
 
@@ -434,7 +432,15 @@ function executeMove(options: ExecuteMoveOptions): MoveOutcome {
     };
 
     if (move.effectId === 146) {
-      applyStatChanges(actor, actor, [{ stat: "defense", change: 1 }], true, turn, move, pushReplay);
+      applyStatChanges(
+        actor,
+        actor,
+        [{ stat: "defense", change: 1 }],
+        true,
+        turn,
+        move,
+        pushReplay,
+      );
     }
 
     pushMoveEffect(pushReplay, {
@@ -515,7 +521,15 @@ function executeMove(options: ExecuteMoveOptions): MoveOutcome {
     hitCount,
     criticalChanceBonus: actor.volatile?.focusEnergy ? 1 : 0,
   });
-  const damage = applyDamageToTarget(actor, target, move, result.damage, targetSide, turn, pushReplay);
+  const damage = applyDamageToTarget(
+    actor,
+    target,
+    move,
+    result.damage,
+    targetSide,
+    turn,
+    pushReplay,
+  );
 
   if (damage > 0 || move.category !== "status") {
     pushReplay({
@@ -623,7 +637,7 @@ function getMoveHitChance(actor: Creature, target: Creature, move: MoveDefinitio
   }
 
   return clamp(
-    move.accuracy * getModifiedStat(actor, "accuracy") / getModifiedStat(target, "evasion"),
+    (move.accuracy * getModifiedStat(actor, "accuracy")) / getModifiedStat(target, "evasion"),
     0,
     1,
   );
@@ -760,11 +774,7 @@ function applyHealing(
   const drain = move.meta.drain > 0 && damage > 0 ? move.meta.drain / 100 : 0;
   const healing = getHealingRatio(move);
   const healAmount =
-    drain > 0
-      ? Math.floor(damage * drain)
-      : healing > 0
-        ? Math.floor(actor.stats.hp * healing)
-        : 0;
+    drain > 0 ? Math.floor(damage * drain) : healing > 0 ? Math.floor(actor.stats.hp * healing) : 0;
 
   if (healAmount <= 0) {
     return;
@@ -847,7 +857,15 @@ function applyMoveAilment(
 
   if (!ailment || target.currentHp <= 0) {
     if (move.effectId === 37 && rng.chance(0.2)) {
-      applyMajorStatus(actor, target, rng.pick(["burn", "paralysis", "freeze"]), move, turn, rng, pushReplay);
+      applyMajorStatus(
+        actor,
+        target,
+        rng.pick(["burn", "paralysis", "freeze"]),
+        move,
+        turn,
+        rng,
+        pushReplay,
+      );
     }
     return;
   }
@@ -1126,11 +1144,7 @@ function applyFlinch(
   pushReplay: (event: BattleReplayEventInput) => void,
 ): void {
   const flinchChance =
-    move.meta.flinchChance > 0
-      ? move.meta.flinchChance / 100
-      : move.effectId === 159
-        ? 1
-        : 0;
+    move.meta.flinchChance > 0 ? move.meta.flinchChance / 100 : move.effectId === 159 ? 1 : 0;
 
   if (flinchChance <= 0 || actedThisTurn.has(target.instanceId) || !rng.chance(flinchChance)) {
     return;
@@ -1195,7 +1209,13 @@ function applyUniqueMoveEffect(options: UniqueMoveOptions): void {
     case 26:
       clearStatStages(actor);
       clearStatStages(target);
-      pushMoveEffect(pushReplay, { turn, actor, target, move, label: "All stat changes were reset." });
+      pushMoveEffect(pushReplay, {
+        turn,
+        actor,
+        target,
+        move,
+        label: "All stat changes were reset.",
+      });
       break;
     case 29:
     case 314:
@@ -1238,11 +1258,25 @@ function applyUniqueMoveEffect(options: UniqueMoveOptions): void {
       break;
     case 48:
       actor.volatile = { ...actor.volatile, focusEnergy: true };
-      pushMoveEffect(pushReplay, { turn, actor, side, move, label: `${actor.speciesName} focused.` });
+      pushMoveEffect(pushReplay, {
+        turn,
+        actor,
+        side,
+        move,
+        label: `${actor.speciesName} focused.`,
+      });
       break;
     case 58:
       transformCreature(actor, target);
-      pushMoveEffect(pushReplay, { turn, actor, target, side, targetSide, move, label: `${actor.speciesName} transformed.` });
+      pushMoveEffect(pushReplay, {
+        turn,
+        actor,
+        target,
+        side,
+        targetSide,
+        move,
+        label: `${actor.speciesName} transformed.`,
+      });
       break;
     case 66:
       sideStates[side].reflectTurns = 5;
@@ -1266,7 +1300,15 @@ function applyUniqueMoveEffect(options: UniqueMoveOptions): void {
         disabledMoveId: target.volatile?.lastMoveId ?? target.moves[0]?.id,
         disabledTurns: 3,
       };
-      pushMoveEffect(pushReplay, { turn, actor, target, side, targetSide, move, label: `${target.speciesName}'s move was disabled.` });
+      pushMoveEffect(pushReplay, {
+        turn,
+        actor,
+        target,
+        side,
+        targetSide,
+        move,
+        label: `${target.speciesName}'s move was disabled.`,
+      });
       break;
     case 91:
       target.volatile = {
@@ -1274,18 +1316,40 @@ function applyUniqueMoveEffect(options: UniqueMoveOptions): void {
         encoreMoveId: target.volatile?.lastMoveId ?? target.moves[0]?.id,
         encoreTurns: 3,
       };
-      pushMoveEffect(pushReplay, { turn, actor, target, side, targetSide, move, label: `${target.speciesName} received an encore.` });
+      pushMoveEffect(pushReplay, {
+        turn,
+        actor,
+        target,
+        side,
+        targetSide,
+        move,
+        label: `${target.speciesName} received an encore.`,
+      });
       break;
     case 112:
       actor.volatile = { ...actor.volatile, protected: true };
-      pushMoveEffect(pushReplay, { turn, actor, side, move, label: `${actor.speciesName} protected itself.` });
+      pushMoveEffect(pushReplay, {
+        turn,
+        actor,
+        side,
+        move,
+        label: `${actor.speciesName} protected itself.`,
+      });
       break;
     case 154:
       forceSwitch(actorTeam, actor, side, turn, move, pushReplay);
       break;
     case 176:
       target.volatile = { ...target.volatile, tauntTurns: 3 };
-      pushMoveEffect(pushReplay, { turn, actor, target, side, targetSide, move, label: `${target.speciesName} was taunted.` });
+      pushMoveEffect(pushReplay, {
+        turn,
+        actor,
+        target,
+        side,
+        targetSide,
+        move,
+        label: `${target.speciesName} was taunted.`,
+      });
       break;
     case 177:
       applyStatChanges(
@@ -1308,11 +1372,27 @@ function applyUniqueMoveEffect(options: UniqueMoveOptions): void {
       break;
     case 267:
       sideStates[targetSide].stealthRock = true;
-      pushMoveEffect(pushReplay, { turn, actor, target, side, targetSide, move, label: "Pointed stones floated around the opposing side." });
+      pushMoveEffect(pushReplay, {
+        turn,
+        actor,
+        target,
+        side,
+        targetSide,
+        move,
+        label: "Pointed stones floated around the opposing side.",
+      });
       break;
     case 305:
       clearStatStages(target);
-      pushMoveEffect(pushReplay, { turn, actor, target, side, targetSide, move, label: `${target.speciesName}'s stat changes were cleared.` });
+      pushMoveEffect(pushReplay, {
+        turn,
+        actor,
+        target,
+        side,
+        targetSide,
+        move,
+        label: `${target.speciesName}'s stat changes were cleared.`,
+      });
       break;
   }
 
@@ -1344,7 +1424,12 @@ function executeBide(
       bideTurns: rng.int(2, 3),
       bideDamage: 0,
     };
-    pushMoveEffect(pushReplay, { turn, actor, move, label: `${actor.speciesName} began storing energy.` });
+    pushMoveEffect(pushReplay, {
+      turn,
+      actor,
+      move,
+      label: `${actor.speciesName} began storing energy.`,
+    });
     return { damage: 0, effectiveness: 1, critical: false, missed: false };
   }
 
@@ -1353,7 +1438,12 @@ function executeBide(
       ...volatile,
       bideTurns: volatile.bideTurns - 1,
     };
-    pushMoveEffect(pushReplay, { turn, actor, move, label: `${actor.speciesName} is storing energy.` });
+    pushMoveEffect(pushReplay, {
+      turn,
+      actor,
+      move,
+      label: `${actor.speciesName} is storing energy.`,
+    });
     return { damage: 0, effectiveness: 1, critical: false, missed: false };
   }
 
@@ -1497,7 +1587,12 @@ function scoreStatusEffect(defender: Creature, move: MoveDefinition): number {
     return 18;
   }
 
-  if (ailment === "confusion" || ailment === "trap" || ailment === "leech-seed" || ailment === "yawn") {
+  if (
+    ailment === "confusion" ||
+    ailment === "trap" ||
+    ailment === "leech-seed" ||
+    ailment === "yawn"
+  ) {
     return 14;
   }
 
@@ -1510,7 +1605,10 @@ function scoreStatChanges(attacker: Creature, defender: Creature, move: MoveDefi
     const sign = target === attacker ? 1 : -1;
     const current = target.statStages?.[change.stat] ?? 0;
     const room = change.change > 0 ? 6 - current : current + 6;
-    return total + Math.min(Math.abs(change.change), Math.max(0, room)) * 8 * sign * Math.sign(change.change);
+    return (
+      total +
+      Math.min(Math.abs(change.change), Math.max(0, room)) * 8 * sign * Math.sign(change.change)
+    );
   }, 0);
 }
 
@@ -1808,14 +1906,14 @@ function applyYawn(
     pushReplay({
       type: "status.apply",
       turn,
-    actorId: creature.instanceId,
-    targetId: creature.instanceId,
-    move: "Yawn",
-    moveType: "normal",
-    moveCategory: "status",
-    status: "sleep",
-    turnsRemaining: 2,
-  });
+      actorId: creature.instanceId,
+      targetId: creature.instanceId,
+      move: "Yawn",
+      moveType: "normal",
+      moveCategory: "status",
+      status: "sleep",
+      turnsRemaining: 2,
+    });
   }
 }
 

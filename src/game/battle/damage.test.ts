@@ -171,7 +171,7 @@ describe("battle damage rules", () => {
     expect(result.log[0]).toMatchObject({ actorId: "player", move: "Quick Attack" });
   });
 
-  it("chooses between attack and support moves with score-weighted randomness", () => {
+  it("chooses attack and support moves with a fixed 70/30 auto-battle split", () => {
     const growl = move({
       id: "growl",
       name: "Growl",
@@ -186,20 +186,20 @@ describe("battle damage rules", () => {
       normalizeLoadouts: false,
       playerTeam: [creature("player", [tackle, growl], { speed: 100 })],
       enemyTeam: [creature("enemy", [tackle], { speed: 1 })],
-      rng: new SequenceRng([0]),
+      rng: new SequenceRng([0.69]),
       maxTurns: 1,
     });
-    const highRoll = runAutoBattle({
+    const supportBoundary = runAutoBattle({
       kind: "wild",
       normalizeLoadouts: false,
       playerTeam: [creature("player", [tackle, growl], { speed: 100 })],
       enemyTeam: [creature("enemy", [tackle], { speed: 1 })],
-      rng: new SequenceRng([0.99]),
+      rng: new SequenceRng([0.7]),
       maxTurns: 1,
     });
 
     expect(lowRoll.log[0]).toMatchObject({ actorId: "player", move: "Tackle" });
-    expect(highRoll.log[0]).toMatchObject({ actorId: "player", move: "Growl" });
+    expect(supportBoundary.log[0]).toMatchObject({ actorId: "player", move: "Growl" });
   });
 
   it("falls back to the usable attack when support moves are blocked", () => {
