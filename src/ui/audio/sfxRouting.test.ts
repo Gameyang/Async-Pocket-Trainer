@@ -25,6 +25,5 @@ describe("SFX routing", () => {
 
   it("leaves Pokemon cry keys for the cry resolver", () => {
     expect(resolveLocalSfxStem("sfx.cry.pikachu")).toBeUndefined();
-    expect(resolveLocalSfxStem("sfx.cry.pool.abc123")).toBeUndefined();
   });
 });

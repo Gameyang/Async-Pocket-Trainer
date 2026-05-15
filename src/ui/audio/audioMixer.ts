@@ -123,6 +123,7 @@ export class AudioMixer {
     }
 
     this.setBgm(frame.bgmKey);
+    this.preloadFrameSfx(frame);
 
     const cues = frame.visualCues.filter((cue) => this.shouldPlayCue(cue, frame));
     for (const cue of cues) {
@@ -263,11 +264,47 @@ export class AudioMixer {
     }
 
     this.didPreloadSfx = true;
-    this.sfxPreloadQueue = [...new Set(this.options.preloadSfxUrls?.() ?? [])].filter(Boolean);
+    this.enqueueSfxPreloadUrls(this.options.preloadSfxUrls?.() ?? []);
     this.scheduleNextSfxPreload();
   }
 
-  private scheduleNextSfxPreload(): void {
+  private preloadFrameSfx(frame: AudioMixerFrame): void {
+    const urls = frame.visualCues.flatMap((cue) =>
+      resolveCueSoundKeys(cue)
+        .map((soundKey) => this.options.resolveSfxUrl(soundKey))
+        .filter((url): url is string => Boolean(url)),
+    );
+
+    this.enqueueSfxPreloadUrls(urls, true);
+  }
+
+  private enqueueSfxPreloadUrls(urls: readonly string[], prioritize = false): void {
+    const pendingUrls = [...new Set(urls)].filter((url) => url && !this.bufferCache.has(url));
+    if (pendingUrls.length === 0) {
+      return;
+    }
+
+    if (prioritize) {
+      for (const url of pendingUrls) {
+        const existingIndex = this.sfxPreloadQueue.indexOf(url);
+        if (existingIndex >= 0) {
+          this.sfxPreloadQueue.splice(existingIndex, 1);
+        }
+      }
+      this.sfxPreloadQueue.unshift(...pendingUrls);
+      if (this.sfxPreloadTimer !== undefined) {
+        this.clearSfxPreloadTimer();
+      }
+      this.scheduleNextSfxPreload(0);
+      return;
+    }
+
+    this.sfxPreloadQueue.push(
+      ...pendingUrls.filter((url) => !this.sfxPreloadQueue.includes(url)),
+    );
+  }
+
+  private scheduleNextSfxPreload(delayMs = SFX_BACKGROUND_PRELOAD_DELAY_MS): void {
     if (
       !this.ctx ||
       !this.unlocked ||
@@ -296,7 +333,7 @@ export class AudioMixer {
         this.sfxPreloadInFlight = false;
         this.scheduleNextSfxPreload();
       });
-    }, SFX_BACKGROUND_PRELOAD_DELAY_MS);
+    }, delayMs);
   }
 
   private clearSfxPreloadTimer(): void {

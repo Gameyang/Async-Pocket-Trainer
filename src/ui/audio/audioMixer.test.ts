@@ -7,13 +7,13 @@ describe("AudioMixer helpers", () => {
   it("keeps primary, supplemental, and cry sounds in the same cue bundle", () => {
     const cue = {
       soundKey: "sfx.capture.success",
-      soundKeys: ["sfx.cry.pool.abc123"],
+      soundKeys: ["sfx.battle.hit"],
       cryKey: "sfx.cry.pikachu",
     } as unknown as FrameVisualCue;
 
     expect(resolveCueSoundKeys(cue)).toEqual([
       "sfx.capture.success",
-      "sfx.cry.pool.abc123",
+      "sfx.battle.hit",
       "sfx.cry.pikachu",
     ]);
   });
@@ -22,7 +22,6 @@ describe("AudioMixer helpers", () => {
     expect(resolveSfxLayer("sfx.battle.type.fire")).toBe("impact");
     expect(resolveSfxLayer("sfx.creature.faint")).toBe("impact");
     expect(resolveSfxLayer("sfx.cry.pikachu")).toBe("cry");
-    expect(resolveSfxLayer("sfx.cry.pool.abc123")).toBe("cry");
     expect(resolveSfxLayer("sfx.capture.success")).toBe("ui");
     expect(resolveSfxLayer("sfx.phase.change")).toBe("ui");
   });
@@ -84,6 +83,49 @@ describe("AudioMixer playback scheduling", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(fetchMock).toHaveBeenLastCalledWith("other-url");
+
+    mixer.dispose();
+  });
+
+  it("preloads upcoming replay cue assets before their sequence becomes active", () => {
+    vi.useFakeTimers();
+    installFakeAudioGlobals();
+    const fetchMock = vi.fn(() =>
+      Promise.resolve({
+        ok: true,
+        arrayBuffer: () => Promise.resolve(new ArrayBuffer(1)),
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const mixer = new AudioMixer({
+      resolveBgmUrl: () => undefined,
+      resolveSfxUrl: (soundKey) => (soundKey === "sfx.battle.hit" ? "hit-url" : undefined),
+    });
+
+    mixer.unlock();
+    mixer.apply({
+      bgmKey: "bgm.missing",
+      visualCues: [
+        {
+          id: "cue-2",
+          type: "battle.hit",
+          sequence: 2,
+          soundKey: "sfx.battle.hit",
+        } as unknown as FrameVisualCue,
+      ],
+      battleReplayKey: "battle-1",
+      activeReplaySequence: 1,
+      isReplayPlaying: true,
+      hasOngoingReplay: true,
+    });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(0);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenLastCalledWith("hit-url");
 
     mixer.dispose();
   });

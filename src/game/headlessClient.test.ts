@@ -282,7 +282,7 @@ describe("HeadlessGameClient", () => {
   });
 
   it("preserves battle field state across battle replay and snapshot restore", () => {
-    const client = startFromFrameAction("field-snapshot");
+    const client = startFromFrameAction("opening-wild-level");
     const battleFieldOrder = client.getSnapshot().battleFieldOrder ?? [];
 
     expect(battleFieldOrder).toHaveLength(18);
@@ -442,7 +442,7 @@ describe("HeadlessGameClient", () => {
       "stat_boost_applied",
     );
 
-    const skipClient = startFromFrameAction("input-skip");
+    const skipClient = startFromFrameAction("opening-wild-level");
     dispatchFrameAction(skipClient, "encounter:next");
     expect(skipClient.getSnapshot().phase).toBe("captureDecision");
     dispatchFrameAction(skipClient, "capture:skip");

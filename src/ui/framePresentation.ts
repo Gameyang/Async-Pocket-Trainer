@@ -1052,7 +1052,7 @@ export function createShopActionProfile(action: FrameAction, frame: GameFrame): 
       kind: "portrait",
       kicker: action.portrait?.owned ? "보유 스킨" : "훈련사 스킨",
       title: action.portrait?.label ?? "훈련사 스킨",
-      detail: action.portrait?.owned ? "이 스킨으로 변경" : "구매 후 바로 적용",
+      detail: formatTrainerPortraitShopDetail(action),
       meta: action.tpCost !== undefined ? formatTrainerPoints(action.tpCost) : "보유중",
     };
   }
@@ -1074,6 +1074,60 @@ export function createShopActionProfile(action: FrameAction, frame: GameFrame): 
     detail: frame.scene.subtitle,
     meta: action.cost === undefined ? "선택" : formatMoney(action.cost),
   };
+}
+
+function formatTrainerPortraitShopDetail(action: FrameAction): string {
+  const title = action.portrait?.label ?? "훈련사 스킨";
+
+  if (action.portrait?.owned) {
+    return `${title}으로 갈아입고 첫인상을 다시 세팅`;
+  }
+
+  return `${resolveTrainerPortraitFlavor(title)} · 구매 즉시 착용`;
+}
+
+function resolveTrainerPortraitFlavor(title: string): string {
+  if (/조커|광대|코미디|카드|트릭|샤플러/.test(title)) {
+    return "승부 전 표정부터 페인트를 넣는 장난기";
+  }
+
+  if (/여름|피크닉|수영|비치|파라솔/.test(title)) {
+    return "햇살 아래에서도 포획률은 흐트러지지 않는 산뜻함";
+  }
+
+  if (/요정|마녀|위치|플레임|불꽃/.test(title)) {
+    return "기술 이펙트보다 먼저 시선을 태우는 마법 무드";
+  }
+
+  if (/드래곤|퀸|챔피언|리그|에이스|배틀/.test(title)) {
+    return "등장만으로 체육관 음악이 커질 것 같은 위엄";
+  }
+
+  if (/해적|세일|캡틴|선장|파일럿|경찰|유니폼/.test(title)) {
+    return "대열 정비가 끝난 사람만 낼 수 있는 단단한 존재감";
+  }
+
+  if (/숲|검|검사|순찰|스카우트|레인저/.test(title)) {
+    return "풀숲 첫 칸부터 희귀 몬스터를 찾을 것 같은 감";
+  }
+
+  if (/아머|갑옷|히어로|블랙벨트|격투|태권/.test(title)) {
+    return "패배 대사보다 승리 포즈가 먼저 떠오르는 전투복";
+  }
+
+  if (/기모노|벚꽃|축제|드레스|원피스|세라프|날개/.test(title)) {
+    return "화면 전환마다 스크린샷을 부르는 특별한 차림";
+  }
+
+  if (/후드|방랑|코트|롱코트|스키|겨울|툰드라/.test(title)) {
+    return "말수는 줄이고 분위기는 두 배로 올리는 실루엣";
+  }
+
+  if (/라이벌|레드|블루|마스터즈|클래식/.test(title)) {
+    return "오랜 팬이면 바로 알아볼 승부의 정석";
+  }
+
+  return "오늘의 트레이너 카드를 조금 더 주인공답게";
 }
 
 export function resolveSelectedRouteLabel(actions: readonly FrameAction[]): string {

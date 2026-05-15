@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import { HeadlessGameClient } from "../game/headlessClient";
-import type { FrameEntity } from "../game/view/frame";
-import { selectCommandItems, selectReadyShopActions } from "./framePresentation";
+import type { FrameAction, FrameEntity, GameFrame } from "../game/view/frame";
+import {
+  createShopActionProfile,
+  selectCommandItems,
+  selectReadyShopActions,
+} from "./framePresentation";
 
 describe("frame presentation command selection", () => {
   it("allows the ready shop grid to expose more than three actions up to the grid cap", () => {
@@ -61,6 +65,31 @@ describe("frame presentation command selection", () => {
     );
 
     expect(commandIds).toEqual(["restart:team:0", "restart:starter-choice"]);
+  });
+
+  it("writes trainer skin shop copy from the skin name", () => {
+    const profile = createShopActionProfile(
+      {
+        id: "shop:portrait:hf-trainer-05-dragon-queen",
+        label: "드래곤 퀸 로브 12TP",
+        role: "secondary",
+        enabled: true,
+        tpCost: 12,
+        portrait: {
+          id: "hf-trainer-05-dragon-queen",
+          label: "드래곤 퀸 로브",
+          assetPath: "resources/trainers/hf-trainer-05-dragon-queen.webp",
+          owned: false,
+          selected: false,
+        },
+        action: { type: "BUY_TRAINER_PORTRAIT", portraitId: "hf-trainer-05-dragon-queen" },
+      } as FrameAction,
+      {} as GameFrame,
+    );
+
+    expect(profile.title).toBe("드래곤 퀸 로브");
+    expect(profile.detail).toContain("체육관 음악");
+    expect(profile.detail).toContain("구매 즉시 착용");
   });
 });
 

@@ -16,25 +16,25 @@ export interface TrainerPortraitCatalogItem {
 }
 
 const trainerPortraitLabelOverrides: Record<string, string> = {
-  "field-scout": "필드 정찰대",
-  "checkpoint-captain": "체크포인트 대장",
-  "sheet-rival": "시트 라이벌",
-  "hf-trainer-01-harley-quinn": "광대 악동",
-  "hf-trainer-02-summer-dress": "여름 원피스",
-  "hf-trainer-03-evil-fairy": "장난 요정",
-  "hf-trainer-04-turtle-step": "거북 스텝",
-  "hf-trainer-05-dragon-queen": "드래곤 여왕",
-  "hf-trainer-06-long-coat": "롱코트 승부사",
-  "hf-trainer-07-red-suit": "레드 슈트",
-  "hf-trainer-08-silent-comic": "무언극 코미디언",
-  "hf-trainer-09-card-trickster": "카드 트릭스터",
-  "hf-trainer-10-forest-sword": "숲의 검사",
-  "hf-trainer-11-armored-hero": "갑옷 영웅",
-  "hf-trainer-12-kimono-sakura": "벚꽃 기모노",
-  "hf-trainer-13-blue-flame-witch": "푸른 불꽃 마녀",
-  "hf-trainer-14-hooded-solo": "후드 방랑자",
-  "hf-trainer-15-pirate-captain": "해적 선장",
-  "hf-trainer-16-winged-angel": "날개 천사",
+  "field-scout": "필드 스카우트 기본복",
+  "checkpoint-captain": "체크포인트 캡틴 코트",
+  "sheet-rival": "시트 라이벌 유니폼",
+  "hf-trainer-01-harley-quinn": "하트 조커 스트리트",
+  "hf-trainer-02-summer-dress": "한여름 피크닉 원피스",
+  "hf-trainer-03-evil-fairy": "장난 요정 드레스",
+  "hf-trainer-04-turtle-step": "터틀 스텝 점퍼",
+  "hf-trainer-05-dragon-queen": "드래곤 퀸 로브",
+  "hf-trainer-06-long-coat": "롱코트 에이스",
+  "hf-trainer-07-red-suit": "레드 카리스마 슈트",
+  "hf-trainer-08-silent-comic": "무언극 코미디 세트",
+  "hf-trainer-09-card-trickster": "카드 샤플러 코트",
+  "hf-trainer-10-forest-sword": "숲검 순찰복",
+  "hf-trainer-11-armored-hero": "아이언 히어로 아머",
+  "hf-trainer-12-kimono-sakura": "벚꽃 기모노 축제복",
+  "hf-trainer-13-blue-flame-witch": "블루 플레임 위치",
+  "hf-trainer-14-hooded-solo": "후드 방랑자 망토",
+  "hf-trainer-15-pirate-captain": "블랙 세일 캡틴",
+  "hf-trainer-16-winged-angel": "화이트 윙 세라프",
 };
 
 const trainerBaseLabels: Record<string, string> = {
@@ -472,14 +472,14 @@ function createTrainerPortraitLabel(id: string, source: TrainerPortraitSource): 
     return createPokemonShowdownPortraitLabel(id);
   }
 
-  return `훈련사 스킨 ${formatPortraitNumber(id)}`;
+  return `프리미엄 트레이너 ${formatPortraitNumber(id)}`;
 }
 
 function createPokemonShowdownPortraitLabel(id: string): string {
   const rawId = id.replace(/^ps-trainer-/, "");
   const exactBase = trainerBaseLabels[rawId] ?? trainerProperNameLabels[rawId];
   if (exactBase) {
-    return exactBase;
+    return `${exactBase} 클래식`;
   }
 
   const baseParts: string[] = [];
@@ -512,9 +512,66 @@ function createPokemonShowdownPortraitLabel(id: string): string {
     `픽셀 트레이너 ${formatPortraitNumber(id)}`;
 
   const uniqueVariants = [...new Set(variantParts)];
-  return uniqueVariants.length > 0 ? `${baseLabel} · ${uniqueVariants.join(" · ")}` : baseLabel;
+  return formatTrainerSkinName(baseLabel, uniqueVariants, id);
 }
 
 function formatPortraitNumber(id: string): string {
   return String((hashString(id) % 900) + 100);
+}
+
+function formatTrainerSkinName(
+  baseLabel: string,
+  variants: readonly string[],
+  id: string,
+): string {
+  const suffix = resolveTrainerSkinSuffix(baseLabel, variants);
+
+  if (variants.length === 0) {
+    return `${baseLabel} ${suffix}`;
+  }
+
+  if (variants.includes("챔피언")) {
+    return `${baseLabel} 챔피언 ${suffix}`;
+  }
+
+  if (variants.includes("리그")) {
+    return `${baseLabel} 리그 ${suffix}`;
+  }
+
+  if (variants.includes("마스터즈")) {
+    return `${baseLabel} 마스터즈 ${suffix}`;
+  }
+
+  const variantText = variants.slice(0, 2).join(" ");
+  return `${baseLabel} ${variantText} ${suffix}`.trim() || `픽셀 트레이너 ${formatPortraitNumber(id)}`;
+}
+
+function resolveTrainerSkinSuffix(baseLabel: string, variants: readonly string[]): string {
+  const joined = `${baseLabel} ${variants.join(" ")}`;
+
+  if (/슈트|정장|신사|마담|모델|카리스마/.test(joined)) {
+    return "슈트";
+  }
+
+  if (/코트|롱코트|후드|방랑|스키|겨울|설원|툰드라/.test(joined)) {
+    return "코트";
+  }
+
+  if (/기모노|드레스|원피스|요정|아가씨|짧은치마|아이돌|숙녀|미녀|메이드/.test(joined)) {
+    return "드레스";
+  }
+
+  if (/캡틴|해적|선장|세일|선원|파일럿|경찰|대장/.test(joined)) {
+    return "유니폼";
+  }
+
+  if (/갑옷|아머|영웅|검사|격투|태권|블랙벨트|드래곤|챔피언|리그/.test(joined)) {
+    return "배틀복";
+  }
+
+  if (/조무래기|단|라이벌|트레이너|학생|점원|직원|일꾼|레인저/.test(joined)) {
+    return "유니폼";
+  }
+
+  return "룩";
 }

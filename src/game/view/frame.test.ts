@@ -62,8 +62,8 @@ describe("game frame contract", () => {
     expect(frame.visualCues.find((cue) => cue.type === "phase.change")?.cryKey).toMatch(
       /^sfx\.cry\.[a-z0-9-]+$/,
     );
-    expect(frame.visualCues.find((cue) => cue.type === "phase.change")?.soundKeys).toContainEqual(
-      expect.stringMatching(/^sfx\.cry\.pool\.[a-z0-9-]+$/),
+    expect(frame.visualCues.flatMap((cue) => cue.soundKeys ?? [])).not.toContainEqual(
+      expect.stringMatching(/^sfx\.cry\.pool\./),
     );
     expect(frame.scene.bgmKey).toBe("bgm.battleCapture");
   });
@@ -104,9 +104,6 @@ describe("game frame contract", () => {
     expect(frame.visualCues.find((cue) => cue.type === "capture.success")?.cryKey).toMatch(
       /^sfx\.cry\.[a-z0-9-]+$/,
     );
-    expect(
-      frame.visualCues.find((cue) => cue.type === "capture.success")?.soundKeys,
-    ).toContainEqual(expect.stringMatching(/^sfx\.cry\.pool\.[a-z0-9-]+$/));
   });
 
   it("exposes the run battle field order as a world-map node graph", () => {
@@ -315,9 +312,7 @@ describe("game frame contract", () => {
       moveType: missEvent?.moveType,
       moveCategory: missEvent?.moveCategory,
     });
-    expect(missCue?.soundKeys).toContainEqual(
-      expect.stringMatching(/^sfx\.cry\.pool\.[a-z0-9-]+$/),
-    );
+    expect(missCue?.soundKeys ?? []).toEqual([]);
     expect(missEvent?.moveType).toMatch(
       /normal|fire|water|grass|electric|poison|ground|flying|bug|fighting|psychic|rock|ghost|ice|dragon|dark|steel|fairy/,
     );
@@ -325,16 +320,12 @@ describe("game frame contract", () => {
       soundKey: expect.stringMatching(/^sfx\.battle\.type\.[a-z-]+\.critical$/),
       critical: true,
     });
-    expect(typedHitCue?.soundKeys).toContainEqual(
-      expect.stringMatching(/^sfx\.cry\.pool\.[a-z0-9-]+$/),
-    );
+    expect(typedHitCue?.soundKeys ?? []).toEqual([]);
     expect(supportCue).toMatchObject({
       soundKey: `sfx.battle.support.type.${supportEvent?.moveType}`,
       moveType: supportEvent?.moveType,
     });
-    expect(supportCue?.soundKeys).toContainEqual(
-      expect.stringMatching(/^sfx\.cry\.pool\.[a-z0-9-]+$/),
-    );
+    expect(supportCue?.soundKeys ?? []).toEqual([]);
     expect(superEffectiveEvent?.label).not.toMatch(/\d+-\d+-[0-9a-f]+/);
   });
 
@@ -350,8 +341,8 @@ describe("game frame contract", () => {
     });
     expect(frame.scene.opponentSlots).toHaveLength(1);
     expect(frame.visualCues.map((cue) => cue.type)).toContain("capture.fail");
-    expect(frame.visualCues.find((cue) => cue.type === "capture.fail")?.soundKeys).toContainEqual(
-      expect.stringMatching(/^sfx\.cry\.pool\.[a-z0-9-]+$/),
+    expect(frame.visualCues.find((cue) => cue.type === "capture.fail")?.cryKey).toMatch(
+      /^sfx\.cry\.[a-z0-9-]+$/,
     );
   });
 

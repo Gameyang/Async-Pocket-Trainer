@@ -130,36 +130,6 @@ const sceneBgmAssetEntries = Object.entries(sceneBgmAssetUrls).sort(([left], [ri
   left.localeCompare(right),
 );
 
-const SHOWDOWN_CRY_BY_ELEMENT: Record<ElementType, string> = {
-  normal: "snorlax",
-  fire: "charizard",
-  water: "blastoise",
-  grass: "venusaur",
-  electric: "pikachu",
-  poison: "arbok",
-  ground: "rhydon",
-  flying: "pidgeot",
-  bug: "scyther",
-  fighting: "machamp",
-  psychic: "alakazam",
-  rock: "onix",
-  ghost: "gengar",
-  ice: "lapras",
-  dragon: "dragonite",
-  dark: "umbreon",
-  steel: "steelix",
-  fairy: "clefairy",
-};
-
-const SHOWDOWN_CRY_BY_SFX_KEY: Record<string, string> = {
-  "sfx.battle.hit": "rhyhorn",
-  "sfx.battle.critical.hit": "mewtwo",
-  "sfx.battle.miss": "psyduck",
-  "sfx.creature.faint": "ditto",
-  "sfx.capture.success": "mew",
-  "sfx.capture.fail": "magikarp",
-};
-
 const SHOWDOWN_CRY_STEM_OVERRIDES: Record<string, string> = {
   "nidoran-f": "nidoranf",
   "nidoran-m": "nidoranm",
@@ -190,8 +160,6 @@ const localSfxUrl = (stem: string): string | undefined =>
   localSfxAssetUrls[`../resources/audio/sfx/${stem}.m4a`];
 
 const phaseChangeSfxUrl = localSfxUrl("phase-change") ?? showdownNotificationUrl;
-
-const showdownElementSfxPattern = /^sfx\.battle\.(?:support\.)?type\.([a-z-]+)(?:\.critical)?$/;
 
 const showdownCryKeyPattern = /^sfx\.cry\.([a-z0-9-]+)$/;
 
@@ -650,6 +618,7 @@ export function mountHtmlRenderer(
   const audioMixer = new AudioMixer({
     resolveSfxUrl,
     resolveBgmUrl,
+    preloadSfxUrls: createInitialSfxPreloadUrls,
     warn: (message, error) => {
       console.warn(`[audio] ${message}`, error ?? "");
     },
@@ -4545,13 +4514,17 @@ function resolveSfxUrl(soundKey: string): string | undefined {
     return showdownCryUrl(cryMatch[1]);
   }
 
-  const elementMatch = showdownElementSfxPattern.exec(soundKey);
-  if (elementMatch) {
-    return showdownCryUrl(SHOWDOWN_CRY_BY_ELEMENT[elementMatch[1] as ElementType]);
-  }
+  return undefined;
+}
 
-  const mappedCry = SHOWDOWN_CRY_BY_SFX_KEY[soundKey];
-  return mappedCry ? showdownCryUrl(mappedCry) : undefined;
+function createInitialSfxPreloadUrls(): readonly string[] {
+  return [
+    ...new Set(
+      [...Object.values(localSfxAssetUrls), phaseChangeSfxUrl].filter(
+        (url): url is string => Boolean(url),
+      ),
+    ),
+  ];
 }
 
 function resolveBgmUrl(bgmKey: string): string | undefined {

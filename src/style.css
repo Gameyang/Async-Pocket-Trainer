@@ -3373,11 +3373,11 @@ p {
 }
 
 .shop-card .encounter-badge-row {
-  right: 12px;
-  left: auto;
+  right: auto;
+  left: 12px;
   bottom: -9px;
   max-width: calc(100% - 92px);
-  justify-content: flex-end;
+  justify-content: flex-start;
 }
 
 .encounter-badge {
@@ -4510,7 +4510,7 @@ button.move-detail-content:hover {
 .shop-scope-badge {
   position: absolute;
   bottom: -9px;
-  left: 10px;
+  right: 10px;
   z-index: 4;
   display: inline-grid;
   place-items: center;
@@ -6967,8 +6967,13 @@ button.move-detail-content:hover {
     grid-column: 2;
     grid-row: 2;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    grid-auto-rows: minmax(0, 1fr);
+    grid-template-rows: none;
+    grid-auto-rows: minmax(64px, auto);
+    align-content: start;
+    gap: 8px 4px;
+    overflow-x: hidden;
     overflow-y: auto;
+    padding-bottom: 10px;
   }
 
   .ready-screen .shop-team-grid {
