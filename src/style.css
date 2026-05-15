@@ -7953,6 +7953,27 @@ button.move-detail-content:hover {
   line-height: 1;
 }
 
+.tutorial-guide-remember {
+  display: flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 8px;
+  border: 2px solid rgba(16, 23, 34, 0.86);
+  border-radius: 6px;
+  padding: 7px 9px;
+  background: rgba(255, 254, 245, 0.78);
+  font-size: 0.76rem;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.tutorial-guide-remember input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--green);
+}
+
 .tutorial-guide-card footer {
   display: flex;
   justify-content: flex-end;

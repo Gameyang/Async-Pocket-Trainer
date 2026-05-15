@@ -342,8 +342,10 @@ interface TutorialGuideDefinition {
 
 interface TutorialGuideState {
   seen: Set<TutorialGuideId>;
+  sessionHidden: Set<TutorialGuideId>;
   activeId?: TutorialGuideId;
   pageIndex: number;
+  dontShowAgain: boolean;
   pendingAction?: GameAction;
   pendingActionId?: string;
 }
@@ -1086,7 +1088,9 @@ function renderFrame(
 function createTutorialGuideState(): TutorialGuideState {
   return {
     seen: loadTutorialSeenIds(),
+    sessionHidden: new Set(),
     pageIndex: 0,
+    dontShowAgain: true,
   };
 }
 
@@ -1165,12 +1169,12 @@ function resolveAutomaticTutorialGuideId(
   statusView: HtmlRendererStatusView,
   playback: BattlePlaybackView,
 ): TutorialGuideId | undefined {
-  if (!state.seen.has("first-visit") && frame.phase === "starterChoice") {
+  if (!shouldSkipTutorialGuide(state, "first-visit") && frame.phase === "starterChoice") {
     return "first-visit";
   }
 
   if (
-    !state.seen.has("first-trainer-win") &&
+    !shouldSkipTutorialGuide(state, "first-trainer-win") &&
     frame.phase === "ready" &&
     Boolean(statusView.teamRecord) &&
     !playback.isPlaying
@@ -1179,7 +1183,7 @@ function resolveAutomaticTutorialGuideId(
   }
 
   if (
-    !state.seen.has("first-capture-success") &&
+    !shouldSkipTutorialGuide(state, "first-capture-success") &&
     frame.phase === "teamDecision" &&
     frame.scene.capture?.result === "success" &&
     !playback.isPlaying
@@ -1188,7 +1192,7 @@ function resolveAutomaticTutorialGuideId(
   }
 
   if (
-    !state.seen.has("first-capture-failure") &&
+    !shouldSkipTutorialGuide(state, "first-capture-failure") &&
     frame.phase === "ready" &&
     frame.scene.capture?.result === "failure" &&
     !playback.isPlaying
@@ -1197,7 +1201,7 @@ function resolveAutomaticTutorialGuideId(
   }
 
   if (
-    !state.seen.has("first-battle-loss") &&
+    !shouldSkipTutorialGuide(state, "first-battle-loss") &&
     frame.phase === "gameOver" &&
     !playback.isPlaying
   ) {
@@ -1205,7 +1209,7 @@ function resolveAutomaticTutorialGuideId(
   }
 
   if (
-    !state.seen.has("first-shop") &&
+    !shouldSkipTutorialGuide(state, "first-shop") &&
     frame.phase === "ready" &&
     frame.hud.wave === 1 &&
     frame.actions.some((action) => action.id.startsWith("shop:")) &&
@@ -1218,6 +1222,10 @@ function resolveAutomaticTutorialGuideId(
   return undefined;
 }
 
+function shouldSkipTutorialGuide(state: TutorialGuideState, id: TutorialGuideId): boolean {
+  return state.seen.has(id) || state.sessionHidden.has(id);
+}
+
 function shouldInterceptTutorialAction(
   state: TutorialGuideState,
   action: FrameAction,
@@ -1228,7 +1236,7 @@ function shouldInterceptTutorialAction(
     action.action.type !== "RESOLVE_NEXT_ENCOUNTER" ||
     frame.phase !== "ready" ||
     state.activeId ||
-    state.seen.has("first-battle-start")
+    shouldSkipTutorialGuide(state, "first-battle-start")
   ) {
     return false;
   }
@@ -1247,6 +1255,7 @@ function activateTutorialGuide(
 ): void {
   state.activeId = id;
   state.pageIndex = 0;
+  state.dontShowAgain = true;
   state.pendingAction = options.pendingAction;
   state.pendingActionId = options.pendingActionId;
 }
@@ -1256,9 +1265,19 @@ function markTutorialGuideSeen(state: TutorialGuideState, id: TutorialGuideId): 
   saveTutorialSeenIds(state.seen);
 }
 
+function completeTutorialGuide(state: TutorialGuideState, id: TutorialGuideId): void {
+  if (state.dontShowAgain) {
+    markTutorialGuideSeen(state, id);
+    return;
+  }
+
+  state.sessionHidden.add(id);
+}
+
 function clearTutorialGuide(state: TutorialGuideState): void {
   state.activeId = undefined;
   state.pageIndex = 0;
+  state.dontShowAgain = true;
   state.pendingAction = undefined;
   state.pendingActionId = undefined;
 }
@@ -1274,6 +1293,7 @@ function renderTutorialGuide(state: TutorialGuideState | undefined): string {
   const page = guide.pages[pageIndex];
   const isFirstPage = pageIndex === 0;
   const isLastPage = pageIndex >= guide.pages.length - 1;
+  const dontShowAgainChecked = state.dontShowAgain ? " checked" : "";
   const focusItems = page.focus
     .map((item) => `<span>${escapeHtml(item)}</span>`)
     .join("");
@@ -1294,6 +1314,10 @@ function renderTutorialGuide(state: TutorialGuideState | undefined): string {
           <strong>곧 볼 것</strong>
           <div>${focusItems}</div>
         </div>
+        <label class="tutorial-guide-remember">
+          <input type="checkbox" data-tutorial-dont-show-again${dontShowAgainChecked} />
+          <span>다시 보지 않기</span>
+        </label>
         <footer>
           ${
             isFirstPage
@@ -1333,9 +1357,15 @@ function bindTutorialGuide(
   });
 
   root
+    .querySelector<HTMLInputElement>("[data-tutorial-dont-show-again]")
+    ?.addEventListener("change", (event) => {
+      state.dontShowAgain = (event.currentTarget as HTMLInputElement).checked;
+    });
+
+  root
     .querySelector<HTMLButtonElement>("[data-tutorial-dismiss]")
     ?.addEventListener("click", () => {
-      markTutorialGuideSeen(state, activeId);
+      completeTutorialGuide(state, activeId);
       clearTutorialGuide(state);
       render();
     });
@@ -1344,7 +1374,7 @@ function bindTutorialGuide(
     .querySelector<HTMLButtonElement>("[data-tutorial-finish]")
     ?.addEventListener("click", async () => {
       const pendingAction = state.pendingAction;
-      markTutorialGuideSeen(state, activeId);
+      completeTutorialGuide(state, activeId);
       clearTutorialGuide(state);
 
       if (!pendingAction) {
