@@ -1,7 +1,9 @@
 .battle-controls {
+  grid-area: controls;
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 0.65rem;
+  gap: 0.5rem;
+  min-height: 0;
 }
 
 .seed-field {
@@ -18,8 +20,18 @@
   position: relative;
   overflow: hidden;
   min-width: 0;
+  min-height: 2.35rem;
+  padding: 0.42rem 0.55rem;
   color: var(--splat-white);
+  font-size: 0.82rem;
+  line-height: 1.05;
   text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.45);
+}
+
+.battle-controls input {
+  min-height: 2.35rem;
+  padding: 0.42rem 0.55rem;
+  font-size: 0.82rem;
 }
 
 .control-button::after {
@@ -68,14 +80,53 @@
   }
 }
 
+@media (max-height: 660px) and (orientation: portrait) {
+  .battle-controls {
+    gap: 0.38rem;
+  }
+
+  .seed-field {
+    gap: 0.24rem;
+    font-size: 0.62rem;
+  }
+
+  .control-button,
+  .battle-controls input {
+    min-height: 2.08rem;
+    padding: 0.34rem 0.44rem;
+    font-size: 0.74rem;
+  }
+}
+
+@media (orientation: landscape) and (max-height: 560px) {
+  .battle-controls {
+    align-self: end;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.36rem;
+  }
+
+  .seed-field {
+    grid-column: 1 / -1;
+    gap: 0.22rem;
+    font-size: 0.58rem;
+  }
+
+  .control-button,
+  .battle-controls input {
+    min-height: 1.95rem;
+    padding: 0.3rem 0.38rem;
+    font-size: 0.68rem;
+  }
+}
+
 @media (max-width: 380px) {
   .battle-controls {
-    gap: 0.55rem;
+    gap: 0.42rem;
   }
 
   .control-button {
     padding-right: 0.55rem;
     padding-left: 0.55rem;
-    font-size: 0.86rem;
+    font-size: 0.74rem;
   }
 }

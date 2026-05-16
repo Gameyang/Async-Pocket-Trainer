@@ -101,6 +101,9 @@ export interface Combatant {
   recharge: boolean;
   lockedMove: string | null;
   lockedTurns: number;
+  lockedKind: 'rage' | 'rampage' | 'partialtrap' | null;
+  lockedAccuracy: number | null;
+  partialTrapDamage: number | null;
   bideTurns: number;
   bideDamage: number;
   focusEnergy: boolean;
@@ -109,9 +112,12 @@ export interface Combatant {
   lightScreen: boolean;
   transformedTypes: string[] | null;
   lastMove: string | null;
+  lastSelectedMove: string | null;
   lastDamageTaken: number;
+  lastDamageMoveType: string | null;
   lastDamageCategory: MoveCategory | null;
   flinched: boolean;
+  invulnerable: boolean;
 }
 
 export interface BattleLogEntry {
@@ -196,5 +202,8 @@ export interface BattleState {
   sides: [Combatant, Combatant];
   logs: BattleLogEntry[];
   events: BattleEvent[];
+  lastDamage: number;
+  lastDamageMoveType: string | null;
+  lastDamageMoveId: string | null;
   winner: SideId | 'draw' | null;
 }

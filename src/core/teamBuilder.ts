@@ -103,6 +103,9 @@ export function createCombatant(side: 0 | 1, species: PokemonSpecies, level: num
     recharge: false,
     lockedMove: null,
     lockedTurns: 0,
+    lockedKind: null,
+    lockedAccuracy: null,
+    partialTrapDamage: null,
     bideTurns: 0,
     bideDamage: 0,
     focusEnergy: false,
@@ -111,9 +114,12 @@ export function createCombatant(side: 0 | 1, species: PokemonSpecies, level: num
     lightScreen: false,
     transformedTypes: null,
     lastMove: null,
+    lastSelectedMove: null,
     lastDamageTaken: 0,
+    lastDamageMoveType: null,
     lastDamageCategory: null,
     flinched: false,
+    invulnerable: false,
   };
 }
 

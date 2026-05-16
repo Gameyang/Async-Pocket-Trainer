@@ -1,8 +1,12 @@
 import './styles/main.css';
 import {advanceTurn, createBattle} from './core/battle';
+import {validateRuntimeBattleData} from './core/runtimeValidation';
 import type {BattleEvent} from './core/types';
 import {renderBattleView} from './ui/renderBattleView';
 import type {VisualState} from './ui/types';
+
+const validation = validateRuntimeBattleData();
+if (!validation.ok) throw new Error(`Battle data validation failed:\n${validation.errors.join('\n')}`);
 
 const appRoot = document.querySelector<HTMLDivElement>('#app');
 if (!appRoot) throw new Error('App root not found.');
