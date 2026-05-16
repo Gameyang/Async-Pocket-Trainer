@@ -5,6 +5,7 @@ export type MajorStatus = 'brn' | 'par' | 'psn' | 'slp' | 'frz';
 export type SideId = 0 | 1;
 
 export type Stats = Record<StatId, number>;
+export type IndividualValues = Record<StatId, number>;
 export type Boosts = Record<BoostId, number>;
 
 export interface LearnsetEntry {
@@ -84,6 +85,7 @@ export interface Combatant {
   species: PokemonSpecies;
   level: number;
   selectedMoves: SelectedMoves;
+  individualValues: IndividualValues;
   stats: Stats;
   hp: number;
   maxHp: number;

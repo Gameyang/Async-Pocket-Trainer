@@ -1,5 +1,5 @@
 import {dexData, getMove} from './dex';
-import type {Boosts, Combatant, MoveData, PokemonSpecies, SelectedMoves, Stats} from './types';
+import type {Boosts, Combatant, IndividualValues, MoveData, PokemonSpecies, SelectedMoves, StatId, Stats} from './types';
 import type {Rng} from './rng';
 
 const fallbackAttackByType: Record<string, string[]> = {
@@ -32,6 +32,8 @@ const fallbackSupportMoves = [
 ];
 
 const boostIds = ['atk', 'def', 'spa', 'spd', 'spe', 'accuracy', 'evasion'] as const;
+const statIds: readonly StatId[] = ['hp', 'atk', 'def', 'spa', 'spd', 'spe'];
+const fixedEvTerm = 63;
 
 function isAttackMove(move: MoveData): boolean {
   return move.basePower > 0 || move.damage !== null || move.ohko;
@@ -45,17 +47,23 @@ function createBoosts(): Boosts {
   return Object.fromEntries(boostIds.map(stat => [stat, 0])) as Boosts;
 }
 
-export function calculateStats(species: PokemonSpecies, level: number): Stats {
-  const hp = Math.floor((((species.baseStats.hp + 15) * 2 + 63) * level) / 100) + level + 10;
-  const stat = (base: number) => Math.floor((((base + 15) * 2 + 63) * level) / 100) + 5;
+export function createIndividualValues(rng: Rng): IndividualValues {
+  return Object.fromEntries(statIds.map(stat => [stat, rng.int(0, 15)])) as IndividualValues;
+}
+
+export function calculateStats(species: PokemonSpecies, level: number, individualValues: IndividualValues): Stats {
+  const hp = Math.floor((((species.baseStats.hp + individualValues.hp) * 2 + fixedEvTerm) * level) / 100) + level + 10;
+  const stat = (base: number, individualValue: number) => {
+    return Math.floor((((base + individualValue) * 2 + fixedEvTerm) * level) / 100) + 5;
+  };
 
   return {
     hp,
-    atk: stat(species.baseStats.atk),
-    def: stat(species.baseStats.def),
-    spa: stat(species.baseStats.spa),
-    spd: stat(species.baseStats.spd),
-    spe: stat(species.baseStats.spe),
+    atk: stat(species.baseStats.atk, individualValues.atk),
+    def: stat(species.baseStats.def, individualValues.def),
+    spa: stat(species.baseStats.spa, individualValues.spa),
+    spd: stat(species.baseStats.spd, individualValues.spd),
+    spe: stat(species.baseStats.spe, individualValues.spe),
   };
 }
 
@@ -79,13 +87,15 @@ export function selectMovesForLevel(species: PokemonSpecies, level: number, rng:
 }
 
 export function createCombatant(side: 0 | 1, species: PokemonSpecies, level: number, rng: Rng): Combatant {
-  const stats = calculateStats(species, level);
+  const individualValues = createIndividualValues(rng);
+  const stats = calculateStats(species, level, individualValues);
 
   return {
     side,
     species,
     level,
     selectedMoves: selectMovesForLevel(species, level, rng),
+    individualValues,
     stats,
     hp: stats.hp,
     maxHp: stats.hp,

@@ -3,8 +3,7 @@ import {advanceTurn, createBattle, runBattle} from './battle';
 import {dexData, getMove, getTypeMultiplier} from './dex';
 import {getSpecies} from './dex';
 import {createRng} from './rng';
-import {createCombatant} from './teamBuilder';
-import {selectMovesForLevel} from './teamBuilder';
+import {calculateStats, createCombatant, selectMovesForLevel} from './teamBuilder';
 import {validateRuntimeBattleData} from './runtimeValidation';
 import {validateBattleData} from './validation';
 
@@ -44,6 +43,21 @@ describe('Gen1 battle MVP data', () => {
     expect(getTypeMultiplier('Electric', ['Ground'])).toBe(0);
     expect(getTypeMultiplier('Ghost', ['Normal'])).toBe(0);
     expect(getTypeMultiplier('Ice', ['Dragon', 'Flying'])).toBe(4);
+  });
+
+  it('rolls individual values when each Pokemon is created and derives stats from them', () => {
+    const species = getSpecies('bulbasaur');
+    const first = createCombatant(0, species, 10, createRng('bulbasaur-iv-a'));
+    const second = createCombatant(0, species, 10, createRng('bulbasaur-iv-b'));
+
+    for (const value of Object.values(first.individualValues)) {
+      expect(value).toBeGreaterThanOrEqual(0);
+      expect(value).toBeLessThanOrEqual(15);
+    }
+
+    expect(first.stats).toEqual(calculateStats(species, 10, first.individualValues));
+    expect(second.stats).toEqual(calculateStats(species, 10, second.individualValues));
+    expect(first.individualValues).not.toEqual(second.individualValues);
   });
 });
 

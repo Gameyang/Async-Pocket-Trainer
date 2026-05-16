@@ -110,7 +110,6 @@
 
 관련 파일:
 
-- `scripts/generate-showdown-data.mjs`
 - `src/data/showdown-gen1.json`
 
 ### Medium: 런타임 검증의 한계
