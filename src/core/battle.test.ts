@@ -55,6 +55,8 @@ describe('Gen1 battle MVP data', () => {
       expect(value).toBeLessThanOrEqual(15);
     }
 
+    expect(first.individualValues.spa).toBe(first.individualValues.spd);
+    expect(first.stats.spa).toBe(first.stats.spd);
     expect(first.stats).toEqual(calculateStats(species, 10, first.individualValues));
     expect(second.stats).toEqual(calculateStats(species, 10, second.individualValues));
     expect(first.individualValues).not.toEqual(second.individualValues);

@@ -1,5 +1,5 @@
 import {dexData, getMove} from './dex';
-import type {Boosts, Combatant, IndividualValues, MoveData, PokemonSpecies, SelectedMoves, StatId, Stats} from './types';
+import type {Boosts, Combatant, IndividualValues, MoveData, PokemonSpecies, SelectedMoves, Stats} from './types';
 import type {Rng} from './rng';
 
 const fallbackAttackByType: Record<string, string[]> = {
@@ -32,7 +32,6 @@ const fallbackSupportMoves = [
 ];
 
 const boostIds = ['atk', 'def', 'spa', 'spd', 'spe', 'accuracy', 'evasion'] as const;
-const statIds: readonly StatId[] = ['hp', 'atk', 'def', 'spa', 'spd', 'spe'];
 const fixedEvTerm = 63;
 
 function isAttackMove(move: MoveData): boolean {
@@ -48,7 +47,16 @@ function createBoosts(): Boosts {
 }
 
 export function createIndividualValues(rng: Rng): IndividualValues {
-  return Object.fromEntries(statIds.map(stat => [stat, rng.int(0, 15)])) as IndividualValues;
+  const special = rng.int(0, 15);
+
+  return {
+    hp: rng.int(0, 15),
+    atk: rng.int(0, 15),
+    def: rng.int(0, 15),
+    spa: special,
+    spd: special,
+    spe: rng.int(0, 15),
+  };
 }
 
 export function calculateStats(species: PokemonSpecies, level: number, individualValues: IndividualValues): Stats {

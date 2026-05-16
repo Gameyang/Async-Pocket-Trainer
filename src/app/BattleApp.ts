@@ -1,6 +1,6 @@
 import {advanceTurn, createBattle} from '../core/battle';
 import type {BattleState} from '../core/types';
-import {renderBattleView} from '../ui/renderBattleView';
+import {renderBattleScreen} from '../ui/components/BattleScreen';
 import type {VisualState} from '../ui/types';
 import {BattleAudio} from './audio';
 import {applyVisualEvent, clearTransientVisualState, createInitialVisualState} from './visualEvents';
@@ -57,7 +57,7 @@ class BattleApp {
   }
 
   #render(): void {
-    this.#root.innerHTML = renderBattleView({
+    this.#root.innerHTML = renderBattleScreen({
       battle: this.#battle,
       visual: this.#visual,
       running: this.#running,
