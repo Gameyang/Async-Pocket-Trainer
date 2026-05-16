@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Async Pocket Trainer icon">
+  <rect width="64" height="64" rx="14" fill="#1a1a2e"/>
+  <path d="M6 18h52v28H6z" fill="#00d9ff"/>
+  <path d="M6 18h52v14H6z" fill="#e94560"/>
+  <path d="M6 30h52v4H6z" fill="#ffffff"/>
+  <circle cx="32" cy="32" r="13" fill="#080817"/>
+  <circle cx="32" cy="32" r="8" fill="#ffffff"/>
+  <circle cx="32" cy="32" r="4" fill="#ffd700"/>
+  <path d="M14 12h9l-5 8h-9zM41 44h9l-5 8h-9z" fill="#ffd700"/>
+</svg>
