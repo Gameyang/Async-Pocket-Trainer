@@ -6,8 +6,9 @@
 
 - `docs/game-direction-plan.md`
 - `docs/game-visual-plan.md`
+- `docs/development-hardening-guide.md`
 
-문서 간 해석이 갈릴 때는 최근 결정이 반영된 `docs/game-direction-plan.md`를 우선한다. 비주얼, 씬 구성, 상호작용 세부는 `docs/game-visual-plan.md`를 따른다.
+문서 간 해석이 갈릴 때는 최근 결정이 반영된 `docs/game-direction-plan.md`를 우선한다. 비주얼, 씬 구성, 상호작용 세부는 `docs/game-visual-plan.md`를 따른다. 코드 구조, 테스트, 보안, 실패 허용 설계는 `docs/development-hardening-guide.md`를 따른다.
 
 ## 1. Codex Goal
 
@@ -162,6 +163,7 @@ src/
 ### 6.1 현재 코드 파악과 기반 정리
 
 - [ ] 현재 `BattleApp`, `renderBattleView`, `BattleFrame`, `core/types` 구조를 파악한다.
+- [ ] 구현 전에 `docs/development-hardening-guide.md`의 모듈 경계와 금지 사항을 확인한다.
 - [ ] 기존 1v1 전투 상태와 새 6슬롯 팀 상태 사이의 변환 지점을 정한다.
 - [ ] `PokemonInstance`, `TeamSlot`, `RunState`, `WalletState`, `DexState`, `PlayerProfile`, `SyncQueueItem` 타입을 정의한다.
 - [ ] 기존 `Combatant`와 새 포켓몬 인스턴스 타입의 중복을 줄인다.
