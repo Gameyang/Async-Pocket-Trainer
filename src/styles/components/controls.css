@@ -1,0 +1,81 @@
+.battle-controls {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.65rem;
+}
+
+.seed-field {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 0.35rem;
+  color: var(--splat-yellow);
+  font-size: 0.74rem;
+  line-height: 1;
+  text-shadow: 2px 2px 0 var(--splat-ink);
+}
+
+.control-button {
+  position: relative;
+  overflow: hidden;
+  min-width: 0;
+  color: var(--splat-white);
+  text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.45);
+}
+
+.control-button::after {
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  content: "";
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.45), transparent);
+  pointer-events: none;
+}
+
+.control-button:hover::after {
+  animation: shine 900ms ease;
+}
+
+.control-button.primary {
+  background: linear-gradient(135deg, var(--splat-cyan), var(--splat-cyan-dark));
+}
+
+.control-button.danger {
+  background: linear-gradient(135deg, var(--splat-pink), var(--splat-pink-light));
+}
+
+.control-button.warning {
+  color: var(--text-dark);
+  background: linear-gradient(135deg, var(--splat-yellow), #f59e0b);
+  text-shadow: 1px 1px 0 rgba(255, 255, 255, 0.45);
+}
+
+.control-button.speed {
+  background:
+    repeating-linear-gradient(-45deg, rgba(255, 255, 255, 0.18) 0 8px, transparent 8px 16px),
+    linear-gradient(135deg, var(--splat-dark-deep), var(--splat-cyan-dark));
+}
+
+@media (min-width: 680px) {
+  .battle-controls {
+    grid-template-columns: minmax(12rem, 1fr) repeat(4, auto);
+    align-items: end;
+  }
+
+  .seed-field {
+    grid-column: auto;
+  }
+}
+
+@media (max-width: 380px) {
+  .battle-controls {
+    gap: 0.55rem;
+  }
+
+  .control-button {
+    padding-right: 0.55rem;
+    padding-left: 0.55rem;
+    font-size: 0.86rem;
+  }
+}

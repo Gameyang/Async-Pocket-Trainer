@@ -1,0 +1,77 @@
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-width: 320px;
+  min-height: 100%;
+  background: var(--splat-dark);
+}
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+  color: var(--text-primary);
+  background:
+    linear-gradient(120deg, rgba(233, 69, 96, 0.42), transparent 34%),
+    linear-gradient(240deg, rgba(0, 217, 255, 0.36), transparent 38%),
+    repeating-linear-gradient(45deg, #1a1a2e 0 12px, #16213e 12px 24px);
+}
+
+body::before {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  content: "";
+  background:
+    repeating-linear-gradient(90deg, transparent 0 38px, rgba(255, 255, 255, 0.05) 38px 42px),
+    repeating-linear-gradient(0deg, transparent 0 38px, rgba(0, 0, 0, 0.08) 38px 42px);
+}
+
+button,
+input {
+  font: inherit;
+}
+
+button {
+  min-height: 2.8rem;
+  border: var(--border-dark);
+  border-radius: 8px;
+  padding: 0.62rem 0.85rem;
+  color: var(--splat-white);
+  background: linear-gradient(135deg, var(--splat-cyan), var(--splat-cyan-dark));
+  box-shadow: 0 0 0 2px var(--splat-white), var(--shadow-hard);
+  cursor: pointer;
+  transition: transform 160ms ease, box-shadow 160ms ease, filter 160ms ease;
+}
+
+button:hover {
+  transform: scale(1.04);
+  filter: saturate(1.08);
+}
+
+button:active {
+  transform: translateY(3px) scale(1.02);
+  box-shadow: 0 0 0 2px var(--splat-white), 0 3px 0 var(--splat-ink);
+}
+
+input {
+  width: 100%;
+  min-width: 0;
+  border: var(--border-dark);
+  border-radius: 8px;
+  padding: 0.7rem 0.8rem;
+  color: var(--text-dark);
+  background: var(--splat-panel);
+  outline: none;
+  box-shadow: 0 0 0 2px var(--splat-cyan), 0 5px 0 var(--splat-ink);
+}
+
+input:focus {
+  box-shadow: 0 0 0 2px var(--splat-yellow), 0 5px 0 var(--splat-ink), var(--shadow-yellow);
+}
+
+#app {
+  min-height: 100vh;
+}

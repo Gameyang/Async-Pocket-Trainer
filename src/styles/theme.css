@@ -1,0 +1,62 @@
+:root {
+  color-scheme: dark;
+  --splat-pink: #e94560;
+  --splat-pink-light: #ff6b9d;
+  --splat-cyan: #00d9ff;
+  --splat-cyan-dark: #00a8cc;
+  --splat-yellow: #ffd700;
+  --splat-green: #10b981;
+  --splat-dark: #1a1a2e;
+  --splat-dark-alt: #16213e;
+  --splat-dark-deep: #0f3460;
+  --splat-ink: #080817;
+  --splat-white: #ffffff;
+  --splat-panel: #f8fbff;
+  --splat-muted: #d8e1f2;
+  --text-primary: #ffffff;
+  --text-dark: #111827;
+  --border-main: 5px solid var(--splat-white);
+  --border-dark: 5px solid var(--splat-dark);
+  --shadow-cyan: 0 0 28px rgba(0, 217, 255, 0.55);
+  --shadow-pink: 0 0 28px rgba(233, 69, 96, 0.5);
+  --shadow-yellow: 0 0 24px rgba(255, 215, 0, 0.55);
+  --shadow-hard: 0 7px 0 var(--splat-ink);
+  --bg-stripe-pink: repeating-linear-gradient(
+    -45deg,
+    rgba(233, 69, 96, 0.95) 0 10px,
+    rgba(255, 107, 157, 0.95) 10px 20px
+  );
+  --bg-stripe-dark: repeating-linear-gradient(
+    135deg,
+    rgba(26, 26, 46, 0.98) 0 10px,
+    rgba(22, 33, 62, 0.98) 10px 20px
+  );
+  --bg-stage: linear-gradient(135deg, rgba(233, 69, 96, 0.88), transparent 38%),
+    linear-gradient(225deg, rgba(0, 217, 255, 0.8), transparent 42%),
+    linear-gradient(315deg, rgba(255, 215, 0, 0.44), transparent 45%),
+    repeating-linear-gradient(45deg, #18214b 0 14px, #101633 14px 28px);
+  font-family: "Arial Black", "Arial Rounded MT Bold", Arial, sans-serif;
+  font-weight: 900;
+  color: var(--text-primary);
+  background: var(--splat-dark);
+}
+
+@keyframes gradient-slide {
+  from {
+    background-position: 0% 50%;
+  }
+
+  to {
+    background-position: 200% 50%;
+  }
+}
+
+@keyframes shine {
+  from {
+    left: -100%;
+  }
+
+  to {
+    left: 200%;
+  }
+}
