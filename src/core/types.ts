@@ -120,11 +120,81 @@ export interface BattleLogEntry {
   tone: 'system' | 'hit' | 'status' | 'miss' | 'ko';
 }
 
+export type BattleEvent =
+  | {
+    kind: 'message';
+    turn: number;
+    text: string;
+    tone: BattleLogEntry['tone'];
+  }
+  | {
+    kind: 'move';
+    turn: number;
+    side: SideId;
+    targetSide: SideId;
+    moveId: string;
+    moveName: string;
+    moveType: string;
+    category: MoveCategory;
+  }
+  | {
+    kind: 'damage';
+    turn: number;
+    side: SideId;
+    sourceSide: SideId | null;
+    amount: number;
+    hp: number;
+    maxHp: number;
+    moveId: string | null;
+    direct: boolean;
+  }
+  | {
+    kind: 'heal';
+    turn: number;
+    side: SideId;
+    amount: number;
+    hp: number;
+    maxHp: number;
+  }
+  | {
+    kind: 'status';
+    turn: number;
+    side: SideId;
+    status: MajorStatus | string;
+    active: boolean;
+  }
+  | {
+    kind: 'boost';
+    turn: number;
+    side: SideId;
+    stat: BoostId;
+    change: number;
+    stage: number;
+  }
+  | {
+    kind: 'miss';
+    turn: number;
+    side: SideId;
+    targetSide: SideId;
+    moveId: string;
+  }
+  | {
+    kind: 'faint';
+    turn: number;
+    side: SideId;
+  }
+  | {
+    kind: 'winner';
+    turn: number;
+    winner: SideId | 'draw';
+  };
+
 export interface BattleState {
   seed: string;
   rngState: number;
   turn: number;
   sides: [Combatant, Combatant];
   logs: BattleLogEntry[];
+  events: BattleEvent[];
   winner: SideId | 'draw' | null;
 }

@@ -30,5 +30,5 @@ export function getTypeMultiplier(attackType: string, defenderTypes: readonly st
 }
 
 export function imagePathForSpecies(species: PokemonSpecies): string {
-  return `resources/pokemon/${species.num.toString().padStart(4, '0')}.webp`;
+  return `pokemon/${species.num.toString().padStart(4, '0')}.webp`;
 }

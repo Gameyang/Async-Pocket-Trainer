@@ -1,7 +1,7 @@
 import {dexData, getMove, getTypeMultiplier} from './dex';
 import {createRng, createSeed, type Rng} from './rng';
 import {chooseRandomSpeciesPair, createCombatant} from './teamBuilder';
-import type {BattleLogEntry, BattleState, BoostId, Combatant, MajorStatus, MoveData, MoveSecondary, SideId, StatId} from './types';
+import type {BattleEvent, BattleLogEntry, BattleState, BoostId, Combatant, MajorStatus, MoveData, MoveSecondary, SideId, StatId} from './types';
 
 const maxTurns = 200;
 const chargeMoves = new Set(['dig', 'skullbash', 'skyattack', 'solarbeam', 'razorwind']);
@@ -34,6 +34,11 @@ function clamp(value: number, min: number, max: number): number {
 function log(state: BattleState, text: string, tone: BattleLogEntry['tone'] = 'system'): void {
   state.logs.unshift({turn: state.turn, text, tone});
   state.logs = state.logs.slice(0, 120);
+  state.events.push({kind: 'message', turn: state.turn, text, tone});
+}
+
+function event(state: BattleState, battleEvent: BattleEvent): void {
+  state.events.push(battleEvent);
 }
 
 function opponentSide(side: SideId): SideId {
@@ -68,10 +73,20 @@ function effectiveSpeed(combatant: Combatant): number {
   return modifiedStat(combatant, 'spe', false);
 }
 
-function heal(combatant: Combatant, amount: number): number {
+function heal(state: BattleState, combatant: Combatant, amount: number): number {
   if (combatant.hp <= 0) return 0;
   const healed = Math.min(combatant.maxHp - combatant.hp, Math.max(0, Math.floor(amount)));
   combatant.hp += healed;
+  if (healed > 0) {
+    event(state, {
+      kind: 'heal',
+      turn: state.turn,
+      side: combatant.side,
+      amount: healed,
+      hp: combatant.hp,
+      maxHp: combatant.maxHp,
+    });
+  }
   return healed;
 }
 
@@ -88,6 +103,17 @@ function applyDamage(
   if (direct && target.substituteHp > 0 && source?.side !== target.side) {
     const subDamage = Math.min(target.substituteHp, damage);
     target.substituteHp -= subDamage;
+    event(state, {
+      kind: 'damage',
+      turn: state.turn,
+      side: target.side,
+      sourceSide: source?.side ?? null,
+      amount: subDamage,
+      hp: target.hp,
+      maxHp: target.maxHp,
+      moveId: move?.id ?? null,
+      direct,
+    });
     log(state, `${target.species.name}의 대타가 ${subDamage} 피해를 받았다.`, 'hit');
     if (target.substituteHp <= 0) log(state, `${target.species.name}의 대타가 사라졌다.`, 'status');
     return 0;
@@ -95,6 +121,17 @@ function applyDamage(
 
   const actual = Math.min(target.hp, damage);
   target.hp -= actual;
+  event(state, {
+    kind: 'damage',
+    turn: state.turn,
+    side: target.side,
+    sourceSide: source?.side ?? null,
+    amount: actual,
+    hp: target.hp,
+    maxHp: target.maxHp,
+    moveId: move?.id ?? null,
+    direct,
+  });
 
   if (move && source?.side !== target.side) {
     target.lastDamageTaken = actual;
@@ -104,6 +141,7 @@ function applyDamage(
 
   if (target.hp <= 0) {
     target.hp = 0;
+    event(state, {kind: 'faint', turn: state.turn, side: target.side});
     log(state, `${target.species.name}이(가) 쓰러졌다.`, 'ko');
   }
 
@@ -136,6 +174,14 @@ function applyBoosts(
     }
 
     const direction = rawChange > 0 ? '올랐다' : '떨어졌다';
+    event(state, {
+      kind: 'boost',
+      turn: state.turn,
+      side: target.side,
+      stat: rawStat,
+      change: rawChange,
+      stage: after,
+    });
     log(state, `${target.species.name}의 ${boostLabels[rawStat]}이(가) ${direction}.`, 'status');
   }
 }
@@ -166,6 +212,7 @@ function applyMajorStatus(
 
   target.status = status;
   target.statusTurns = status === 'slp' ? rng.int(1, 7) : 0;
+  event(state, {kind: 'status', turn: state.turn, side: target.side, status, active: true});
   log(state, `${target.species.name}은(는) ${statusLabels[status]} 상태가 되었다.`, 'status');
   return true;
 }
@@ -179,6 +226,7 @@ function applyVolatile(state: BattleState, target: Combatant, source: Combatant,
   switch (volatile) {
     case 'confusion':
       target.confusionTurns = rng.int(2, 5);
+      event(state, {kind: 'status', turn: state.turn, side: target.side, status: 'confusion', active: true});
       log(state, `${target.species.name}은(는) 혼란에 빠졌다.`, 'status');
       return true;
     case 'flinch':
@@ -190,34 +238,41 @@ function applyVolatile(state: BattleState, target: Combatant, source: Combatant,
         return false;
       }
       target.leechSeedBy = source.side;
+      event(state, {kind: 'status', turn: state.turn, side: target.side, status: 'leechseed', active: true});
       log(state, `${target.species.name}에게 씨앗이 심어졌다.`, 'status');
       return true;
     case 'partiallytrapped':
       target.partialTrapTurns = rng.int(2, 5);
       target.partialTrapBy = source.side;
+      event(state, {kind: 'status', turn: state.turn, side: target.side, status: 'partiallytrapped', active: true});
       log(state, `${target.species.name}은(는) 움직임이 봉쇄됐다.`, 'status');
       return true;
     case 'disable':
       target.disabledMove = rng.pick([target.selectedMoves.attack, target.selectedMoves.support]);
       target.disabledTurns = rng.int(1, 7);
+      event(state, {kind: 'status', turn: state.turn, side: target.side, status: 'disable', active: true});
       log(state, `${target.species.name}의 ${getMove(target.disabledMove).name}이(가) 봉인됐다.`, 'status');
       return true;
     case 'focusenergy':
       target.focusEnergy = true;
+      event(state, {kind: 'status', turn: state.turn, side: target.side, status: 'focusenergy', active: true});
       log(state, `${target.species.name}은(는) 급소를 노린다.`, 'status');
       return true;
     case 'substitute':
       return createSubstitute(state, target);
     case 'mist':
       target.mist = true;
+      event(state, {kind: 'status', turn: state.turn, side: target.side, status: 'mist', active: true});
       log(state, `${target.species.name}이(가) 흰안개에 둘러싸였다.`, 'status');
       return true;
     case 'lightscreen':
       target.lightScreen = true;
+      event(state, {kind: 'status', turn: state.turn, side: target.side, status: 'lightscreen', active: true});
       log(state, `${target.species.name}이(가) 빛의장막을 펼쳤다.`, 'status');
       return true;
     case 'reflect':
       target.reflect = true;
+      event(state, {kind: 'status', turn: state.turn, side: target.side, status: 'reflect', active: true});
       log(state, `${target.species.name}이(가) 리플렉터를 펼쳤다.`, 'status');
       return true;
     default:
@@ -234,6 +289,18 @@ function createSubstitute(state: BattleState, user: Combatant): boolean {
 
   user.hp -= cost;
   user.substituteHp = cost;
+  event(state, {
+    kind: 'damage',
+    turn: state.turn,
+    side: user.side,
+    sourceSide: user.side,
+    amount: cost,
+    hp: user.hp,
+    maxHp: user.maxHp,
+    moveId: 'substitute',
+    direct: false,
+  });
+  event(state, {kind: 'status', turn: state.turn, side: user.side, status: 'substitute', active: true});
   log(state, `${user.species.name}이(가) HP를 깎아 대타를 만들었다.`, 'status');
   return true;
 }
@@ -267,12 +334,14 @@ function applyMoveEffect(
 function hitsMove(state: BattleState, user: Combatant, target: Combatant, move: MoveData, rng: Rng): boolean {
   const multiplier = getTypeMultiplier(move.type, activeTypes(target));
   if (!move.ignoreImmunity && multiplier === 0 && move.type !== '???') {
+    event(state, {kind: 'miss', turn: state.turn, side: user.side, targetSide: target.side, moveId: move.id});
     log(state, `${target.species.name}에게는 효과가 없다.`, 'miss');
     return false;
   }
 
   if (move.accuracy === true) {
     if (move.id !== 'swift' && rng.int(1, 256) === 1) {
+      event(state, {kind: 'miss', turn: state.turn, side: user.side, targetSide: target.side, moveId: move.id});
       log(state, `${user.species.name}의 ${move.name}이(가) 빗나갔다.`, 'miss');
       return false;
     }
@@ -284,6 +353,7 @@ function hitsMove(state: BattleState, user: Combatant, target: Combatant, move: 
     accuracyStageMultiplier(target.boosts.evasion);
 
   if (!rng.chance(clamp(accuracy, 1, 100))) {
+    event(state, {kind: 'miss', turn: state.turn, side: user.side, targetSide: target.side, moveId: move.id});
     log(state, `${user.species.name}의 ${move.name}이(가) 빗나갔다.`, 'miss');
     return false;
   }
@@ -343,7 +413,7 @@ function applyAfterDamageEffects(
   totalDamage: number
 ): void {
   if (move.drain && totalDamage > 0) {
-    const restored = heal(user, Math.floor((totalDamage * move.drain[0]) / move.drain[1]));
+    const restored = heal(state, user, Math.floor((totalDamage * move.drain[0]) / move.drain[1]));
     if (restored > 0) log(state, `${user.species.name}이(가) ${restored} HP를 흡수했다.`, 'status');
   }
 
@@ -415,13 +485,13 @@ function executeStatusMove(
   }
 
   if (move.id === 'recover') {
-    const restored = heal(user, Math.floor(user.maxHp / 2));
+    const restored = heal(state, user, Math.floor(user.maxHp / 2));
     log(state, `${user.species.name}이(가) ${restored} HP를 회복했다.`, 'status');
     return;
   }
 
   if (move.id === 'rest') {
-    heal(user, user.maxHp);
+    heal(state, user, user.maxHp);
     user.status = 'slp';
     user.statusTurns = 2;
     log(state, `${user.species.name}이(가) 잠들고 HP를 모두 회복했다.`, 'status');
@@ -453,7 +523,7 @@ function executeStatusMove(
   }
 
   if (move.heal) {
-    const restored = heal(user, Math.floor((user.maxHp * move.heal[0]) / move.heal[1]));
+    const restored = heal(state, user, Math.floor((user.maxHp * move.heal[0]) / move.heal[1]));
     log(state, `${user.species.name}이(가) ${restored} HP를 회복했다.`, 'status');
     return;
   }
@@ -533,6 +603,18 @@ function executeMove(
   calledByOtherMove = false
 ): void {
   const move = getMove(moveId);
+  if (calledByOtherMove) {
+    event(state, {
+      kind: 'move',
+      turn: state.turn,
+      side: user.side,
+      targetSide: target.side,
+      moveId: move.id,
+      moveName: move.name,
+      moveType: move.type,
+      category: move.category,
+    });
+  }
   if (!calledByOtherMove) user.lastMove = move.id;
 
   if (move.thawsTarget || move.type === 'Fire') {
@@ -612,6 +694,7 @@ function beforeMove(state: BattleState, user: Combatant, target: Combatant, move
     log(state, `${user.species.name}은(는) 잠들어 있다.`, 'status');
     if (user.statusTurns <= 0) {
       user.status = null;
+      event(state, {kind: 'status', turn: state.turn, side: user.side, status: 'slp', active: false});
       log(state, `${user.species.name}이(가) 잠에서 깼다.`, 'status');
     }
     return false;
@@ -679,7 +762,7 @@ function applyResidual(state: BattleState): void {
       const seeder = state.sides[combatant.leechSeedBy];
       const damage = Math.max(1, Math.floor(combatant.maxHp / 16));
       const dealt = applyDamage(state, combatant, damage, seeder, null, false);
-      const restored = heal(seeder, dealt);
+      const restored = heal(state, seeder, dealt);
       log(state, `${combatant.species.name}의 씨앗이 ${dealt} HP를 빼앗았다.`, 'hit');
       if (restored > 0) log(state, `${seeder.species.name}이(가) ${restored} HP를 회복했다.`, 'status');
     }
@@ -717,6 +800,7 @@ export function createBattle(seed = createSeed()): BattleState {
       {turn: 0, text: `${left.species.name} Lv.${left.level} vs ${right.species.name} Lv.${right.level}`, tone: 'system'},
       {turn: 0, text: `시드 ${seed}로 전투를 시작했다.`, tone: 'system'},
     ],
+    events: [],
     winner: null,
   };
 }
@@ -726,6 +810,7 @@ export function advanceTurn(state: BattleState): BattleState {
 
   const rng = createRng(state.seed, state.rngState);
   state.turn += 1;
+  state.events = [];
   log(state, `턴 ${state.turn}`, 'system');
   for (const combatant of state.sides) combatant.flinched = false;
 
@@ -750,7 +835,18 @@ export function advanceTurn(state: BattleState): BattleState {
       continue;
     }
 
-    log(state, `${user.species.name}은(는) ${getMove(moveId).name}을(를) 사용했다.`, 'system');
+    const move = getMove(moveId);
+    event(state, {
+      kind: 'move',
+      turn: state.turn,
+      side: user.side,
+      targetSide: target.side,
+      moveId: move.id,
+      moveName: move.name,
+      moveType: move.type,
+      category: move.category,
+    });
+    log(state, `${user.species.name}은(는) ${move.name}을(를) 사용했다.`, 'system');
     executeMove(state, user, target, moveId, rng);
     finishMove(state, user, moveId);
     updateWinner(state);
@@ -765,6 +861,7 @@ export function advanceTurn(state: BattleState): BattleState {
   if (state.winner !== null) {
     const text = state.winner === 'draw' ? '전투가 무승부로 끝났다.' : `${state.sides[state.winner].species.name}의 승리!`;
     log(state, text, state.winner === 'draw' ? 'system' : 'ko');
+    event(state, {kind: 'winner', turn: state.turn, winner: state.winner});
   }
 
   state.rngState = rng.getState();

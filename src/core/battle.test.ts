@@ -60,6 +60,14 @@ describe('auto battle simulation', () => {
     expect(battle.sides.map(side => side.selectedMoves)).toEqual(originalMoves);
   });
 
+  it('emits structured events for the battle screen', () => {
+    const battle = createBattle('event-check');
+    advanceTurn(battle);
+
+    expect(battle.events.some(event => event.kind === 'move')).toBe(true);
+    expect(battle.events.some(event => event.kind === 'message')).toBe(true);
+  });
+
   it('finishes representative random battles within the turn cap', () => {
     for (let index = 0; index < 20; index += 1) {
       const result = runBattle(`smoke-${index}`);
